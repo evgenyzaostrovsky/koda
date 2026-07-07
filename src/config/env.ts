@@ -1,7 +1,9 @@
 export const env = {
   supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || '',
   supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
-  kodaApiUrl: process.env.EXPO_PUBLIC_KODA_API_URL || 'http://127.0.0.1:3333',
+  kodaApiUrl:
+    process.env.EXPO_PUBLIC_KODA_API_URL ||
+    (process.env.NODE_ENV === 'production' ? '' : 'http://127.0.0.1:3333'),
 };
 
 export function isSupabaseConfigured() {
