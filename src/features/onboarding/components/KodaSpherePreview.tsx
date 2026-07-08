@@ -42,6 +42,14 @@ type AreaDetailDraft = {
   priority: string;
 };
 
+type FirstQuest = {
+  action: string;
+  duration: string;
+  reward: string;
+  title: string;
+  why: string;
+};
+
 const focusAreas: Array<{ id: FocusAreaKey; label: string; hint: string }> = [
   { id: 'money', label: 'Финансы', hint: 'долги, доход, подушка' },
   { id: 'health', label: 'Здоровье', hint: 'сон, вес, энергия' },
@@ -81,6 +89,51 @@ const areaDetailOptions: Record<FocusAreaKey, { pains: string[]; priorities: str
     pains: ['Тревога', 'Перегруз', 'Внутреннее давление', 'Нет отдыха', 'Сложно замедлиться'],
     priorities: ['Снизить шум', 'Вернуть опору', 'Научиться отдыхать', 'Собрать границы'],
     placeholder: 'Например: хочу чувствовать внутри больше тишины и меньше постоянной гонки.',
+  },
+};
+
+const firstQuestByArea: Record<FocusAreaKey, FirstQuest> = {
+  money: {
+    action: 'Выпиши все обязательные платежи за месяц: кредиты, аренду, подписки, связь и регулярные списания.',
+    duration: '15 минут',
+    reward: '+120 XP',
+    title: 'Навести первый порядок в деньгах',
+    why: 'Это снижает шум в голове и превращает тревогу в карту.',
+  },
+  health: {
+    action: 'Выбери один восстановительный ритуал на завтра: сон, вода, прогулка или простая еда — и поставь время.',
+    duration: '15 минут',
+    reward: '+100 XP',
+    title: 'Вернуть телу первый заряд',
+    why: 'Энергия — это фундамент. Без неё даже хорошие цели становятся тяжёлыми.',
+  },
+  discipline: {
+    action: 'Выбери одну задачу и сделай только первый видимый шаг: открыть файл, написать 3 строки или убрать рабочее место.',
+    duration: '15 минут',
+    reward: '+110 XP',
+    title: 'Запустить ритм без героизма',
+    why: 'Маленький старт ломает инерцию лучше, чем идеальный план.',
+  },
+  career: {
+    action: 'Открой один навык, который даст рост, и сохрани один заметный результат: заметку, пример, SQL-запрос или мини-кейс.',
+    duration: '25 минут',
+    reward: '+130 XP',
+    title: 'Сделать шаг к новой роли',
+    why: 'Карьера двигается не размышлением, а маленькими доказательствами навыка.',
+  },
+  relationships: {
+    action: 'Напиши одному важному человеку короткое тёплое сообщение или предложи конкретное время для разговора.',
+    duration: '10 минут',
+    reward: '+90 XP',
+    title: 'Вернуть живой контакт',
+    why: 'Опора появляется не из больших обещаний, а из маленьких честных касаний.',
+  },
+  calm: {
+    action: 'Выпиши на бумагу 5 мыслей, которые шумят в голове, и отметь одну, с которой можно ничего не делать сегодня.',
+    duration: '12 минут',
+    reward: '+100 XP',
+    title: 'Снизить внутренний шум',
+    why: 'Когда тревога вынесена наружу, ей сложнее управлять всем днём.',
   },
 };
 
@@ -306,6 +359,7 @@ export function KodaSpherePreview() {
   const [showAreaDetailsPage, setShowAreaDetailsPage] = useState(false);
   const [showContourPage, setShowContourPage] = useState(false);
   const [showFutureVersionPage, setShowFutureVersionPage] = useState(false);
+  const [showFirstQuestPage, setShowFirstQuestPage] = useState(false);
   const [focusAreaIndex, setFocusAreaIndex] = useState(0);
   const [selectedFocusAreas, setSelectedFocusAreas] = useState<FocusAreaKey[]>([]);
   const [selectedPains, setSelectedPains] = useState<string[]>([]);
@@ -514,6 +568,9 @@ export function KodaSpherePreview() {
   const currentFocusArea = focusAreas.find((area) => area.id === currentFocusAreaId);
   const currentAreaOptions = currentFocusAreaId ? areaDetailOptions[currentFocusAreaId] : null;
   const canSaveAreaDetails = selectedPains.length > 0 && Boolean(selectedPriority) && areaMeaning.trim().length >= 4;
+  const firstQuestDetail = areaDetails[0];
+  const firstQuestArea = firstQuestDetail ? focusAreas.find((area) => area.id === firstQuestDetail.areaId) : null;
+  const firstQuest = firstQuestDetail ? firstQuestByArea[firstQuestDetail.areaId] : firstQuestByArea.money;
 
   return (
     <div
@@ -946,6 +1003,134 @@ export function KodaSpherePreview() {
             letter-spacing: .12em;
             margin-bottom: 6px;
             text-transform: uppercase;
+          }
+
+          .koda-quest-card {
+            max-width: 740px;
+            overflow: hidden;
+            position: relative;
+            text-align: left;
+          }
+
+          .koda-quest-card::before {
+            background:
+              radial-gradient(circle, rgba(242,200,107,.26), transparent 62%),
+              linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+            content: '';
+            height: 220px;
+            position: absolute;
+            right: -80px;
+            top: -92px;
+            transform: rotate(-18deg);
+            width: 320px;
+          }
+
+          .koda-quest-head {
+            align-items: center;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 26px;
+            position: relative;
+            z-index: 1;
+          }
+
+          .koda-quest-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 9px;
+          }
+
+          .koda-quest-badge {
+            background: rgba(255,255,255,.075);
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 999px;
+            color: rgba(255,255,255,.78);
+            font-size: 13px;
+            font-weight: 800;
+            padding: 8px 11px;
+          }
+
+          .koda-quest-badge.is-gold {
+            background: rgba(242, 200, 107, .16);
+            border-color: rgba(242, 200, 107, .42);
+            color: #ffe6a3;
+          }
+
+          .koda-quest-mini-orb {
+            background: radial-gradient(circle at 35% 30%, #ffffff, #f2c86b 38%, rgba(242,200,107,.2) 70%, transparent 72%);
+            border-radius: 999px;
+            box-shadow: 0 0 30px rgba(242, 200, 107, .42);
+            height: 58px;
+            width: 58px;
+          }
+
+          .koda-quest-title {
+            color: #fff;
+            font-size: clamp(36px, 4.8vw, 62px);
+            font-weight: 920;
+            letter-spacing: -.065em;
+            line-height: .93;
+            margin: 0 0 18px;
+            max-width: 620px;
+            position: relative;
+            z-index: 1;
+          }
+
+          .koda-quest-action {
+            background: rgba(255,255,255,.065);
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 26px;
+            color: rgba(255,255,255,.9);
+            font-size: 18px;
+            line-height: 1.42;
+            margin-bottom: 16px;
+            padding: 20px 22px;
+            position: relative;
+            z-index: 1;
+          }
+
+          .koda-quest-action strong {
+            color: #f2c86b;
+            display: block;
+            font-size: 12px;
+            letter-spacing: .12em;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+          }
+
+          .koda-quest-why {
+            background: rgba(242, 200, 107, .1);
+            border: 1px solid rgba(242, 200, 107, .22);
+            border-radius: 22px;
+            color: #fff4cf;
+            font-size: 15px;
+            line-height: 1.42;
+            margin-bottom: 24px;
+            padding: 15px 17px;
+            position: relative;
+            z-index: 1;
+          }
+
+          .koda-quest-actions {
+            align-items: center;
+            display: flex;
+            gap: 16px;
+            position: relative;
+            z-index: 1;
+          }
+
+          .koda-quest-link {
+            background: transparent;
+            border: 0;
+            color: rgba(255,255,255,.48);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 800;
+            padding: 12px 0;
+          }
+
+          .koda-quest-link:hover {
+            color: rgba(255,255,255,.72);
           }
 
           @keyframes kodaFocusPageIn {
@@ -1500,6 +1685,34 @@ export function KodaSpherePreview() {
               text-align: left;
             }
 
+            .koda-quest-card {
+              text-align: left;
+            }
+
+            .koda-quest-head {
+              align-items: flex-start;
+              gap: 16px;
+            }
+
+            .koda-quest-mini-orb {
+              height: 46px;
+              width: 46px;
+            }
+
+            .koda-quest-title {
+              font-size: 36px;
+            }
+
+            .koda-quest-action {
+              font-size: 16px;
+              padding: 17px 16px;
+            }
+
+            .koda-quest-actions {
+              align-items: stretch;
+              flex-direction: column;
+            }
+
             .koda-dialog-progress {
               gap: 9px;
               top: 8px;
@@ -1896,7 +2109,41 @@ export function KodaSpherePreview() {
         `}
       </style>
       <div className="koda-scene-stage">
-      {showFutureVersionPage ? (
+      {showFirstQuestPage ? (
+        <div className="koda-focus-page">
+          <div className="koda-focus-progress" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="koda-focus-card koda-quest-card">
+            <div className="koda-quest-head">
+              <div className="koda-quest-badges">
+                <span className="koda-quest-badge">{firstQuestArea?.label || 'Фокус'}</span>
+                <span className="koda-quest-badge is-gold">{firstQuest.reward}</span>
+                <span className="koda-quest-badge">{firstQuest.duration}</span>
+              </div>
+              <div className="koda-quest-mini-orb" aria-hidden="true" />
+            </div>
+            <div className="koda-focus-eyebrow">Первый квест</div>
+            <h1 className="koda-quest-title">{firstQuest.title}</h1>
+            <div className="koda-quest-action">
+              <strong>Сделай один маленький шаг</strong>
+              {firstQuest.action}
+            </div>
+            <div className="koda-quest-why">{firstQuest.why}</div>
+            <div className="koda-quest-actions">
+              <button className="koda-focus-button" type="button">
+                Начать квест
+              </button>
+              <button className="koda-quest-link" type="button">
+                Изменить квест
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : showFutureVersionPage ? (
         <div className="koda-focus-page">
           <div className="koda-focus-progress" aria-hidden="true">
             <span />
@@ -1932,7 +2179,7 @@ export function KodaSpherePreview() {
                 <strong>Первый квест</strong>
                 Выбери самый лёгкий 15-минутный шаг по первой сфере и сделай его сегодня — без героизма, просто чтобы включить движение.
               </div>
-              <button className="koda-focus-button" type="button">
+              <button className="koda-focus-button" onClick={() => setShowFirstQuestPage(true)} type="button">
                 Открыть первый квест
               </button>
             </div>
