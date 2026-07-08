@@ -561,6 +561,14 @@ export function KodaSpherePreview() {
     setShowContourPage(true);
   }
 
+  function openFirstQuest() {
+    setShowFocusPage(false);
+    setShowAreaDetailsPage(false);
+    setShowContourPage(false);
+    setShowFutureVersionPage(false);
+    setShowFirstQuestPage(true);
+  }
+
   const flightPalette = flight ? getFlightPalette(flight.chargeRatio) : null;
   const currentQuestion = dialogueQuestions[questionIndex];
   const isLastQuestion = questionIndex === dialogueQuestions.length - 1;
@@ -2179,7 +2187,7 @@ export function KodaSpherePreview() {
                 <strong>Первый квест</strong>
                 Выбери самый лёгкий 15-минутный шаг по первой сфере и сделай его сегодня — без героизма, просто чтобы включить движение.
               </div>
-              <button className="koda-focus-button" onClick={() => setShowFirstQuestPage(true)} type="button">
+              <button className="koda-focus-button" onClick={openFirstQuest} onPointerUp={openFirstQuest} type="button">
                 Открыть первый квест
               </button>
             </div>
