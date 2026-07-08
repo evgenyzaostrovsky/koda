@@ -305,6 +305,7 @@ export function KodaSpherePreview() {
   const [showFocusPage, setShowFocusPage] = useState(false);
   const [showAreaDetailsPage, setShowAreaDetailsPage] = useState(false);
   const [showContourPage, setShowContourPage] = useState(false);
+  const [showFutureVersionPage, setShowFutureVersionPage] = useState(false);
   const [focusAreaIndex, setFocusAreaIndex] = useState(0);
   const [selectedFocusAreas, setSelectedFocusAreas] = useState<FocusAreaKey[]>([]);
   const [selectedPains, setSelectedPains] = useState<string[]>([]);
@@ -847,6 +848,106 @@ export function KodaSpherePreview() {
             text-align: right;
           }
 
+          .koda-future-card {
+            align-items: center;
+            display: grid;
+            gap: 28px;
+            grid-template-columns: 210px minmax(0, 1fr);
+            max-width: 880px;
+            text-align: left;
+          }
+
+          .koda-future-orb-wrap {
+            align-items: center;
+            display: flex;
+            justify-content: center;
+          }
+
+          .koda-future-orb {
+            background:
+              radial-gradient(circle at 38% 32%, #ffffff 0 8%, #fff3bd 14%, #f2c86b 34%, rgba(242, 200, 107, .42) 58%, rgba(242, 200, 107, .08) 74%, transparent 76%),
+              radial-gradient(circle, rgba(255,255,255,.08), transparent 62%);
+            border-radius: 999px;
+            box-shadow:
+              0 0 42px rgba(242, 200, 107, .46),
+              0 0 110px rgba(242, 200, 107, .22),
+              inset 0 0 28px rgba(255,255,255,.18);
+            height: 172px;
+            position: relative;
+            width: 172px;
+          }
+
+          .koda-future-orb::after {
+            border: 1px solid rgba(255,255,255,.18);
+            border-radius: 50%;
+            content: '';
+            inset: -18px -28px;
+            position: absolute;
+            transform: rotate(-24deg);
+          }
+
+          .koda-future-title {
+            color: #fff;
+            font-size: clamp(34px, 4.6vw, 58px);
+            font-weight: 900;
+            letter-spacing: -.06em;
+            line-height: .94;
+            margin: 0 0 16px;
+          }
+
+          .koda-future-text {
+            color: rgba(255,255,255,.66);
+            font-size: 16px;
+            line-height: 1.45;
+            margin: 0 0 20px;
+          }
+
+          .koda-future-list {
+            display: grid;
+            gap: 9px;
+            margin-bottom: 22px;
+          }
+
+          .koda-future-item {
+            align-items: center;
+            background: rgba(255,255,255,.06);
+            border: 1px solid rgba(255,255,255,.1);
+            border-radius: 16px;
+            color: rgba(255,255,255,.86);
+            display: flex;
+            gap: 10px;
+            padding: 11px 13px;
+          }
+
+          .koda-future-dot {
+            background: #f2c86b;
+            border-radius: 999px;
+            box-shadow: 0 0 14px rgba(242, 200, 107, .5);
+            flex: 0 0 auto;
+            height: 8px;
+            width: 8px;
+          }
+
+          .koda-future-quest {
+            background: rgba(242, 200, 107, .12);
+            border: 1px solid rgba(242, 200, 107, .28);
+            border-radius: 22px;
+            color: #fff7d8;
+            font-size: 15px;
+            line-height: 1.4;
+            margin-bottom: 24px;
+            padding: 14px 16px;
+          }
+
+          .koda-future-quest strong {
+            color: #f2c86b;
+            display: block;
+            font-size: 12px;
+            letter-spacing: .12em;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+          }
+
           @keyframes kodaFocusPageIn {
             from {
               opacity: 0;
@@ -1373,6 +1474,32 @@ export function KodaSpherePreview() {
               text-align: center;
             }
 
+            .koda-future-card {
+              display: block;
+              text-align: center;
+            }
+
+            .koda-future-orb-wrap {
+              margin-bottom: 22px;
+            }
+
+            .koda-future-orb {
+              height: 138px;
+              width: 138px;
+            }
+
+            .koda-future-title {
+              font-size: 34px;
+            }
+
+            .koda-future-text {
+              font-size: 14px;
+            }
+
+            .koda-future-item {
+              text-align: left;
+            }
+
             .koda-dialog-progress {
               gap: 9px;
               top: 8px;
@@ -1769,7 +1896,49 @@ export function KodaSpherePreview() {
         `}
       </style>
       <div className="koda-scene-stage">
-      {showContourPage ? (
+      {showFutureVersionPage ? (
+        <div className="koda-focus-page">
+          <div className="koda-focus-progress" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="koda-focus-card koda-future-card">
+            <div className="koda-future-orb-wrap">
+              <div className="koda-future-orb" aria-hidden="true" />
+            </div>
+            <div>
+              <div className="koda-focus-eyebrow">Будущая версия</div>
+              <h1 className="koda-future-title">Ты, но собраннее и спокойнее</h1>
+              <p className="koda-future-text">
+                Первый контур готов: KODA видит, какие сферы забирают энергию, где нужен порядок и с чего начать без перегруза.
+              </p>
+              <div className="koda-future-list">
+                {areaDetails.map((detail) => {
+                  const area = focusAreas.find((item) => item.id === detail.areaId);
+
+                  return (
+                    <div key={detail.areaId} className="koda-future-item">
+                      <span className="koda-future-dot" />
+                      <span>
+                        {area?.label}: {detail.priority.toLowerCase()}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="koda-future-quest">
+                <strong>Первый квест</strong>
+                Выбери самый лёгкий 15-минутный шаг по первой сфере и сделай его сегодня — без героизма, просто чтобы включить движение.
+              </div>
+              <button className="koda-focus-button" type="button">
+                Открыть первый квест
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : showContourPage ? (
         <div className="koda-focus-page">
           <div className="koda-focus-progress" aria-hidden="true">
             <span />
@@ -1795,7 +1964,7 @@ export function KodaSpherePreview() {
                 );
               })}
             </div>
-            <button className="koda-focus-button" type="button">
+            <button className="koda-focus-button" onClick={() => setShowFutureVersionPage(true)} type="button">
               Создать будущую версию
             </button>
           </div>
