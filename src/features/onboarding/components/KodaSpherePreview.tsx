@@ -35,6 +35,13 @@ type DialogueQuestion = {
 
 type FocusAreaKey = 'money' | 'health' | 'discipline' | 'career' | 'relationships' | 'calm';
 
+type AreaDetailDraft = {
+  areaId: FocusAreaKey;
+  meaning: string;
+  pains: string[];
+  priority: string;
+};
+
 const focusAreas: Array<{ id: FocusAreaKey; label: string; hint: string }> = [
   { id: 'money', label: 'Финансы', hint: 'долги, доход, подушка' },
   { id: 'health', label: 'Здоровье', hint: 'сон, вес, энергия' },
@@ -43,6 +50,39 @@ const focusAreas: Array<{ id: FocusAreaKey; label: string; hint: string }> = [
   { id: 'relationships', label: 'Отношения', hint: 'семья, близость, опора' },
   { id: 'calm', label: 'Спокойствие', hint: 'тревога, перегруз, устойчивость' },
 ];
+
+const areaDetailOptions: Record<FocusAreaKey, { pains: string[]; priorities: string[]; placeholder: string }> = {
+  money: {
+    pains: ['Долги / кредиты', 'Нестабильный доход', 'Хаос в расходах', 'Нет подушки', 'Страх будущего'],
+    priorities: ['Увеличить доход', 'Закрыть долги', 'Навести порядок', 'Создать запас'],
+    placeholder: 'Например: хочу перестать жить от платежа до платежа и видеть, куда уходят деньги.',
+  },
+  health: {
+    pains: ['Мало энергии', 'Плохой сон', 'Вес / форма', 'Нет режима', 'Быстро выгораю'],
+    priorities: ['Вернуть сон', 'Поднять энергию', 'Собрать режим', 'Начать движение'],
+    placeholder: 'Например: хочу просыпаться без ощущения, что батарейка уже на нуле.',
+  },
+  discipline: {
+    pains: ['Расфокус', 'Бросаю начатое', 'Хаос в делах', 'Прокрастинация', 'Нет системы'],
+    priorities: ['Собрать ритм', 'Упростить старт', 'Держать фокус', 'Доводить до конца'],
+    placeholder: 'Например: хочу перестать каждый день начинать с нуля и держать понятный ритм.',
+  },
+  career: {
+    pains: ['Не расту', 'Нет понятного трека', 'Мало навыков', 'Страх смены роли', 'Нет портфолио'],
+    priorities: ['Выбрать роль', 'Прокачать навык', 'Собрать портфолио', 'Увеличить доход'],
+    placeholder: 'Например: хочу видеть следующий профессиональный шаг и делать его без хаоса.',
+  },
+  relationships: {
+    pains: ['Мало близости', 'Нет времени', 'Конфликты', 'Тяну всё один', 'Не прошу поддержки'],
+    priorities: ['Больше контакта', 'Говорить честнее', 'Просить поддержку', 'Вернуть тепло'],
+    placeholder: 'Например: хочу быть ближе к важным людям и не тащить всё молча.',
+  },
+  calm: {
+    pains: ['Тревога', 'Перегруз', 'Внутреннее давление', 'Нет отдыха', 'Сложно замедлиться'],
+    priorities: ['Снизить шум', 'Вернуть опору', 'Научиться отдыхать', 'Собрать границы'],
+    placeholder: 'Например: хочу чувствовать внутри больше тишины и меньше постоянной гонки.',
+  },
+};
 
 const dialogueQuestions: DialogueQuestion[] = [
   {
@@ -263,7 +303,14 @@ export function KodaSpherePreview() {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<DialogueOption | null>(null);
   const [showFocusPage, setShowFocusPage] = useState(false);
+  const [showAreaDetailsPage, setShowAreaDetailsPage] = useState(false);
+  const [showContourPage, setShowContourPage] = useState(false);
+  const [focusAreaIndex, setFocusAreaIndex] = useState(0);
   const [selectedFocusAreas, setSelectedFocusAreas] = useState<FocusAreaKey[]>([]);
+  const [selectedPains, setSelectedPains] = useState<string[]>([]);
+  const [selectedPriority, setSelectedPriority] = useState('');
+  const [areaMeaning, setAreaMeaning] = useState('');
+  const [areaDetails, setAreaDetails] = useState<AreaDetailDraft[]>([]);
   const [sphereScores, setSphereScores] = useState<Record<SphereKey, number>>({ ...emptySphereValues });
   const finalCalibrationTimerRef = useRef<number | null>(null);
   const focusPageTimerRef = useRef<number | null>(null);
@@ -410,9 +457,62 @@ export function KodaSpherePreview() {
     });
   }
 
+  function startAreaDetails() {
+    if (selectedFocusAreas.length === 0) {
+      return;
+    }
+
+    setFocusAreaIndex(0);
+    setAreaDetails([]);
+    resetAreaDraft();
+    setShowAreaDetailsPage(true);
+  }
+
+  function togglePain(pain: string) {
+    setSelectedPains((current) => (current.includes(pain) ? current.filter((item) => item !== pain) : [...current, pain]));
+  }
+
+  function resetAreaDraft() {
+    setSelectedPains([]);
+    setSelectedPriority('');
+    setAreaMeaning('');
+  }
+
+  function saveAreaDetails() {
+    const currentAreaId = selectedFocusAreas[focusAreaIndex];
+
+    if (!currentAreaId || selectedPains.length === 0 || !selectedPriority || areaMeaning.trim().length < 4) {
+      return;
+    }
+
+    const nextDetails = [
+      ...areaDetails,
+      {
+        areaId: currentAreaId,
+        meaning: areaMeaning.trim(),
+        pains: selectedPains,
+        priority: selectedPriority,
+      },
+    ];
+
+    setAreaDetails(nextDetails);
+
+    if (focusAreaIndex < selectedFocusAreas.length - 1) {
+      setFocusAreaIndex((current) => current + 1);
+      resetAreaDraft();
+      return;
+    }
+
+    setShowContourPage(true);
+  }
+
   const flightPalette = flight ? getFlightPalette(flight.chargeRatio) : null;
   const currentQuestion = dialogueQuestions[questionIndex];
   const isLastQuestion = questionIndex === dialogueQuestions.length - 1;
+  const currentFocusAreaId = selectedFocusAreas[focusAreaIndex];
+  const currentFocusArea = focusAreas.find((area) => area.id === currentFocusAreaId);
+  const currentAreaOptions = currentFocusAreaId ? areaDetailOptions[currentFocusAreaId] : null;
+  const canSaveAreaDetails = selectedPains.length > 0 && Boolean(selectedPriority) && areaMeaning.trim().length >= 4;
 
   return (
     <div
@@ -590,6 +690,161 @@ export function KodaSpherePreview() {
 
           .koda-focus-button:not(:disabled):hover {
             transform: translateY(-1px);
+          }
+
+          .koda-area-card {
+            max-width: 820px;
+            text-align: left;
+          }
+
+          .koda-area-topline {
+            align-items: center;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 18px;
+          }
+
+          .koda-area-counter {
+            color: rgba(255,255,255,.48);
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+          }
+
+          .koda-area-orb {
+            background: radial-gradient(circle at 38% 34%, #fff8d8, #f2c86b 38%, rgba(242,200,107,.18) 70%, transparent 72%);
+            border-radius: 999px;
+            box-shadow: 0 0 32px rgba(242, 200, 107, .38);
+            height: 42px;
+            width: 42px;
+          }
+
+          .koda-area-title {
+            color: #fff;
+            font-size: clamp(32px, 4.2vw, 52px);
+            font-weight: 850;
+            letter-spacing: -.055em;
+            line-height: .96;
+            margin: 0 0 12px;
+          }
+
+          .koda-area-subtitle {
+            color: rgba(255,255,255,.62);
+            font-size: 16px;
+            line-height: 1.45;
+            margin: 0 0 24px;
+            max-width: 620px;
+          }
+
+          .koda-area-section {
+            margin-top: 22px;
+          }
+
+          .koda-area-section-title {
+            color: rgba(255,255,255,.82);
+            font-size: 14px;
+            font-weight: 850;
+            letter-spacing: -.01em;
+            margin-bottom: 11px;
+          }
+
+          .koda-area-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+          }
+
+          .koda-area-chip {
+            background: rgba(255,255,255,.06);
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 999px;
+            color: rgba(255,255,255,.84);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 760;
+            padding: 11px 14px;
+            transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+          }
+
+          .koda-area-chip:hover {
+            background: rgba(255,255,255,.09);
+            transform: translateY(-1px);
+          }
+
+          .koda-area-chip.is-selected {
+            background: rgba(242, 200, 107, .16);
+            border-color: rgba(242, 200, 107, .7);
+            box-shadow: 0 0 22px rgba(242, 200, 107, .13);
+            color: #fff6d4;
+          }
+
+          .koda-area-input {
+            background: rgba(255,255,255,.065);
+            border: 1px solid rgba(255,255,255,.13);
+            border-radius: 22px;
+            box-sizing: border-box;
+            color: #fff;
+            font: inherit;
+            font-size: 15px;
+            line-height: 1.45;
+            min-height: 112px;
+            outline: none;
+            padding: 15px 16px;
+            resize: none;
+            width: 100%;
+          }
+
+          .koda-area-input::placeholder {
+            color: rgba(255,255,255,.36);
+          }
+
+          .koda-area-input:focus {
+            border-color: rgba(242, 200, 107, .62);
+            box-shadow: 0 0 0 3px rgba(242, 200, 107, .1);
+          }
+
+          .koda-area-footer {
+            align-items: center;
+            display: flex;
+            gap: 14px;
+            justify-content: space-between;
+            margin-top: 24px;
+          }
+
+          .koda-area-note {
+            color: rgba(255,255,255,.42);
+            font-size: 13px;
+            line-height: 1.35;
+          }
+
+          .koda-contour-list {
+            display: grid;
+            gap: 10px;
+            margin: 0 auto 26px;
+            max-width: 560px;
+            text-align: left;
+          }
+
+          .koda-contour-row {
+            align-items: center;
+            background: rgba(255,255,255,.06);
+            border: 1px solid rgba(255,255,255,.1);
+            border-radius: 18px;
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 14px;
+          }
+
+          .koda-contour-row span:first-child {
+            color: #fff;
+            font-weight: 800;
+          }
+
+          .koda-contour-row span:last-child {
+            color: rgba(255,255,255,.56);
+            font-size: 13px;
+            text-align: right;
           }
 
           @keyframes kodaFocusPageIn {
@@ -1081,6 +1336,43 @@ export function KodaSpherePreview() {
               width: 100%;
             }
 
+            .koda-area-card {
+              max-width: none;
+              text-align: left;
+            }
+
+            .koda-area-title {
+              font-size: 33px;
+            }
+
+            .koda-area-subtitle {
+              font-size: 14px;
+              margin-bottom: 18px;
+            }
+
+            .koda-area-section {
+              margin-top: 18px;
+            }
+
+            .koda-area-chip-row {
+              gap: 8px;
+            }
+
+            .koda-area-chip {
+              font-size: 13px;
+              padding: 10px 12px;
+            }
+
+            .koda-area-footer {
+              align-items: stretch;
+              flex-direction: column;
+            }
+
+            .koda-area-note {
+              order: 2;
+              text-align: center;
+            }
+
             .koda-dialog-progress {
               gap: 9px;
               top: 8px;
@@ -1477,7 +1769,111 @@ export function KodaSpherePreview() {
         `}
       </style>
       <div className="koda-scene-stage">
-      {showFocusPage ? (
+      {showContourPage ? (
+        <div className="koda-focus-page">
+          <div className="koda-focus-progress" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="koda-focus-card">
+            <div className="koda-focus-eyebrow">Контур собран</div>
+            <h1 className="koda-focus-title">KODA видит первые точки роста</h1>
+            <p className="koda-focus-subtitle">
+              Сферы, боли и приоритеты уже собраны. Следующим шагом из этого можно собрать будущую версию и первые квесты.
+            </p>
+            <div className="koda-contour-list">
+              {areaDetails.map((detail) => {
+                const area = focusAreas.find((item) => item.id === detail.areaId);
+
+                return (
+                  <div key={detail.areaId} className="koda-contour-row">
+                    <span>{area?.label}</span>
+                    <span>{detail.priority}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <button className="koda-focus-button" type="button">
+              Создать будущую версию
+            </button>
+          </div>
+        </div>
+      ) : showAreaDetailsPage && currentFocusArea && currentAreaOptions ? (
+        <div className="koda-focus-page">
+          <div className="koda-focus-progress" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="koda-focus-card koda-area-card">
+            <div className="koda-area-topline">
+              <div>
+                <div className="koda-focus-eyebrow">Разбор сферы</div>
+                <div className="koda-area-counter">
+                  Сфера {focusAreaIndex + 1} / {selectedFocusAreas.length}
+                </div>
+              </div>
+              <div className="koda-area-orb" aria-hidden="true" />
+            </div>
+            <h1 className="koda-area-title">{currentFocusArea.label}</h1>
+            <p className="koda-area-subtitle">
+              Что здесь сильнее всего тянет энергию? Выбери несколько болей, потом один главный приоритет.
+            </p>
+
+            <div className="koda-area-section">
+              <div className="koda-area-section-title">Что сейчас болит?</div>
+              <div className="koda-area-chip-row">
+                {currentAreaOptions.pains.map((pain) => (
+                  <button
+                    key={pain}
+                    className={`koda-area-chip${selectedPains.includes(pain) ? ' is-selected' : ''}`}
+                    onClick={() => togglePain(pain)}
+                    type="button"
+                  >
+                    {pain}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="koda-area-section">
+              <div className="koda-area-section-title">Если решить только одно — что даст больше всего свободы?</div>
+              <div className="koda-area-chip-row">
+                {currentAreaOptions.priorities.map((priority) => (
+                  <button
+                    key={priority}
+                    className={`koda-area-chip${selectedPriority === priority ? ' is-selected' : ''}`}
+                    onClick={() => setSelectedPriority(priority)}
+                    type="button"
+                  >
+                    {priority}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="koda-area-section">
+              <div className="koda-area-section-title">Коротко своими словами</div>
+              <textarea
+                className="koda-area-input"
+                onChange={(event) => setAreaMeaning(event.currentTarget.value)}
+                placeholder={currentAreaOptions.placeholder}
+                value={areaMeaning}
+              />
+            </div>
+
+            <div className="koda-area-footer">
+              <div className="koda-area-note">Это не анкета ради анкеты. Эти данные нужны, чтобы KODA не придумывал квесты в пустоту.</div>
+              <button className="koda-focus-button" disabled={!canSaveAreaDetails} onClick={saveAreaDetails} type="button">
+                {focusAreaIndex < selectedFocusAreas.length - 1 ? 'Следующая сфера' : 'Собрать контур'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : showFocusPage ? (
         <div className="koda-focus-page">
           <div className="koda-focus-progress" aria-hidden="true">
             <span />
@@ -1508,7 +1904,7 @@ export function KodaSpherePreview() {
                 );
               })}
             </div>
-            <button className="koda-focus-button" disabled={selectedFocusAreas.length === 0} type="button">
+            <button className="koda-focus-button" disabled={selectedFocusAreas.length === 0} onClick={startAreaDetails} type="button">
               Создать будущую версию
             </button>
           </div>
