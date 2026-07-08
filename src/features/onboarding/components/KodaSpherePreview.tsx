@@ -33,6 +33,17 @@ type DialogueQuestion = {
   title: string;
 };
 
+type FocusAreaKey = 'money' | 'health' | 'discipline' | 'career' | 'relationships' | 'calm';
+
+const focusAreas: Array<{ id: FocusAreaKey; label: string; hint: string }> = [
+  { id: 'money', label: 'Финансы', hint: 'долги, доход, подушка' },
+  { id: 'health', label: 'Здоровье', hint: 'сон, вес, энергия' },
+  { id: 'discipline', label: 'Дисциплина', hint: 'фокус, порядок, ритм' },
+  { id: 'career', label: 'Карьера', hint: 'роль, навыки, рост' },
+  { id: 'relationships', label: 'Отношения', hint: 'семья, близость, опора' },
+  { id: 'calm', label: 'Спокойствие', hint: 'тревога, перегруз, устойчивость' },
+];
+
 const dialogueQuestions: DialogueQuestion[] = [
   {
     eyebrow: 'ЗНАКОМСТВО',
@@ -251,8 +262,11 @@ export function KodaSpherePreview() {
   const [flight, setFlight] = useState<DotFlight | null>(null);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<DialogueOption | null>(null);
+  const [showFocusPage, setShowFocusPage] = useState(false);
+  const [selectedFocusAreas, setSelectedFocusAreas] = useState<FocusAreaKey[]>([]);
   const [sphereScores, setSphereScores] = useState<Record<SphereKey, number>>({ ...emptySphereValues });
   const finalCalibrationTimerRef = useRef<number | null>(null);
+  const focusPageTimerRef = useRef<number | null>(null);
   const pendingChargeLevelRef = useRef<number | null>(null);
   const pendingChargeTimerRef = useRef<number | null>(null);
   const flightCleanupTimerRef = useRef<number | null>(null);
@@ -274,6 +288,9 @@ export function KodaSpherePreview() {
       }
       if (finalCalibrationTimerRef.current !== null) {
         window.clearTimeout(finalCalibrationTimerRef.current);
+      }
+      if (focusPageTimerRef.current !== null) {
+        window.clearTimeout(focusPageTimerRef.current);
       }
     };
   }, []);
@@ -368,7 +385,29 @@ export function KodaSpherePreview() {
         setQuestionIndex((current) => Math.min(dialogueQuestions.length - 1, current + 1));
         nextQuestionTimerRef.current = null;
       }, 1450);
+    } else {
+      if (focusPageTimerRef.current !== null) {
+        window.clearTimeout(focusPageTimerRef.current);
+      }
+      focusPageTimerRef.current = window.setTimeout(() => {
+        setShowFocusPage(true);
+        focusPageTimerRef.current = null;
+      }, 2200);
     }
+  }
+
+  function toggleFocusArea(areaId: FocusAreaKey) {
+    setSelectedFocusAreas((current) => {
+      if (current.includes(areaId)) {
+        return current.filter((id) => id !== areaId);
+      }
+
+      if (current.length >= 3) {
+        return current;
+      }
+
+      return [...current, areaId];
+    });
   }
 
   const flightPalette = flight ? getFlightPalette(flight.chargeRatio) : null;
@@ -410,6 +449,158 @@ export function KodaSpherePreview() {
             overflow: hidden;
             position: relative;
             width: min(1120px, calc(100vw - 40px));
+          }
+
+          .koda-focus-page {
+            align-items: center;
+            animation: kodaFocusPageIn .42s ease both;
+            box-sizing: border-box;
+            color: #f8f8f8;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            justify-content: center;
+            padding: 34px 22px;
+            position: relative;
+            text-align: center;
+            z-index: 7;
+          }
+
+          .koda-focus-progress {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 42px;
+          }
+
+          .koda-focus-progress span {
+            background: rgba(255, 255, 255, .16);
+            border-radius: 999px;
+            height: 7px;
+            width: 38px;
+          }
+
+          .koda-focus-progress span:last-child {
+            background: #f2c86b;
+            box-shadow: 0 0 18px rgba(242, 200, 107, .42);
+          }
+
+          .koda-focus-card {
+            background:
+              radial-gradient(circle at 50% 0%, rgba(242, 200, 107, .18), transparent 42%),
+              linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.035));
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 34px;
+            box-shadow: 0 28px 90px rgba(0,0,0,.52), inset 0 1px 0 rgba(255,255,255,.08);
+            box-sizing: border-box;
+            max-width: 720px;
+            padding: 34px;
+            width: min(720px, 100%);
+          }
+
+          .koda-focus-eyebrow {
+            color: #f2c86b;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: .18em;
+            margin-bottom: 14px;
+            text-transform: uppercase;
+          }
+
+          .koda-focus-title {
+            color: #ffffff;
+            font-size: clamp(32px, 4.4vw, 54px);
+            font-weight: 850;
+            letter-spacing: -.055em;
+            line-height: .96;
+            margin: 0 auto 16px;
+            max-width: 640px;
+          }
+
+          .koda-focus-subtitle {
+            color: rgba(255,255,255,.66);
+            font-size: 16px;
+            line-height: 1.45;
+            margin: 0 auto 28px;
+            max-width: 560px;
+          }
+
+          .koda-focus-grid {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            margin: 0 auto 26px;
+            max-width: 610px;
+          }
+
+          .koda-focus-chip {
+            background: rgba(255,255,255,.06);
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 22px;
+            color: #fff;
+            cursor: pointer;
+            min-height: 74px;
+            padding: 14px 16px;
+            text-align: left;
+            transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
+          }
+
+          .koda-focus-chip:hover {
+            background: rgba(255,255,255,.09);
+            transform: translateY(-1px);
+          }
+
+          .koda-focus-chip.is-selected {
+            background: rgba(242, 200, 107, .16);
+            border-color: rgba(242, 200, 107, .72);
+            box-shadow: 0 0 28px rgba(242, 200, 107, .16);
+          }
+
+          .koda-focus-chip-title {
+            display: block;
+            font-size: 17px;
+            font-weight: 800;
+            letter-spacing: -.02em;
+            margin-bottom: 5px;
+          }
+
+          .koda-focus-chip-hint {
+            color: rgba(255,255,255,.55);
+            display: block;
+            font-size: 13px;
+            line-height: 1.25;
+          }
+
+          .koda-focus-button {
+            background: #f2c86b;
+            border: 0;
+            border-radius: 999px;
+            color: #111;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 850;
+            min-width: 250px;
+            padding: 16px 22px;
+            transition: opacity .18s ease, transform .18s ease;
+          }
+
+          .koda-focus-button:disabled {
+            cursor: default;
+            opacity: .38;
+          }
+
+          .koda-focus-button:not(:disabled):hover {
+            transform: translateY(-1px);
+          }
+
+          @keyframes kodaFocusPageIn {
+            from {
+              opacity: 0;
+              transform: translateY(18px) scale(.985);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0) scale(1);
+            }
           }
 
           .koda-dialog-progress {
@@ -844,6 +1035,52 @@ export function KodaSpherePreview() {
               width: 100vw;
             }
 
+            .koda-focus-page {
+              justify-content: flex-start;
+              overflow-y: auto;
+              padding: 38px 16px 22px;
+            }
+
+            .koda-focus-progress {
+              gap: 9px;
+              margin-bottom: 28px;
+            }
+
+            .koda-focus-progress span {
+              height: 5px;
+              width: 31px;
+            }
+
+            .koda-focus-card {
+              border-radius: 28px;
+              padding: 24px 18px;
+            }
+
+            .koda-focus-title {
+              font-size: 34px;
+            }
+
+            .koda-focus-subtitle {
+              font-size: 14px;
+              margin-bottom: 20px;
+            }
+
+            .koda-focus-grid {
+              grid-template-columns: 1fr;
+              gap: 9px;
+              margin-bottom: 20px;
+            }
+
+            .koda-focus-chip {
+              min-height: 64px;
+              padding: 12px 14px;
+            }
+
+            .koda-focus-button {
+              min-width: 0;
+              width: 100%;
+            }
+
             .koda-dialog-progress {
               gap: 9px;
               top: 8px;
@@ -1240,6 +1477,44 @@ export function KodaSpherePreview() {
         `}
       </style>
       <div className="koda-scene-stage">
+      {showFocusPage ? (
+        <div className="koda-focus-page">
+          <div className="koda-focus-progress" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="koda-focus-card">
+            <div className="koda-focus-eyebrow">Фокус</div>
+            <h1 className="koda-focus-title">Какие сферы жизни сейчас важнее всего?</h1>
+            <p className="koda-focus-subtitle">
+              Выбери от одной до трёх. Они станут атрибутами, которые KODA будет прокачивать через маленькие квесты.
+            </p>
+            <div className="koda-focus-grid">
+              {focusAreas.map((area) => {
+                const isSelected = selectedFocusAreas.includes(area.id);
+
+                return (
+                  <button
+                    key={area.id}
+                    className={`koda-focus-chip${isSelected ? ' is-selected' : ''}`}
+                    onClick={() => toggleFocusArea(area.id)}
+                    type="button"
+                  >
+                    <span className="koda-focus-chip-title">{area.label}</span>
+                    <span className="koda-focus-chip-hint">{area.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button className="koda-focus-button" disabled={selectedFocusAreas.length === 0} type="button">
+              Создать будущую версию
+            </button>
+          </div>
+        </div>
+      ) : (
+      <>
       <div className="koda-dialog-shell">
         <div className="koda-dialog-progress" aria-hidden="true">
           {dialogueQuestions.map((_, index) => (
@@ -1407,6 +1682,8 @@ export function KodaSpherePreview() {
           style={{ height: '100%', width: '100%' }}
         />
       </div>
+      </>
+      )}
       </div>
     </div>
   );
