@@ -8,6 +8,7 @@ export type Database = {
           id: string;
           email: string | null;
           name: string;
+          username: string | null;
           avatar_url: string | null;
           timezone: string;
           onboarding_status: Database['public']['Enums']['onboarding_status'];
@@ -21,6 +22,7 @@ export type Database = {
           id: string;
           email?: string | null;
           name?: string;
+          username?: string | null;
           avatar_url?: string | null;
           timezone?: string;
           onboarding_status?: Database['public']['Enums']['onboarding_status'];
@@ -129,6 +131,11 @@ export type Database = {
           status: Database['public']['Enums']['goal_status'];
           progress: number;
           target_date: string | null;
+          desired_result: string | null;
+          deadline: string | null;
+          priority: Database['public']['Enums']['goal_priority'];
+          completed_at: string | null;
+          archived_at: string | null;
           sort_order: number;
           created_at: string;
           updated_at: string;
@@ -142,6 +149,11 @@ export type Database = {
           status?: Database['public']['Enums']['goal_status'];
           progress?: number;
           target_date?: string | null;
+          desired_result?: string | null;
+          deadline?: string | null;
+          priority?: Database['public']['Enums']['goal_priority'];
+          completed_at?: string | null;
+          archived_at?: string | null;
           sort_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -170,6 +182,126 @@ export type Database = {
           completed_at?: string | null;
         };
         Update: Partial<Database['public']['Tables']['goal_steps']['Insert']>;
+      };
+      goal_milestones: {
+        Row: {
+          id: string;
+          goal_id: string;
+          user_id: string;
+          title: string;
+          description: string | null;
+          deadline: string | null;
+          status: Database['public']['Enums']['goal_milestone_status'];
+          position: number;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          goal_id: string;
+          user_id: string;
+          title: string;
+          description?: string | null;
+          deadline?: string | null;
+          status?: Database['public']['Enums']['goal_milestone_status'];
+          position?: number;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['goal_milestones']['Insert']>;
+      };
+      goal_actions: {
+        Row: {
+          id: string;
+          goal_id: string;
+          milestone_id: string | null;
+          user_id: string;
+          title: string;
+          description: string | null;
+          due_date: string | null;
+          estimated_minutes: number | null;
+          importance: Database['public']['Enums']['goal_action_importance'];
+          status: Database['public']['Enums']['goal_action_status'];
+          position: number;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          goal_id: string;
+          milestone_id?: string | null;
+          user_id: string;
+          title: string;
+          description?: string | null;
+          due_date?: string | null;
+          estimated_minutes?: number | null;
+          importance?: Database['public']['Enums']['goal_action_importance'];
+          status?: Database['public']['Enums']['goal_action_status'];
+          position?: number;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['goal_actions']['Insert']>;
+      };
+      goal_routines: {
+        Row: {
+          id: string;
+          goal_id: string;
+          user_id: string;
+          title: string;
+          metric_type: Database['public']['Enums']['goal_routine_metric_type'];
+          target_value: number;
+          frequency_type: Database['public']['Enums']['goal_routine_frequency_type'];
+          weekdays: number[];
+          start_date: string;
+          end_date: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          goal_id: string;
+          user_id: string;
+          title: string;
+          metric_type?: Database['public']['Enums']['goal_routine_metric_type'];
+          target_value?: number;
+          frequency_type?: Database['public']['Enums']['goal_routine_frequency_type'];
+          weekdays?: number[];
+          start_date?: string;
+          end_date?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['goal_routines']['Insert']>;
+      };
+      goal_routine_logs: {
+        Row: {
+          id: string;
+          routine_id: string;
+          goal_id: string;
+          user_id: string;
+          log_date: string;
+          value: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          routine_id: string;
+          goal_id: string;
+          user_id: string;
+          log_date: string;
+          value?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['goal_routine_logs']['Insert']>;
       };
       quests: {
         Row: {
@@ -232,19 +364,33 @@ export type Database = {
       journal_entries: {
         Row: {
           id: string;
-          user_id: string;
+          user_id: string | null;
+          owner_key: string;
           content: string;
           mood: Database['public']['Enums']['journal_mood'] | null;
+          entry_date: string;
+          sleep_start_time: string | null;
+          wake_time: string | null;
+          sleep_duration_minutes: number | null;
+          day_tags: string[];
           ai_insight: string | null;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
-          user_id: string;
+          user_id?: string | null;
+          owner_key?: string;
           content: string;
           mood?: Database['public']['Enums']['journal_mood'] | null;
+          entry_date?: string;
+          sleep_start_time?: string | null;
+          wake_time?: string | null;
+          sleep_duration_minutes?: number | null;
+          day_tags?: string[];
           ai_insight?: string | null;
           created_at?: string;
+          updated_at?: string;
         };
         Update: Partial<Database['public']['Tables']['journal_entries']['Insert']>;
       };
@@ -252,6 +398,12 @@ export type Database = {
     Enums: {
       onboarding_status: 'not_started' | 'in_progress' | 'completed' | 'skipped';
       goal_status: 'active' | 'completed' | 'paused' | 'archived';
+      goal_priority: 'main' | 'important' | 'supporting';
+      goal_milestone_status: 'not_started' | 'in_progress' | 'completed';
+      goal_action_status: 'pending' | 'completed';
+      goal_action_importance: 'normal' | 'key';
+      goal_routine_metric_type: 'boolean' | 'minutes' | 'count';
+      goal_routine_frequency_type: 'daily' | 'weekly' | 'monthly' | 'selected_weekdays';
       goal_step_status: 'pending' | 'completed' | 'skipped';
       quest_status: 'pending' | 'completed' | 'skipped' | 'expired';
       quest_difficulty: 'micro' | 'easy' | 'medium' | 'hard' | 'keystone';
@@ -259,6 +411,12 @@ export type Database = {
       xp_source_type: 'quest' | 'goal' | 'attribute' | 'system';
       journal_mood: 'bad' | 'low' | 'neutral' | 'good' | 'great';
       ai_provider: 'gemini' | 'openrouter' | 'rules';
+    };
+    Functions: {
+      get_email_by_username: {
+        Args: { login_value: string };
+        Returns: string | null;
+      };
     };
   };
 };

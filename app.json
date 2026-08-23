@@ -1,17 +1,17 @@
 {
   "expo": {
-    "name": "koda-mvp",
-    "slug": "koda-mvp",
+    "name": "KODA",
+    "slug": "koda",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/koda-pwa-icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#050605",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -19,7 +19,18 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "name": "KODA",
+      "shortName": "KODA",
+      "lang": "ru",
+      "description": "Личный дневник, привычки и цели",
+      "display": "standalone",
+      "startUrl": ".",
+      "scope": "/",
+      "orientation": "portrait",
+      "themeColor": "#050605",
+      "backgroundColor": "#050605",
+      "barStyle": "black-translucent",
+      "favicon": "./assets/koda-pwa-icon.png"
     }
   }
 }
