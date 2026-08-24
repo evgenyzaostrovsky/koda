@@ -389,7 +389,7 @@ function NoteBlockEditor({
   const prefix = blockPrefix(block, index);
 
   return (
-    <View style={[local.blockEditor, block.type === 'quote' && local.quoteBlock, block.type === 'code' && local.codeBlock]}>
+    <View style={[local.blockEditor, index === 0 && block.type === 'paragraph' && local.primaryBlockEditor, block.type === 'quote' && local.quoteBlock, block.type === 'code' && local.codeBlock]}>
       <View style={local.blockRow}>
         <Pressable onPress={() => onOpenBlockMenu(null)} style={local.blockHandle}>
           {block.type === 'checklist' ? (
@@ -642,6 +642,13 @@ const local: Record<string, any> = {
     textAlignVertical: 'top' as const,
   },
   primaryBlockInput: { minHeight: 240 },
+  primaryBlockEditor: {
+    backgroundColor: panelSoft,
+    borderColor: line,
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 10,
+  },
   blockList: { gap: 9 },
   blockMenuCard: {
     backgroundColor: panelSoft,
