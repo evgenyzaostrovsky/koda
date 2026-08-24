@@ -195,13 +195,13 @@ export function ProfileScreen({
           <Text style={styles.subtitle}>Твоя будущая версия</Text>
         </View>
       ) : null}
-      <View style={styles.profileAccountBox}>
+      <View style={[styles.profileAccountBox, !isDesktop && styles.profileAccountBoxMobile]}>
         <View style={styles.profileAccountMain}>
           <Text style={styles.cardLabel}>АККАУНТ</Text>
           <Text numberOfLines={1} style={styles.profileAccountName}>{accountInfo?.name || 'Пользователь KODA'}</Text>
           <Text numberOfLines={1} style={styles.rowMeta}>{accountInfo?.username ? `@${accountInfo.username}` : 'логин загружается'}</Text>
         </View>
-        <View style={styles.profileAccountSide}>
+        <View style={[styles.profileAccountSide, !isDesktop && styles.profileAccountSideMobile]}>
           <Text style={styles.rowMeta}>{accountInfo?.createdAt ? `в KODA с ${formatAccountDate(accountInfo.createdAt)}` : 'дата входа...'}</Text>
           <Pressable onPress={() => setPasswordSheetOpen(true)} style={styles.profilePasswordButton}>
             <Text style={styles.profilePasswordButtonText}>Сменить пароль</Text>

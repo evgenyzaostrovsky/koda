@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { BarChart3, Bot, CalendarDays, CircleCheck, FileText, FolderKanban, ListChecks, NotebookText, PanelLeftClose, PanelLeftOpen, Plus, User, X } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, SafeAreaView, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Modal, Pressable, SafeAreaView, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { isSupabaseConfigured } from '../../config/env';
 import { supabase } from '../../lib/supabase';
 import { Header } from './components';
@@ -1477,9 +1477,8 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         </View>
       </View>
       <Modal animationType="fade" transparent visible={!isDesktopLayout && mobileMenuOpen} onRequestClose={() => setMobileMenuOpen(false)}>
-        <View style={styles.mobileDrawerOverlay}>
-          <Pressable accessibilityLabel="Закрыть меню" onPress={() => setMobileMenuOpen(false)} style={styles.mobileDrawerScrim} />
-          <View style={styles.mobileDrawer}>
+        <Pressable accessibilityLabel="Закрыть меню" onPress={() => setMobileMenuOpen(false)} style={styles.mobileDrawerOverlay}>
+          <Pressable onPress={(event) => event.stopPropagation()} style={styles.mobileDrawer}>
             <View style={styles.mobileDrawerHeader}>
               <View style={styles.desktopLogoGroup}>
                 <KodaMarkIcon active size={18} />
@@ -1489,7 +1488,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
                 <X color={muted} size={20} />
               </Pressable>
             </View>
-            <View style={styles.mobileDrawerNavigation}>
+            <ScrollView contentContainerStyle={styles.mobileDrawerNavigation} showsVerticalScrollIndicator={false}>
               {tabs.map((tab) => {
                 const active = activeTab === tab.key;
                 return (
@@ -1507,13 +1506,13 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
                   </Pressable>
                 );
               })}
-            </View>
+            </ScrollView>
             <View style={styles.mobileDrawerFooter}>
               <View style={[styles.syncStripDot, isOnline && !visibleSyncQueue.length && styles.syncStripDotOk, !isOnline && styles.syncStripDotOffline]} />
               <Text style={styles.desktopSyncText}>{syncText}</Text>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
       <Modal animationType="fade" transparent visible={quickAddOpen} onRequestClose={() => setQuickAddOpen(false)}>
         <View style={styles.modalOverlay}>
