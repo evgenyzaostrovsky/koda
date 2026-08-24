@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { kodaDayId, mergeKodaDaySources, toKodaDayRow } from '../src/features/koda/kodaDaySync';
+import { autoFinalizeExpiredKodaDays, getKodaDayAutoCloseAt, kodaDayId, mergeKodaDaySources, toKodaDayRow } from '../src/features/koda/kodaDaySync';
 import type { KodaDay, KodaDayStatus } from '../src/features/koda/types';
 
 function day(status: KodaDayStatus, updatedAt: string, id = 'legacy-device-id'): KodaDay {
@@ -45,5 +45,14 @@ const offlineLocal = day('active', fresh);
 const afterReconnect = mergeKodaDaySources([], [offlineLocal]);
 assert.equal(afterReconnect[0].status, 'active');
 assert.equal(toKodaDayRow(afterReconnect[0], userId).status, 'active');
+
+const cutoff = getKodaDayAutoCloseAt(offlineLocal.localDate);
+const justBeforeCutoff = new Date(cutoff.getTime() - 1);
+const justAfterCutoff = new Date(cutoff.getTime() + 1);
+assert.equal(autoFinalizeExpiredKodaDays([offlineLocal], [], [], justBeforeCutoff)[0].status, 'active');
+const autoFinished = autoFinalizeExpiredKodaDays([offlineLocal], [], [], justAfterCutoff)[0];
+assert.equal(autoFinished.status, 'completed');
+assert.equal(autoFinished.finishedAt, cutoff.toISOString());
+assert.equal(autoFinished.localDate, offlineLocal.localDate);
 
 console.log('koda day sync tests passed');

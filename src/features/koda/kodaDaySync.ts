@@ -1,10 +1,65 @@
 import type { KodaDay } from './types';
+import type { Goal, PlannerItem } from './types';
 import { mergeKodaDays } from './persistence';
+import { calculateKodaScore, KODA_SCORE_WEIGHTS } from './kodaScore';
 
 type KodaDayRow = Record<string, unknown>;
 
 export function mergeKodaDaySources(remoteDays: KodaDay[], localDays: KodaDay[]) {
   return mergeKodaDays(remoteDays, localDays);
+}
+
+export function autoFinalizeExpiredKodaDays(days: KodaDay[], goals: Goal[], plannerItems: PlannerItem[], now = new Date()) {
+  let changed = false;
+  const nextDays = days.map((day) => {
+    if (day.status !== 'active' || now.getTime() < getKodaDayAutoCloseAt(day.localDate).getTime()) return day;
+    changed = true;
+    return finalizeKodaDay(day, goals, plannerItems, getKodaDayAutoCloseAt(day.localDate).toISOString());
+  });
+  return changed ? nextDays : days;
+}
+
+export function finalizeKodaDay(day: KodaDay, goals: Goal[], plannerItems: PlannerItem[], finishedAt = new Date().toISOString()) {
+  const result = calculateKodaScore(goals, plannerItems, day.localDate);
+  const weakest = [...result.goals].sort((a, b) => a.completionRatio - b.completionRatio)[0];
+  const summary = result.totalScore === null
+    ? 'Недостаточно данных для KODA Score, но день сохранён.'
+    : result.totalScore >= 75
+      ? 'День заметно приблизил тебя к выбранной версии себя.'
+      : result.totalScore >= 50
+        ? 'Движение было, но главный фокус можно усилить.'
+        : 'День был загруженным, но движение по целям оказалось слабым.';
+  const focusLoss = !weakest
+    ? 'Действий целей на день не было.'
+    : weakest.completionRatio >= 1
+      ? 'Потерь фокуса по целям не видно.'
+      : `Меньше всего закрыта цель: ${weakest.title}.`;
+  const nextRecommendation = result.suggestions[0]?.label
+    ? `Завтра начни с: ${result.suggestions[0].label}.`
+    : 'Завтра начни с главной цели.';
+
+  return {
+    ...day,
+    status: 'completed',
+    finishedAt,
+    goalScore: result.goalScore,
+    plannerScore: result.plannerScore,
+    totalScore: result.totalScore,
+    classification: result.classification,
+    scoreVersion: result.scoreVersion,
+    summary,
+    focusLoss,
+    nextRecommendation,
+    goalsSnapshot: result.goals,
+    plannerSnapshot: plannerItems.filter((item) => item.date === day.localDate),
+    calculationSnapshot: { ...result, weights: KODA_SCORE_WEIGHTS },
+    updatedAt: finishedAt,
+  } satisfies KodaDay;
+}
+
+export function getKodaDayAutoCloseAt(localDate: string) {
+  const [year, month, day] = localDate.split('-').map(Number);
+  return new Date(year, month - 1, day + 1, 3, 0, 0, 0);
 }
 
 export function kodaDayId(userId: string, localDate: string) {

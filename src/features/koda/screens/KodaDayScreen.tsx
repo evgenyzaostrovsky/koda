@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Check, Plus, Trash2, X } from 'lucide-react-native';
 import { upsertRoutineLog } from '../goalLogic';
-import { calculateKodaScore, classificationLabel, getGoalDayEntries, KODA_SCORE_VERSION, KODA_SCORE_WEIGHTS } from '../kodaScore';
+import { calculateKodaScore, classificationLabel, getGoalDayEntries, KODA_SCORE_VERSION } from '../kodaScore';
+import { finalizeKodaDay } from '../kodaDaySync';
 import type { Goal, KodaDay, PlannerItem } from '../types';
 import { todayDateKey, uid } from '../utils';
 import { ProgressLine, RoutineValueSheet, SectionTitle, type RoutineValueEditor } from '../components';
@@ -106,35 +107,32 @@ export function KodaDayScreen({
 
   function finishDay() {
     const now = new Date().toISOString();
-    const result = calculateKodaScore(goals, plannerItems, date);
-    const summary = buildSummary(result.totalScore);
-    const focusLoss = buildFocusLoss(result);
-    const nextRecommendation = result.suggestions[0]?.label ? `Завтра начни с: ${result.suggestions[0].label}.` : 'Завтра начни с главной цели.';
 
     onKodaDaysChange((days) => {
       const existing = days.find((day) => day.localDate === date);
       if (existing?.status === 'completed') return days;
-      const nextDay: KodaDay = {
+      const baseDay: KodaDay = {
         id: existing?.id ?? uid('koda-day'),
         localDate: date,
         timezone: existing?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'local',
-        status: 'completed',
+        status: 'active',
         startedAt: existing?.startedAt ?? now,
-        finishedAt: now,
-        goalScore: result.goalScore,
-        plannerScore: result.plannerScore,
-        totalScore: result.totalScore,
-        classification: result.classification,
-        scoreVersion: result.scoreVersion,
-        summary,
-        focusLoss,
-        nextRecommendation,
-        goalsSnapshot: result.goals,
-        plannerSnapshot: plannerItems.filter((item) => item.date === date),
-        calculationSnapshot: { ...result, weights: KODA_SCORE_WEIGHTS },
+        finishedAt: null,
+        goalScore: null,
+        plannerScore: 0,
+        totalScore: null,
+        classification: 'unclassified',
+        scoreVersion: KODA_SCORE_VERSION,
+        summary: '',
+        focusLoss: '',
+        nextRecommendation: '',
+        goalsSnapshot: [],
+        plannerSnapshot: [],
+        calculationSnapshot: null,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };
+      const nextDay = finalizeKodaDay(baseDay, goals, plannerItems, now);
 
       return existing ? days.map((day) => (day.id === existing.id ? nextDay : day)) : [nextDay, ...days];
     });
@@ -442,20 +440,6 @@ function MetricLine({ label, value }: { label: string; value: string }) {
 
 function ConsoleCell({ detail, label, value }: { detail: string; label: string; value: string }) {
   return <View style={local.consoleCell}><Text style={local.label}>{label}</Text><Text numberOfLines={2} style={local.consoleValue}>{value}</Text><Text numberOfLines={2} style={local.meta}>{detail}</Text></View>;
-}
-
-function buildSummary(totalScore: number | null) {
-  if (totalScore === null) return 'Недостаточно данных для KODA Score, но день сохранён.';
-  if (totalScore >= 75) return 'День заметно приблизил тебя к выбранной версии себя.';
-  if (totalScore >= 50) return 'Движение было, но главный фокус можно усилить.';
-  return 'День был загруженным, но движение по целям оказалось слабым.';
-}
-
-function buildFocusLoss(result: ReturnType<typeof calculateKodaScore>) {
-  const weakest = result.goals.sort((a, b) => a.completionRatio - b.completionRatio)[0];
-  if (!weakest) return 'Действий целей на день не было.';
-  if (weakest.completionRatio >= 1) return 'Потерь фокуса по целям не видно.';
-  return `Меньше всего закрыта цель: ${weakest.title}.`;
 }
 
 function formatTodayTitle(date: string) {

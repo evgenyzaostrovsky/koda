@@ -10,7 +10,7 @@ import { Header } from './components';
 import { DesktopShell } from './components/DesktopShell';
 import { defaultHabitMonth, defaultHabitYear, defaultJournalEntry, initialGoals, initialHabits, journalMoodByName, journalMoodByValue, journalOwnerKey } from './constants';
 import { calculateGoalProgress } from './goalLogic';
-import { fromKodaDayRow, mergeKodaDaySources, toKodaDayRow } from './kodaDaySync';
+import { autoFinalizeExpiredKodaDays, fromKodaDayRow, mergeKodaDaySources, toKodaDayRow } from './kodaDaySync';
 import { defaultProfile, isJournalEntryWorthSyncing, journalDateKey, mergeJournalEntries, mergePlannerItems, mergeStoredKodaState, normalizeStoredKodaState, parseJournalEntries, parseNotes, parsePlannerItems, parseStoredKodaState, type StoredKodaState } from './persistence';
 import { buildProjectPlannerItems } from './plannerProjections';
 import { GoalsScreen } from './screens/GoalsScreen';
@@ -370,6 +370,37 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     setKodaDays(state.kodaDays);
     setProfile(state.profile);
   }
+
+  useEffect(() => {
+    if (!appStateLoaded || !plannerLoaded) return undefined;
+
+    function closeExpiredDays() {
+      setKodaDays((days) => {
+        const nextDays = autoFinalizeExpiredKodaDays(days, goals, plannerItems);
+        if (nextDays === days) return days;
+
+        markSyncQueued('kodaDays');
+        const storageKey = scopedStorageKey(kodaStateStorageKey, userId);
+        if (appStateLoadedStorageKey === storageKey) {
+          const state: StoredKodaState = { goals, habits, kodaDays: nextDays, profile, projects };
+          void AsyncStorage.setItem(storageKey, JSON.stringify(state));
+        }
+        return nextDays;
+      });
+    }
+
+    closeExpiredDays();
+    const interval = setInterval(closeExpiredDays, 60_000);
+    const handleVisibility = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') closeExpiredDays();
+    };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [appStateLoaded, appStateLoadedStorageKey, goals, habits, plannerItems, plannerLoaded, profile, projects, userId]);
 
   useEffect(() => {
     if (!appStateLoaded) return;

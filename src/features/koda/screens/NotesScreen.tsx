@@ -379,6 +379,7 @@ function NoteBlockEditor({
 
   const inputStyle = [
     local.blockInput,
+    index === 0 && block.type === 'paragraph' && local.primaryBlockInput,
     block.type === 'heading1' && local.heading1,
     block.type === 'heading2' && local.heading2,
     block.type === 'heading3' && local.heading3,
@@ -638,7 +639,9 @@ const local: Record<string, any> = {
     minHeight: 36,
     outlineStyle: 'none' as const,
     paddingVertical: 5,
+    textAlignVertical: 'top' as const,
   },
+  primaryBlockInput: { minHeight: 240 },
   blockList: { gap: 9 },
   blockMenuCard: {
     backgroundColor: panelSoft,
@@ -722,7 +725,7 @@ const local: Record<string, any> = {
   desktopNotesListPanel: { backgroundColor: panel, borderRadius: 0, borderWidth: 0, padding: 0, width: '100%' as const },
   dividerBlock: { alignItems: 'center', flexDirection: 'row' as const, gap: 10, minHeight: 34 },
   dividerLine: { backgroundColor: line, flex: 1, height: 1 },
-  document: { gap: 16, maxWidth: 860, width: '100%' as const },
+  document: { flexGrow: 1, gap: 16, maxWidth: 860, width: '100%' as const },
   editorEmpty: { alignItems: 'flex-start', gap: 10, justifyContent: 'center' },
   editorPanel: {
     backgroundColor: panel,
@@ -733,7 +736,7 @@ const local: Record<string, any> = {
     minHeight: 0,
     overflow: 'hidden' as const,
   },
-  editorScroll: { alignItems: 'center', padding: 22, paddingBottom: 96 },
+  editorScroll: { alignItems: 'center', flexGrow: 1, padding: 22, paddingBottom: 96 },
   editorToolbar: {
     alignItems: 'center',
     borderBottomColor: line,
