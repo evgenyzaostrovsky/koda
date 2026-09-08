@@ -176,7 +176,22 @@ export type JournalEntry = {
   createdAt: string;
 };
 export type ChatMessage = { id: string; role: 'user' | 'koda'; text: string };
-export type PomodoroSoundId = 'pulse' | 'bell' | 'signal';
+export type PomodoroSoundId =
+  | 'aurora'
+  | 'bell'
+  | 'bloom'
+  | 'breeze'
+  | 'deep'
+  | 'ember'
+  | 'focus'
+  | 'glass'
+  | 'horizon'
+  | 'pulse'
+  | 'signal'
+  | 'soft'
+  | 'spark'
+  | 'temple'
+  | 'zen';
 export type PomodoroSettings = {
   workMinutes: number;
   breakMinutes: number;

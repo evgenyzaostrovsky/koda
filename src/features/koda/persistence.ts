@@ -256,8 +256,28 @@ function normalizePomodoroSettings(value: unknown): PomodoroSettings {
     breakMinutes: clampPomodoroMinutes(settings.breakMinutes, defaultPomodoroSettings.breakMinutes, 1, 90),
     longBreakMinutes: clampPomodoroMinutes(settings.longBreakMinutes, defaultPomodoroSettings.longBreakMinutes, 1, 120),
     sessionsBeforeLongBreak: clampPomodoroMinutes(settings.sessionsBeforeLongBreak, defaultPomodoroSettings.sessionsBeforeLongBreak, 2, 12),
-    soundId: settings.soundId === 'bell' || settings.soundId === 'signal' ? settings.soundId : 'pulse',
+    soundId: isPomodoroSoundId(settings.soundId) ? settings.soundId : 'pulse',
   };
+}
+
+function isPomodoroSoundId(value: unknown): value is PomodoroSettings['soundId'] {
+  return (
+    value === 'aurora' ||
+    value === 'bell' ||
+    value === 'bloom' ||
+    value === 'breeze' ||
+    value === 'deep' ||
+    value === 'ember' ||
+    value === 'focus' ||
+    value === 'glass' ||
+    value === 'horizon' ||
+    value === 'pulse' ||
+    value === 'signal' ||
+    value === 'soft' ||
+    value === 'spark' ||
+    value === 'temple' ||
+    value === 'zen'
+  );
 }
 
 function getEmbeddedPomodoroSettings(profile: unknown) {

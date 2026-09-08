@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { Pause, Play, RotateCcw, Volume2 } from 'lucide-react-native';
+import { ChevronDown, Pause, Play, RotateCcw, Volume2 } from 'lucide-react-native';
 import { ProgressLine, SectionTitle } from '../components';
 import { accent, accentBorder, accentFaint, faint, line, muted, panel, panelSoft, text } from '../theme';
 import type { PomodoroSettings, PomodoroSoundId } from '../types';
@@ -12,6 +12,18 @@ const soundOptions: Array<{ id: PomodoroSoundId; label: string; description: str
   { id: 'pulse', label: 'Тёплый', description: 'мягкий низкий chime' },
   { id: 'bell', label: 'Кристалл', description: 'чистый воздушный звон' },
   { id: 'signal', label: 'Фокус', description: 'заметный, но спокойный сигнал' },
+  { id: 'aurora', label: 'Аврора', description: 'светлый подъём без резкости' },
+  { id: 'bloom', label: 'Блум', description: 'мягкое мажорное созвучие' },
+  { id: 'breeze', label: 'Бриз', description: 'тихий воздушный сигнал' },
+  { id: 'deep', label: 'Глубина', description: 'низкий спокойный gong' },
+  { id: 'ember', label: 'Уголь', description: 'тёплый плотный тон' },
+  { id: 'focus', label: 'Импульс', description: 'короткий стартовый толчок' },
+  { id: 'glass', label: 'Стекло', description: 'деликатный высокий звон' },
+  { id: 'horizon', label: 'Горизонт', description: 'широкий мягкий аккорд' },
+  { id: 'soft', label: 'Софт', description: 'самый ненавязчивый вариант' },
+  { id: 'spark', label: 'Искра', description: 'быстрый чистый сигнал' },
+  { id: 'temple', label: 'Темпл', description: 'медитативный gong' },
+  { id: 'zen', label: 'Дзен', description: 'спокойное завершение цикла' },
 ];
 
 export function PomodoroScreen({
@@ -28,6 +40,7 @@ export function PomodoroScreen({
   const [remainingSeconds, setRemainingSeconds] = useState(settings.workMinutes * 60);
   const [completedWorkSessions, setCompletedWorkSessions] = useState(0);
   const [soundReady, setSoundReady] = useState(false);
+  const [soundMenuOpen, setSoundMenuOpen] = useState(false);
   const statusRef = useRef(status);
   const modeRef = useRef(mode);
 
@@ -35,6 +48,7 @@ export function PomodoroScreen({
   const elapsedSeconds = Math.max(0, totalSeconds - remainingSeconds);
   const progress = totalSeconds ? Math.min(100, Math.round((elapsedSeconds / totalSeconds) * 100)) : 0;
   const nextModeLabel = mode === 'work' ? nextBreakLabel(completedWorkSessions + 1, settings) : 'Работа';
+  const selectedSound = soundOptions.find((option) => option.id === settings.soundId) ?? soundOptions[0];
 
   useEffect(() => {
     statusRef.current = status;
@@ -140,26 +154,40 @@ export function PomodoroScreen({
           <Text style={local.textButtonText}>Прослушать</Text>
         </Pressable>
       </View>
-      <View style={local.soundList}>
-        {soundOptions.map((option) => {
-          const active = settings.soundId === option.id;
-          return (
-            <Pressable
-              key={option.id}
-              onPress={() => {
-                onSettingsChange({ soundId: option.id });
-                previewSound(option.id);
-              }}
-              style={[local.soundRow, active && local.soundRowActive]}
-            >
-              <View style={[local.soundDot, active && local.soundDotActive]} />
-              <View style={local.soundText}>
-                <Text style={local.soundTitle}>{option.label}</Text>
-                <Text style={local.soundMeta}>{option.description}</Text>
-              </View>
-            </Pressable>
-          );
-        })}
+      <View style={local.dropdown}>
+        <Pressable onPress={() => setSoundMenuOpen((value) => !value)} style={local.dropdownButton}>
+          <View style={local.soundText}>
+            <Text style={local.soundTitle}>{selectedSound.label}</Text>
+            <Text style={local.soundMeta}>{selectedSound.description}</Text>
+          </View>
+          <ChevronDown color={muted} size={17} />
+        </Pressable>
+        {soundMenuOpen ? (
+          <View style={local.dropdownMenu}>
+            <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} style={local.dropdownScroll}>
+              {soundOptions.map((option) => {
+                const active = settings.soundId === option.id;
+                return (
+                  <Pressable
+                    key={option.id}
+                    onPress={() => {
+                      onSettingsChange({ soundId: option.id });
+                      setSoundMenuOpen(false);
+                      previewSound(option.id);
+                    }}
+                    style={[local.dropdownOption, active && local.dropdownOptionActive]}
+                  >
+                    <View style={[local.soundDot, active && local.soundDotActive]} />
+                    <View style={local.soundText}>
+                      <Text style={[local.soundTitle, active && local.soundTitleActive]}>{option.label}</Text>
+                      <Text style={local.soundMeta}>{option.description}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
       </View>
       <Text style={local.hint}>{soundReady ? 'Звук готов.' : 'На iPhone звук включится после первого нажатия на таймер.'}</Text>
     </View>
@@ -293,10 +321,11 @@ function playPomodoroSound(soundId: PomodoroSoundId, event: 'end' | 'start') {
   if (!context) return;
 
   const now = context.currentTime;
+  const profile = soundProfiles[soundId] ?? soundProfiles.pulse;
   const master = context.createGain();
   const filter = context.createBiquadFilter();
   filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(soundId === 'bell' ? 5200 : 3600, now);
+  filter.frequency.setValueAtTime(profile.filter, now);
   filter.Q.setValueAtTime(0.7, now);
   master.connect(filter);
   filter.connect(context.destination);
@@ -335,58 +364,96 @@ type ToneStep = {
   type: OscillatorType;
 };
 
+type SoundProfile = {
+  base: number;
+  endShift?: number;
+  filter: number;
+  gains: [number, number, number, number];
+  intervals: [number, number, number, number];
+  name: PomodoroSoundId;
+  startShift?: number;
+  type: OscillatorType;
+};
+
+const soundProfiles: Record<PomodoroSoundId, SoundProfile> = {
+  aurora: { base: 349.23, filter: 4800, gains: [0.052, 0.048, 0.036, 0.018], intervals: [1, 1.25, 1.5, 2], name: 'aurora', type: 'sine' },
+  bell: { base: 587.33, filter: 5600, gains: [0.075, 0.054, 0.034, 0.016], intervals: [1, 1.5, 2, 2.67], name: 'bell', type: 'sine' },
+  bloom: { base: 293.66, filter: 4200, gains: [0.064, 0.056, 0.04, 0.022], intervals: [1, 1.26, 1.5, 2], name: 'bloom', type: 'triangle' },
+  breeze: { base: 440, filter: 5000, gains: [0.044, 0.036, 0.026, 0.012], intervals: [1, 1.33, 1.78, 2.37], name: 'breeze', type: 'sine' },
+  deep: { base: 164.81, filter: 2600, gains: [0.078, 0.052, 0.026, 0.018], intervals: [1, 1.5, 2, 0.5], name: 'deep', type: 'triangle' },
+  ember: { base: 220, filter: 3300, gains: [0.074, 0.052, 0.036, 0.02], intervals: [1, 1.2, 1.5, 2], name: 'ember', type: 'triangle' },
+  focus: { base: 392, filter: 3800, gains: [0.072, 0.058, 0.046, 0.018], intervals: [1, 1.33, 1.68, 2], name: 'focus', type: 'triangle' },
+  glass: { base: 659.25, filter: 6200, gains: [0.05, 0.038, 0.028, 0.012], intervals: [1, 1.5, 2, 2.5], name: 'glass', type: 'sine' },
+  horizon: { base: 246.94, filter: 3900, gains: [0.066, 0.052, 0.038, 0.022], intervals: [1, 1.33, 1.5, 2], name: 'horizon', type: 'sine' },
+  pulse: { base: 329.63, filter: 3600, gains: [0.055, 0.055, 0.038, 0.018], intervals: [1, 1.5, 2, 0.5], name: 'pulse', type: 'sine' },
+  signal: { base: 392, filter: 4100, gains: [0.07, 0.07, 0.05, 0.02], intervals: [1, 1.33, 1.68, 0.56], name: 'signal', type: 'triangle' },
+  soft: { base: 261.63, filter: 3000, gains: [0.04, 0.034, 0.026, 0.014], intervals: [1, 1.25, 1.5, 2], name: 'soft', type: 'sine' },
+  spark: { base: 523.25, filter: 5800, gains: [0.058, 0.046, 0.036, 0.012], intervals: [1, 1.5, 2, 2.25], name: 'spark', type: 'triangle' },
+  temple: { base: 196, filter: 2800, gains: [0.082, 0.052, 0.03, 0.02], intervals: [1, 1.5, 2, 0.5], name: 'temple', type: 'sine' },
+  zen: { base: 220, filter: 3200, gains: [0.056, 0.048, 0.032, 0.018], intervals: [1, 1.33, 1.78, 0.5], name: 'zen', type: 'sine' },
+};
+
 function tone(frequency: number, offset: number, duration: number, gain: number, type: OscillatorType = 'sine', attack = 0.018, detune?: number): ToneStep {
   return { attack, detune, duration, frequency, gain, offset, type };
 }
 
 function soundSequence(soundId: PomodoroSoundId, event: 'end' | 'start'): ToneStep[] {
-  if (soundId === 'bell') {
-    return event === 'end'
-      ? [
-          tone(784, 0, 0.72, 0.11),
-          tone(1175, 0.03, 0.64, 0.055),
-          tone(1568, 0.08, 0.48, 0.03),
-        ]
-      : [
-          tone(587, 0, 0.44, 0.075),
-          tone(880, 0.12, 0.5, 0.07),
-          tone(1319, 0.2, 0.42, 0.035),
-        ];
-  }
+  const profile = soundProfiles[soundId] ?? soundProfiles.pulse;
+  const shift = event === 'end' ? profile.endShift ?? 1.18 : profile.startShift ?? 1;
+  const duration = event === 'end' ? 0.72 : 0.46;
+  const spacing = event === 'end' ? 0.095 : 0.13;
 
-  if (soundId === 'signal') {
-    return event === 'end'
-      ? [
-          tone(440, 0, 0.34, 0.09, 'triangle'),
-          tone(660, 0.11, 0.42, 0.075, 'triangle'),
-          tone(880, 0.27, 0.36, 0.052, 'sine'),
-          tone(220, 0, 0.62, 0.035, 'sine'),
-        ]
-      : [
-          tone(392, 0, 0.28, 0.07, 'triangle'),
-          tone(523.25, 0.15, 0.32, 0.07, 'triangle'),
-          tone(659.25, 0.3, 0.32, 0.05, 'sine'),
-        ];
-  }
-
-  return event === 'end'
-    ? [
-        tone(261.63, 0, 0.74, 0.075),
-        tone(392, 0.04, 0.68, 0.06),
-        tone(523.25, 0.16, 0.52, 0.045),
-        tone(130.81, 0, 0.82, 0.03, 'triangle'),
-      ]
-    : [
-        tone(329.63, 0, 0.44, 0.055),
-        tone(493.88, 0.08, 0.5, 0.055),
-        tone(659.25, 0.22, 0.42, 0.038),
-      ];
+  return profile.intervals.map((interval, index) =>
+    tone(
+      profile.base * interval * shift,
+      index * spacing,
+      Math.max(0.28, duration - index * 0.055),
+      profile.gains[index],
+      index === 3 && profile.type === 'triangle' ? 'sine' : profile.type,
+      index === 0 ? 0.022 : 0.016,
+      index % 2 === 0 ? -3 : 3,
+    ),
+  );
 }
 
 const local: Record<string, any> = {
   controls: { flexDirection: 'row', gap: 10 },
   desktopLayout: { alignSelf: 'center', flexDirection: 'row', gap: 24, maxWidth: 1120, width: '100%' },
   desktopScroll: { paddingBottom: 72, paddingTop: 8 },
+  dropdown: { gap: 8 },
+  dropdownButton: {
+    alignItems: 'center',
+    backgroundColor: panelSoft,
+    borderColor: line,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    minHeight: 56,
+    outlineStyle: 'none',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  dropdownMenu: {
+    backgroundColor: panelSoft,
+    borderColor: line,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dropdownOption: {
+    alignItems: 'center',
+    borderBottomColor: line,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    minHeight: 50,
+    outlineStyle: 'none',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  dropdownOptionActive: { backgroundColor: accentFaint },
+  dropdownScroll: { maxHeight: 360 },
   fieldInput: {
     color: text,
     flex: 1,
@@ -468,23 +535,10 @@ const local: Record<string, any> = {
   sideColumn: { gap: 14, width: 330 },
   soundDot: { borderColor: line, borderRadius: 999, borderWidth: 1, height: 14, width: 14 },
   soundDotActive: { backgroundColor: accent, borderColor: accent },
-  soundList: { gap: 8 },
   soundMeta: { color: faint, fontSize: 12, lineHeight: 16 },
-  soundRow: {
-    alignItems: 'center',
-    backgroundColor: panelSoft,
-    borderColor: line,
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 10,
-    minHeight: 52,
-    outlineStyle: 'none',
-    paddingHorizontal: 12,
-  },
-  soundRowActive: { borderColor: accentBorder },
   soundText: { flex: 1, gap: 2 },
   soundTitle: { color: text, fontSize: 14, fontWeight: '700', lineHeight: 18 },
+  soundTitleActive: { color: accent },
   textButton: { alignItems: 'center', flexDirection: 'row', gap: 6, minHeight: 34, outlineStyle: 'none' },
   textButtonText: { color: accent, fontSize: 12, fontWeight: '800' },
   timerFace: { alignItems: 'center', justifyContent: 'center', paddingVertical: 20 },
