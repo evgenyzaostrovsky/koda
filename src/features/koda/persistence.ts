@@ -1,9 +1,17 @@
 import { defaultJournalEntry, initialGoals, initialHabits } from './constants';
 import { normalizeGoal } from './goalLogic';
-import type { Goal, Habit, JournalEntry, KodaDay, Note, NoteBlock, NoteDocument, PlannerItem, ProfileState, Project, ThemeId } from './types';
+import type { Goal, Habit, JournalEntry, KodaDay, Note, NoteBlock, NoteDocument, PlannerItem, PomodoroSettings, ProfileState, Project, ThemeId } from './types';
 import { todayDateKey } from './utils';
 
-export type StoredKodaState = { goals: Goal[]; habits: Habit[]; kodaDays: KodaDay[]; profile: ProfileState; projects: Project[] };
+export type StoredKodaState = { goals: Goal[]; habits: Habit[]; kodaDays: KodaDay[]; pomodoro: PomodoroSettings; profile: ProfileState; projects: Project[] };
+
+export const defaultPomodoroSettings: PomodoroSettings = {
+  workMinutes: 25,
+  breakMinutes: 5,
+  longBreakMinutes: 15,
+  sessionsBeforeLongBreak: 4,
+  soundId: 'pulse',
+};
 
 export const defaultProfile: ProfileState = {
   themeId: 'koda-dark',
@@ -103,6 +111,7 @@ export function mergeStoredKodaState(remoteState: StoredKodaState, localState: S
     goals: mergeByUpdatedAt(remoteState.goals, localState.goals),
     habits: localState.habits.length ? localState.habits : remoteState.habits,
     kodaDays: mergeKodaDays(remoteState.kodaDays, localState.kodaDays),
+    pomodoro: isDefaultPomodoroSettings(localState.pomodoro) ? remoteState.pomodoro : localState.pomodoro,
     profile: isProfileEmpty(localState.profile) ? remoteState.profile : localState.profile,
     projects: mergeProjects(remoteState.projects, localState.projects),
   };
@@ -147,10 +156,12 @@ export function normalizeStoredKodaState(value: unknown): StoredKodaState | null
   const habits = isHabitList(state.habits) ? state.habits : initialHabits;
   const rawKodaDays = state.kodaDays ?? state.koda_days;
   const kodaDays = isKodaDayList(rawKodaDays) ? rawKodaDays : [];
+  const rawProfile = state.profile;
+  const pomodoro = normalizePomodoroSettings(state.pomodoro ?? getEmbeddedPomodoroSettings(rawProfile));
   const profile = normalizeProfileState(state.profile);
   const projects = normalizeProjectList(state.projects) ?? [];
 
-  return { goals, habits, kodaDays, profile, projects };
+  return { goals, habits, kodaDays, pomodoro, profile, projects };
 }
 
 function mergeById<T extends { id: string }>(remoteItems: T[], localItems: T[]) {
@@ -234,6 +245,40 @@ function timeValue(value?: string | null) {
 
 function isProfileEmpty(profile: ProfileState) {
   return profile.themeId === defaultProfile.themeId && !profile.version && !profile.daysLeft && !profile.level && !profile.streak && !profile.xp && !profile.values && !profile.futureSelf && !profile.focus && !profile.milestone;
+}
+
+function normalizePomodoroSettings(value: unknown): PomodoroSettings {
+  if (!value || typeof value !== 'object') return defaultPomodoroSettings;
+  const settings = value as Partial<PomodoroSettings>;
+
+  return {
+    workMinutes: clampPomodoroMinutes(settings.workMinutes, defaultPomodoroSettings.workMinutes, 1, 180),
+    breakMinutes: clampPomodoroMinutes(settings.breakMinutes, defaultPomodoroSettings.breakMinutes, 1, 90),
+    longBreakMinutes: clampPomodoroMinutes(settings.longBreakMinutes, defaultPomodoroSettings.longBreakMinutes, 1, 120),
+    sessionsBeforeLongBreak: clampPomodoroMinutes(settings.sessionsBeforeLongBreak, defaultPomodoroSettings.sessionsBeforeLongBreak, 2, 12),
+    soundId: settings.soundId === 'bell' || settings.soundId === 'signal' ? settings.soundId : 'pulse',
+  };
+}
+
+function getEmbeddedPomodoroSettings(profile: unknown) {
+  if (!profile || typeof profile !== 'object') return null;
+  return (profile as { __kodaPomodoro?: unknown }).__kodaPomodoro ?? null;
+}
+
+function isDefaultPomodoroSettings(settings: PomodoroSettings) {
+  return (
+    settings.workMinutes === defaultPomodoroSettings.workMinutes &&
+    settings.breakMinutes === defaultPomodoroSettings.breakMinutes &&
+    settings.longBreakMinutes === defaultPomodoroSettings.longBreakMinutes &&
+    settings.sessionsBeforeLongBreak === defaultPomodoroSettings.sessionsBeforeLongBreak &&
+    settings.soundId === defaultPomodoroSettings.soundId
+  );
+}
+
+function clampPomodoroMinutes(value: unknown, fallback: number, min: number, max: number) {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(numeric)));
 }
 
 function normalizeProfileState(value: unknown): ProfileState {

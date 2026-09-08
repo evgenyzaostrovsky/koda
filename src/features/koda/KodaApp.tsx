@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
-import { BarChart3, Bot, CalendarDays, CircleCheck, FileText, FolderKanban, ListChecks, NotebookText, PanelLeftClose, PanelLeftOpen, Plus, User, X } from 'lucide-react-native';
+import { BarChart3, Bot, CalendarDays, CircleCheck, Clock3, FileText, FolderKanban, ListChecks, NotebookText, PanelLeftClose, PanelLeftOpen, Plus, User, X } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, SafeAreaView, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
@@ -11,7 +11,7 @@ import { DesktopShell } from './components/DesktopShell';
 import { defaultHabitMonth, defaultHabitYear, defaultJournalEntry, initialGoals, initialHabits, journalMoodByName, journalMoodByValue, journalOwnerKey } from './constants';
 import { calculateGoalProgress } from './goalLogic';
 import { autoFinalizeExpiredKodaDays, fromKodaDayRow, mergeKodaDaySources, toKodaDayRow } from './kodaDaySync';
-import { defaultProfile, isJournalEntryWorthSyncing, journalDateKey, mergeJournalEntries, mergePlannerItems, mergeStoredKodaState, normalizeStoredKodaState, parseJournalEntries, parseNotes, parsePlannerItems, parseStoredKodaState, type StoredKodaState } from './persistence';
+import { defaultPomodoroSettings, defaultProfile, isJournalEntryWorthSyncing, journalDateKey, mergeJournalEntries, mergePlannerItems, mergeStoredKodaState, normalizeStoredKodaState, parseJournalEntries, parseNotes, parsePlannerItems, parseStoredKodaState, type StoredKodaState } from './persistence';
 import { buildProjectPlannerItems } from './plannerProjections';
 import { GoalsScreen } from './screens/GoalsScreen';
 import { JournalScreen } from './screens/JournalScreen';
@@ -19,12 +19,13 @@ import { KodaScreen } from './screens/KodaScreen';
 import { KodaDayScreen } from './screens/KodaDayScreen';
 import { PlannerScreen, parseQuickTaskInput } from './screens/PlannerScreen';
 import { NotesScreen } from './screens/NotesScreen';
+import { PomodoroScreen } from './screens/PomodoroScreen';
 import { ProjectsScreen } from './screens/ProjectsScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { ProgressScreen } from './screens/ProgressScreen';
 import { styles } from './styles';
 import { accent, applyKodaTheme, muted, panel, resolveKodaThemeId } from './theme';
-import type { AccountInfo, ChatMessage, Goal, Habit, JournalEntry, KodaDay, Note, PlannerItem, ProfileState, Project, TabKey } from './types';
+import type { AccountInfo, ChatMessage, Goal, Habit, JournalEntry, KodaDay, Note, PlannerItem, PomodoroSettings, ProfileState, Project, TabKey } from './types';
 import { buildMonthDays, displayTimeValue, getCurrentWeekDates, getHabitMonthDays, monthKey, normalizeTimeValue, sleepDurationMinutes, todayDateKey, uid } from './utils';
 
 function KodaMarkIcon({ active = false, size = 18 }: { active?: boolean; size?: number }) {
@@ -70,6 +71,7 @@ const tabs: Array<{ key: TabKey; label: string; icon: (active: boolean) => React
   { key: 'notes', label: 'Заметки', icon: (active) => <NotebookText color={active ? accent : muted} size={17} /> },
   { key: 'journal', label: 'Дневник', icon: (active) => <FileText color={active ? accent : muted} size={17} /> },
   { key: 'habits', label: 'KODA', icon: (active) => <KodaMarkIcon active={active} size={18} /> },
+  { key: 'timer', label: 'Таймер', icon: (active) => <Clock3 color={active ? accent : muted} size={17} /> },
   { key: 'progress', label: 'Прогресс', icon: (active) => <BarChart3 color={active ? accent : muted} size={17} /> },
   { key: 'profile', label: 'Профиль', icon: (active) => <User color={active ? accent : muted} size={17} /> },
   { key: 'koda', label: 'Помощник', icon: (active) => <Bot color={active ? accent : muted} size={17} /> },
@@ -82,6 +84,7 @@ const desktopTabLabels: Record<TabKey, string> = {
   notes: 'Заметки',
   journal: 'Дневник',
   habits: 'KODA',
+  timer: 'Таймер',
   progress: 'Прогресс',
   profile: 'Профиль',
   koda: 'Помощник',
@@ -133,6 +136,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const [notesLoaded, setNotesLoaded] = useState(false);
   const [notesLoadedStorageKey, setNotesLoadedStorageKey] = useState('');
   const [notesSaveState, setNotesSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [pomodoro, setPomodoro] = useState<PomodoroSettings>(defaultPomodoroSettings);
   const [profile, setProfile] = useState<ProfileState>(defaultProfile);
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
   const [syncRetryToken, setSyncRetryToken] = useState(0);
@@ -368,6 +372,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     setProjects(state.projects);
     setHabits(state.habits);
     setKodaDays(state.kodaDays);
+    setPomodoro(state.pomodoro);
     setProfile(state.profile);
   }
 
@@ -382,7 +387,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         markSyncQueued('kodaDays');
         const storageKey = scopedStorageKey(kodaStateStorageKey, userId);
         if (appStateLoadedStorageKey === storageKey) {
-          const state: StoredKodaState = { goals, habits, kodaDays: nextDays, profile, projects };
+          const state: StoredKodaState = { goals, habits, kodaDays: nextDays, pomodoro, profile, projects };
           void AsyncStorage.setItem(storageKey, JSON.stringify(state));
         }
         return nextDays;
@@ -400,14 +405,14 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       clearInterval(interval);
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [appStateLoaded, appStateLoadedStorageKey, goals, habits, plannerItems, plannerLoaded, profile, projects, userId]);
+  }, [appStateLoaded, appStateLoadedStorageKey, goals, habits, plannerItems, plannerLoaded, pomodoro, profile, projects, userId]);
 
   useEffect(() => {
     if (!appStateLoaded) return;
     const storageKey = scopedStorageKey(kodaStateStorageKey, userId);
     if (appStateLoadedStorageKey !== storageKey) return;
 
-    const state: StoredKodaState = { goals, habits, kodaDays, profile, projects };
+    const state: StoredKodaState = { goals, habits, kodaDays, pomodoro, profile, projects };
     void AsyncStorage.setItem(storageKey, JSON.stringify(state));
 
     if (!userId || !isSupabaseConfigured()) return;
@@ -429,6 +434,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         profile: {
           ...existingProfile,
           ...profile,
+          __kodaPomodoro: pomodoro,
           ...(notesForProfile ? { __kodaNotes: notesForProfile } : {}),
         },
         updated_at: new Date().toISOString(),
@@ -453,7 +459,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     }
 
     void syncAppState().catch(() => undefined);
-  }, [appStateLoaded, appStateLoadedStorageKey, goals, habits, kodaDays, profile, projects, syncRetryToken, userId]);
+  }, [appStateLoaded, appStateLoadedStorageKey, goals, habits, kodaDays, pomodoro, profile, projects, syncRetryToken, userId]);
 
   useEffect(() => {
     if (!appStateLoaded || !userId || !isSupabaseConfigured()) return;
@@ -1151,7 +1157,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       const nextKodaDays = updater(items);
       const storageKey = scopedStorageKey(kodaStateStorageKey, userId);
       if (appStateLoaded && appStateLoadedStorageKey === storageKey) {
-        const state: StoredKodaState = { goals, habits, kodaDays: nextKodaDays, profile, projects };
+        const state: StoredKodaState = { goals, habits, kodaDays: nextKodaDays, pomodoro, profile, projects };
         void AsyncStorage.setItem(storageKey, JSON.stringify(state));
       }
       return nextKodaDays;
@@ -1209,6 +1215,11 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   function updateProfile(patch: Partial<ProfileState>) {
     markSyncQueued('appState');
     setProfile((currentProfile) => ({ ...currentProfile, ...patch }));
+  }
+
+  function updatePomodoro(patch: Partial<PomodoroSettings>) {
+    markSyncQueued('appState');
+    setPomodoro((currentSettings) => ({ ...currentSettings, ...patch }));
   }
 
   function addHabit(title: string) {
@@ -1407,6 +1418,9 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
           plannerItems={plannerDayItems}
         />
       );
+    }
+    if (activeTab === 'timer') {
+      return <PomodoroScreen isDesktop={isDesktopLayout} onSettingsChange={updatePomodoro} settings={pomodoro} />;
     }
     if (activeTab === 'profile') {
       return <ProfileScreen accountInfo={accountInfo} calendarKey={calendarKey} calendarSync={calendarSync} habits={habits} isDesktop={isDesktopLayout} onProfileChange={updateProfile} onSignOut={onSignOut} plannerItems={plannerItems} profile={profile} />;

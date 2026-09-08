@@ -1,6 +1,6 @@
 import type { Database } from '../../types/database';
 
-export type TabKey = 'planner' | 'goals' | 'projects' | 'notes' | 'habits' | 'profile' | 'journal' | 'progress' | 'koda';
+export type TabKey = 'planner' | 'goals' | 'projects' | 'notes' | 'habits' | 'timer' | 'profile' | 'journal' | 'progress' | 'koda';
 export type ThemeId = 'koda-dark' | 'reference-dark';
 export type AccountInfo = { name: string; username: string; createdAt: string };
 export type GoalStatus = 'active' | 'paused' | 'completed' | 'archived';
@@ -176,6 +176,14 @@ export type JournalEntry = {
   createdAt: string;
 };
 export type ChatMessage = { id: string; role: 'user' | 'koda'; text: string };
+export type PomodoroSoundId = 'pulse' | 'bell' | 'signal';
+export type PomodoroSettings = {
+  workMinutes: number;
+  breakMinutes: number;
+  longBreakMinutes: number;
+  sessionsBeforeLongBreak: number;
+  soundId: PomodoroSoundId;
+};
 export type ProfileState = {
   themeId: ThemeId;
   version: string;
