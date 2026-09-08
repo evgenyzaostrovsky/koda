@@ -15,14 +15,14 @@ const soundOptions: Array<{ id: PomodoroSoundId; label: string; description: str
   { id: 'aurora', label: 'Аврора', description: 'светлый подъём без резкости' },
   { id: 'bloom', label: 'Блум', description: 'мягкое мажорное созвучие' },
   { id: 'breeze', label: 'Бриз', description: 'тихий воздушный сигнал' },
-  { id: 'deep', label: 'Глубина', description: 'низкий спокойный gong' },
+  { id: 'deep', label: 'Глубина', description: 'низкий спокойный удар' },
   { id: 'ember', label: 'Уголь', description: 'тёплый плотный тон' },
   { id: 'focus', label: 'Импульс', description: 'короткий стартовый толчок' },
   { id: 'glass', label: 'Стекло', description: 'деликатный высокий звон' },
   { id: 'horizon', label: 'Горизонт', description: 'широкий мягкий аккорд' },
   { id: 'soft', label: 'Софт', description: 'самый ненавязчивый вариант' },
   { id: 'spark', label: 'Искра', description: 'быстрый чистый сигнал' },
-  { id: 'temple', label: 'Темпл', description: 'медитативный gong' },
+  { id: 'temple', label: 'Чаша', description: 'глубокая протяжная тарелка' },
   { id: 'zen', label: 'Дзен', description: 'спокойное завершение цикла' },
 ];
 
@@ -320,33 +320,7 @@ function playPomodoroSound(soundId: PomodoroSoundId, event: 'end' | 'start') {
   const context = getAudioContext();
   if (!context) return;
 
-  const now = context.currentTime;
-  const profile = soundProfiles[soundId] ?? soundProfiles.pulse;
-  const master = context.createGain();
-  const filter = context.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(profile.filter, now);
-  filter.Q.setValueAtTime(0.7, now);
-  master.connect(filter);
-  filter.connect(context.destination);
-  master.gain.setValueAtTime(event === 'end' ? 0.86 : 0.68, now);
-
-  const sequence = soundSequence(soundId, event);
-  sequence.forEach((item) => {
-    const start = now + item.offset;
-    const voiceGain = context.createGain();
-    const oscillator = context.createOscillator();
-    oscillator.connect(voiceGain);
-    voiceGain.connect(master);
-    oscillator.type = item.type;
-    oscillator.frequency.setValueAtTime(item.frequency, start);
-    if (item.detune) oscillator.detune.setValueAtTime(item.detune, start);
-    voiceGain.gain.setValueAtTime(0.0001, start);
-    voiceGain.gain.exponentialRampToValueAtTime(item.gain, start + item.attack);
-    voiceGain.gain.exponentialRampToValueAtTime(0.0001, start + item.duration);
-    oscillator.start(start);
-    oscillator.stop(start + item.duration + 0.04);
-  });
+  playSoundDesign(context, soundId, event);
 }
 
 function scheduleSoundStart(soundId: PomodoroSoundId) {
@@ -364,56 +338,132 @@ type ToneStep = {
   type: OscillatorType;
 };
 
-type SoundProfile = {
-  base: number;
-  endShift?: number;
-  filter: number;
-  gains: [number, number, number, number];
-  intervals: [number, number, number, number];
-  name: PomodoroSoundId;
-  startShift?: number;
-  type: OscillatorType;
-};
-
-const soundProfiles: Record<PomodoroSoundId, SoundProfile> = {
-  aurora: { base: 349.23, filter: 4800, gains: [0.052, 0.048, 0.036, 0.018], intervals: [1, 1.25, 1.5, 2], name: 'aurora', type: 'sine' },
-  bell: { base: 587.33, filter: 5600, gains: [0.075, 0.054, 0.034, 0.016], intervals: [1, 1.5, 2, 2.67], name: 'bell', type: 'sine' },
-  bloom: { base: 293.66, filter: 4200, gains: [0.064, 0.056, 0.04, 0.022], intervals: [1, 1.26, 1.5, 2], name: 'bloom', type: 'triangle' },
-  breeze: { base: 440, filter: 5000, gains: [0.044, 0.036, 0.026, 0.012], intervals: [1, 1.33, 1.78, 2.37], name: 'breeze', type: 'sine' },
-  deep: { base: 164.81, filter: 2600, gains: [0.078, 0.052, 0.026, 0.018], intervals: [1, 1.5, 2, 0.5], name: 'deep', type: 'triangle' },
-  ember: { base: 220, filter: 3300, gains: [0.074, 0.052, 0.036, 0.02], intervals: [1, 1.2, 1.5, 2], name: 'ember', type: 'triangle' },
-  focus: { base: 392, filter: 3800, gains: [0.072, 0.058, 0.046, 0.018], intervals: [1, 1.33, 1.68, 2], name: 'focus', type: 'triangle' },
-  glass: { base: 659.25, filter: 6200, gains: [0.05, 0.038, 0.028, 0.012], intervals: [1, 1.5, 2, 2.5], name: 'glass', type: 'sine' },
-  horizon: { base: 246.94, filter: 3900, gains: [0.066, 0.052, 0.038, 0.022], intervals: [1, 1.33, 1.5, 2], name: 'horizon', type: 'sine' },
-  pulse: { base: 329.63, filter: 3600, gains: [0.055, 0.055, 0.038, 0.018], intervals: [1, 1.5, 2, 0.5], name: 'pulse', type: 'sine' },
-  signal: { base: 392, filter: 4100, gains: [0.07, 0.07, 0.05, 0.02], intervals: [1, 1.33, 1.68, 0.56], name: 'signal', type: 'triangle' },
-  soft: { base: 261.63, filter: 3000, gains: [0.04, 0.034, 0.026, 0.014], intervals: [1, 1.25, 1.5, 2], name: 'soft', type: 'sine' },
-  spark: { base: 523.25, filter: 5800, gains: [0.058, 0.046, 0.036, 0.012], intervals: [1, 1.5, 2, 2.25], name: 'spark', type: 'triangle' },
-  temple: { base: 196, filter: 2800, gains: [0.082, 0.052, 0.03, 0.02], intervals: [1, 1.5, 2, 0.5], name: 'temple', type: 'sine' },
-  zen: { base: 220, filter: 3200, gains: [0.056, 0.048, 0.032, 0.018], intervals: [1, 1.33, 1.78, 0.5], name: 'zen', type: 'sine' },
-};
-
 function tone(frequency: number, offset: number, duration: number, gain: number, type: OscillatorType = 'sine', attack = 0.018, detune?: number): ToneStep {
   return { attack, detune, duration, frequency, gain, offset, type };
 }
 
-function soundSequence(soundId: PomodoroSoundId, event: 'end' | 'start'): ToneStep[] {
-  const profile = soundProfiles[soundId] ?? soundProfiles.pulse;
-  const shift = event === 'end' ? profile.endShift ?? 1.18 : profile.startShift ?? 1;
-  const duration = event === 'end' ? 0.72 : 0.46;
-  const spacing = event === 'end' ? 0.095 : 0.13;
+function playSoundDesign(context: AudioContext, soundId: PomodoroSoundId, event: 'end' | 'start') {
+  if (soundId === 'temple') {
+    playSingingBowl(context, event);
+    return;
+  }
+  if (soundId === 'breeze') {
+    playNoiseSweep(context, event, 'soft');
+    playTones(context, [tone(440, 0.08, 0.52, 0.028), tone(660, 0.22, 0.44, 0.022)], 4600, 0.58);
+    return;
+  }
+  if (soundId === 'deep') {
+    playDeepHit(context, event);
+    return;
+  }
+  if (soundId === 'spark') {
+    playTones(context, [tone(1175, 0, 0.12, 0.048, 'triangle'), tone(1760, 0.055, 0.11, 0.03, 'sine'), tone(2349, 0.11, 0.1, 0.018, 'sine')], 7200, 0.78);
+    return;
+  }
+  if (soundId === 'focus') {
+    playNoiseSweep(context, event, 'tick');
+    playTones(context, [tone(196, 0, 0.13, 0.06, 'square', 0.006), tone(392, 0.11, 0.19, 0.045, 'triangle')], 2600, 0.72);
+    return;
+  }
 
-  return profile.intervals.map((interval, index) =>
-    tone(
-      profile.base * interval * shift,
-      index * spacing,
-      Math.max(0.28, duration - index * 0.055),
-      profile.gains[index],
-      index === 3 && profile.type === 'triangle' ? 'sine' : profile.type,
-      index === 0 ? 0.022 : 0.016,
-      index % 2 === 0 ? -3 : 3,
-    ),
+  const patterns: Record<Exclude<PomodoroSoundId, 'breeze' | 'deep' | 'focus' | 'spark' | 'temple'>, ToneStep[]> = {
+    aurora: [tone(293.66, 0, 0.7, 0.038), tone(440, 0.16, 0.72, 0.034), tone(587.33, 0.34, 0.62, 0.026)],
+    bell: [tone(880, 0, 0.66, 0.05), tone(1320, 0.025, 0.58, 0.032), tone(1760, 0.08, 0.4, 0.018)],
+    bloom: [tone(261.63, 0, 0.62, 0.052, 'triangle'), tone(329.63, 0.06, 0.6, 0.04), tone(392, 0.12, 0.54, 0.034)],
+    ember: [tone(164.81, 0, 0.34, 0.07, 'sawtooth', 0.01), tone(247, 0.08, 0.36, 0.044, 'triangle'), tone(329.63, 0.18, 0.28, 0.026)],
+    glass: [tone(1046.5, 0, 0.82, 0.032), tone(1568, 0.04, 0.74, 0.024), tone(2093, 0.12, 0.46, 0.014)],
+    horizon: [tone(220, 0, 0.9, 0.04), tone(293.66, 0, 0.9, 0.034), tone(440, 0.2, 0.7, 0.027), tone(587.33, 0.38, 0.52, 0.018)],
+    pulse: [tone(220, 0, 0.18, 0.052, 'triangle'), tone(220, 0.24, 0.2, 0.044, 'triangle'), tone(440, 0.31, 0.22, 0.024)],
+    signal: [tone(523.25, 0, 0.16, 0.054, 'triangle'), tone(659.25, 0.18, 0.16, 0.054, 'triangle'), tone(783.99, 0.36, 0.24, 0.042, 'triangle')],
+    soft: [tone(329.63, 0, 0.55, 0.03), tone(493.88, 0.13, 0.52, 0.022)],
+    zen: [tone(392, 0, 0.58, 0.04), tone(293.66, 0.18, 0.68, 0.034), tone(196, 0.34, 0.88, 0.024)],
+  };
+
+  const shift = event === 'end' ? 0.92 : 1;
+  const pattern = patterns[soundId as keyof typeof patterns] ?? patterns.pulse;
+  playTones(
+    context,
+    pattern.map((step) => ({ ...step, duration: event === 'end' ? step.duration * 1.25 : step.duration, frequency: step.frequency * shift })),
+    soundId === 'glass' || soundId === 'bell' ? 6200 : 3600,
+    event === 'end' ? 0.86 : 0.68,
   );
+}
+
+function playTones(context: AudioContext, steps: ToneStep[], filterFrequency: number, masterGainValue: number) {
+  const now = context.currentTime;
+  const master = context.createGain();
+  const filter = context.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(filterFrequency, now);
+  filter.Q.setValueAtTime(0.7, now);
+  master.connect(filter);
+  filter.connect(context.destination);
+  master.gain.setValueAtTime(masterGainValue, now);
+
+  steps.forEach((item) => {
+    const start = now + item.offset;
+    const voiceGain = context.createGain();
+    const oscillator = context.createOscillator();
+    oscillator.connect(voiceGain);
+    voiceGain.connect(master);
+    oscillator.type = item.type;
+    oscillator.frequency.setValueAtTime(item.frequency, start);
+    if (item.detune) oscillator.detune.setValueAtTime(item.detune, start);
+    voiceGain.gain.setValueAtTime(0.0001, start);
+    voiceGain.gain.exponentialRampToValueAtTime(item.gain, start + item.attack);
+    voiceGain.gain.exponentialRampToValueAtTime(0.0001, start + item.duration);
+    oscillator.start(start);
+    oscillator.stop(start + item.duration + 0.04);
+  });
+}
+
+function playSingingBowl(context: AudioContext, event: 'end' | 'start') {
+  const base = event === 'end' ? 108 : 132;
+  const duration = event === 'end' ? 3.6 : 1.85;
+  playTones(
+    context,
+    [
+      tone(base, 0, duration, 0.09, 'sine', 0.035, -7),
+      tone(base * 2.01, 0.015, duration * 0.92, 0.052, 'sine', 0.04, 5),
+      tone(base * 2.72, 0.04, duration * 0.76, 0.034, 'triangle', 0.05, -4),
+      tone(base * 4.08, 0.12, duration * 0.58, 0.018, 'sine', 0.06, 6),
+    ],
+    2400,
+    0.92,
+  );
+}
+
+function playDeepHit(context: AudioContext, event: 'end' | 'start') {
+  const base = event === 'end' ? 76 : 98;
+  playTones(context, [tone(base, 0, 1.4, 0.11, 'triangle', 0.012), tone(base * 1.5, 0.045, 0.82, 0.044), tone(base * 2.02, 0.13, 0.58, 0.022)], 1800, 0.88);
+  playNoiseSweep(context, event, 'thump');
+}
+
+function playNoiseSweep(context: AudioContext, event: 'end' | 'start', kind: 'soft' | 'thump' | 'tick') {
+  const now = context.currentTime;
+  const duration = kind === 'soft' ? 0.52 : kind === 'thump' ? 0.18 : 0.045;
+  const sampleCount = Math.max(1, Math.floor(context.sampleRate * duration));
+  const buffer = context.createBuffer(1, sampleCount, context.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let index = 0; index < sampleCount; index += 1) {
+    data[index] = (Math.random() * 2 - 1) * (1 - index / sampleCount);
+  }
+
+  const source = context.createBufferSource();
+  const gain = context.createGain();
+  const filter = context.createBiquadFilter();
+  filter.type = kind === 'thump' ? 'lowpass' : 'bandpass';
+  filter.frequency.setValueAtTime(kind === 'soft' ? (event === 'end' ? 900 : 1400) : kind === 'thump' ? 180 : 2600, now);
+  filter.Q.setValueAtTime(kind === 'tick' ? 3.2 : 0.9, now);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(kind === 'tick' ? 0.035 : 0.055, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+  source.buffer = buffer;
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(context.destination);
+  source.start(now);
+  source.stop(now + duration + 0.02);
 }
 
 const local: Record<string, any> = {
