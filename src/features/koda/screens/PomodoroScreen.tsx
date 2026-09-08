@@ -9,9 +9,9 @@ type PomodoroMode = 'work' | 'break' | 'longBreak';
 type TimerStatus = 'idle' | 'running' | 'paused';
 
 const soundOptions: Array<{ id: PomodoroSoundId; label: string; description: string }> = [
-  { id: 'pulse', label: 'Пульс', description: 'мягкий короткий сигнал' },
-  { id: 'bell', label: 'Колокол', description: 'чистый высокий тон' },
-  { id: 'signal', label: 'Сигнал', description: 'заметный двойной звук' },
+  { id: 'pulse', label: 'Тёплый', description: 'мягкий низкий chime' },
+  { id: 'bell', label: 'Кристалл', description: 'чистый воздушный звон' },
+  { id: 'signal', label: 'Фокус', description: 'заметный, но спокойный сигнал' },
 ];
 
 export function PomodoroScreen({
@@ -293,20 +293,30 @@ function playPomodoroSound(soundId: PomodoroSoundId, event: 'end' | 'start') {
   if (!context) return;
 
   const now = context.currentTime;
-  const gain = context.createGain();
-  gain.connect(context.destination);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(event === 'end' ? 0.16 : 0.11, now + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
+  const master = context.createGain();
+  const filter = context.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(soundId === 'bell' ? 5200 : 3600, now);
+  filter.Q.setValueAtTime(0.7, now);
+  master.connect(filter);
+  filter.connect(context.destination);
+  master.gain.setValueAtTime(event === 'end' ? 0.86 : 0.68, now);
 
   const sequence = soundSequence(soundId, event);
   sequence.forEach((item) => {
+    const start = now + item.offset;
+    const voiceGain = context.createGain();
     const oscillator = context.createOscillator();
-    oscillator.connect(gain);
+    oscillator.connect(voiceGain);
+    voiceGain.connect(master);
     oscillator.type = item.type;
-    oscillator.frequency.setValueAtTime(item.frequency, now + item.offset);
-    oscillator.start(now + item.offset);
-    oscillator.stop(now + item.offset + item.duration);
+    oscillator.frequency.setValueAtTime(item.frequency, start);
+    if (item.detune) oscillator.detune.setValueAtTime(item.detune, start);
+    voiceGain.gain.setValueAtTime(0.0001, start);
+    voiceGain.gain.exponentialRampToValueAtTime(item.gain, start + item.attack);
+    voiceGain.gain.exponentialRampToValueAtTime(0.0001, start + item.duration);
+    oscillator.start(start);
+    oscillator.stop(start + item.duration + 0.04);
   });
 }
 
@@ -315,20 +325,62 @@ function scheduleSoundStart(soundId: PomodoroSoundId) {
   window.setTimeout(() => playPomodoroSound(soundId, 'start'), 420);
 }
 
-function soundSequence(soundId: PomodoroSoundId, event: 'end' | 'start') {
+type ToneStep = {
+  attack: number;
+  detune?: number;
+  duration: number;
+  frequency: number;
+  gain: number;
+  offset: number;
+  type: OscillatorType;
+};
+
+function tone(frequency: number, offset: number, duration: number, gain: number, type: OscillatorType = 'sine', attack = 0.018, detune?: number): ToneStep {
+  return { attack, detune, duration, frequency, gain, offset, type };
+}
+
+function soundSequence(soundId: PomodoroSoundId, event: 'end' | 'start'): ToneStep[] {
   if (soundId === 'bell') {
-    return [{ frequency: event === 'end' ? 880 : 660, offset: 0, duration: 0.48, type: 'sine' as OscillatorType }];
+    return event === 'end'
+      ? [
+          tone(784, 0, 0.72, 0.11),
+          tone(1175, 0.03, 0.64, 0.055),
+          tone(1568, 0.08, 0.48, 0.03),
+        ]
+      : [
+          tone(587, 0, 0.44, 0.075),
+          tone(880, 0.12, 0.5, 0.07),
+          tone(1319, 0.2, 0.42, 0.035),
+        ];
   }
+
   if (soundId === 'signal') {
-    return [
-      { frequency: event === 'end' ? 740 : 520, offset: 0, duration: 0.18, type: 'triangle' as OscillatorType },
-      { frequency: event === 'end' ? 520 : 740, offset: 0.23, duration: 0.22, type: 'triangle' as OscillatorType },
-    ];
+    return event === 'end'
+      ? [
+          tone(440, 0, 0.34, 0.09, 'triangle'),
+          tone(660, 0.11, 0.42, 0.075, 'triangle'),
+          tone(880, 0.27, 0.36, 0.052, 'sine'),
+          tone(220, 0, 0.62, 0.035, 'sine'),
+        ]
+      : [
+          tone(392, 0, 0.28, 0.07, 'triangle'),
+          tone(523.25, 0.15, 0.32, 0.07, 'triangle'),
+          tone(659.25, 0.3, 0.32, 0.05, 'sine'),
+        ];
   }
-  return [
-    { frequency: event === 'end' ? 620 : 440, offset: 0, duration: 0.16, type: 'sine' as OscillatorType },
-    { frequency: event === 'end' ? 780 : 554, offset: 0.19, duration: 0.2, type: 'sine' as OscillatorType },
-  ];
+
+  return event === 'end'
+    ? [
+        tone(261.63, 0, 0.74, 0.075),
+        tone(392, 0.04, 0.68, 0.06),
+        tone(523.25, 0.16, 0.52, 0.045),
+        tone(130.81, 0, 0.82, 0.03, 'triangle'),
+      ]
+    : [
+        tone(329.63, 0, 0.44, 0.055),
+        tone(493.88, 0.08, 0.5, 0.055),
+        tone(659.25, 0.22, 0.42, 0.038),
+      ];
 }
 
 const local: Record<string, any> = {
