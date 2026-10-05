@@ -1,10 +1,12 @@
 import { KodaIcon } from './components/KodaIcon';
+import { AccountAvatar, accountDisplayName, WorkspaceIdentity } from './components/WorkspaceIdentity';
+import { WorkspaceActions } from './components/WorkspaceActions';
 import { mergeEmotionEntries, type EmotionEntry } from './emotionJournal';
 import { SyncCoordinator, parseDeletedIds, journalRowId } from './syncCoordinator';
 import { RightPanelProvider } from './components/RightPanel';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
-import { BarChart3, Bot, CalendarDays, CircleCheck, Clock3, FileText, FolderKanban, ListChecks, NotebookText, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, User, X } from 'lucide-react-native';
+import { Bot, ListChecks, PanelLeftClose, PanelLeftOpen, Plus, X } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, SafeAreaView, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
@@ -29,7 +31,7 @@ import { ProjectsScreen } from './screens/ProjectsScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { ProgressScreen } from './screens/ProgressScreen';
 import { styles } from './styles';
-import { accent, applyKodaTheme, muted, panel, line, resolveKodaThemeId } from './theme';
+import { accent, applyKodaTheme, muted, panel, resolveKodaThemeId } from './theme';
 import type { AccountInfo, ChatMessage, Goal, Habit, JournalEntry, KodaDay, Note, PlannerItem, PomodoroSettings, ProfileState, Project, TabKey } from './types';
 import { buildMonthDays, displayTimeValue, getCurrentWeekDates, getHabitMonthDays, monthKey, normalizeTimeValue, sleepDurationMinutes, todayDateKey, uid } from './utils';
 
@@ -1464,7 +1466,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
   const screen = (() => {
     if (activeTab === 'planner') {
-      return <PlannerScreen goals={goals} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onGoalsChange={updateGoals} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} />;
+      return <PlannerScreen themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} goals={goals} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onGoalsChange={updateGoals} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} />;
     }
     if (activeTab === 'goals') {
       return <GoalsScreen goals={goals} isDesktop={isDesktopLayout} isOnline={isOnline} onGoalsChange={updateGoals} />;
@@ -1522,8 +1524,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const visibleSyncQueue = syncReady ? syncQueue : [];
   const syncText = getSyncText(visibleSyncQueue, isOnline, syncReady);
   const quickAddPreview = parseQuickTaskInput(quickAddText, todayDateKey(), '');
-  const desktopPrimaryTabs = tabs.slice(0, 5);
-  const desktopSecondaryTabs = tabs.slice(5);
+  const workspaceTabs = tabs.filter(tab => tab.key !== 'profile');
   const renderDesktopTab = (tab: (typeof tabs)[number]) => {
     const active = activeTab === tab.key;
 
@@ -1555,34 +1556,35 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
             <DesktopShell
               globalNavigation={(
               <View style={[styles.desktopSidebar, desktopSidebarCollapsed && styles.desktopSidebarCollapsed]}>
-                <View style={styles.desktopSidebarHeader}>
+                <View style={[styles.desktopSidebarHeader, desktopSidebarCollapsed && { flexDirection: 'column', gap: 10 }]}>
                   <View style={[styles.desktopLogoGroup, desktopSidebarCollapsed && styles.desktopLogoGroupCollapsed]}>
                     <KodaIcon name="brand" size={30} />
-                    {!desktopSidebarCollapsed ? <Text style={styles.desktopLogoWord}>koda</Text> : null}
+                    {!desktopSidebarCollapsed ? <View style={{ gap: 3 }}><Text style={styles.desktopLogoWord}>koda</Text><Text style={styles.workspaceCaption}>МЯГКИЙ РИТМ</Text></View> : null}
                   </View>
                   <Pressable accessibilityRole="button" accessibilityLabel="Свернуть или развернуть меню" onPress={() => setDesktopSidebarCollapsed((collapsed) => !collapsed)} style={styles.desktopSidebarToggle}>
                     {desktopSidebarCollapsed ? <PanelLeftOpen color={muted} size={16} /> : <PanelLeftClose color={muted} size={16} />}
                   </Pressable>
                 </View>
 
-                <View style={styles.desktopNavList}>
-                  {desktopPrimaryTabs.map(renderDesktopTab)}
-                  <View style={styles.desktopNavDivider} />
-                  {desktopSecondaryTabs.map(renderDesktopTab)}
-                </View>
-
-                <View style={styles.desktopSidebarFooter}>
+                <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ flexGrow: 1, gap: 18 }} showsVerticalScrollIndicator={false}>
+                  <View style={styles.desktopNavList}>
+                    {!desktopSidebarCollapsed ? <Text style={styles.workspaceLabel}>ПРОСТРАНСТВО</Text> : null}
+                    {workspaceTabs.map(renderDesktopTab)}
+                  </View>
+                <View style={{ marginTop: 'auto', gap: 8 }}>
                   <View style={[styles.desktopSidebarStatus, desktopSidebarCollapsed && styles.desktopSidebarStatusCollapsed]}>
                     <View style={[styles.syncStripDot, isOnline && !visibleSyncQueue.length && styles.syncStripDotOk, !isOnline && styles.syncStripDotOffline]} />
                     {!desktopSidebarCollapsed ? <Text style={styles.desktopSyncText}>{syncText}</Text> : null}
                   </View>
+                  <WorkspaceIdentity account={accountInfo} days={kodaDays} items={plannerItems} collapsed={desktopSidebarCollapsed} onProfile={() => setActiveTab('profile')} />
                 </View>
+                </ScrollView>
               </View>
               )}
               workspace={(
                 <View nativeID="koda-desktop-workspace" style={styles.desktopWorkspace}>
                   <View style={styles.desktopContentGrid}>
-                    <View style={styles.desktopContent}><RightPanelProvider key={activeTab} title={desktopTabLabels[activeTab]} actions={<Pressable accessibilityRole="button" accessibilityLabel="Переключить светлую и тёмную тему" onPress={() => { const id = resolveKodaThemeId(profile.themeId); updateProfile({ themeId: resolveKodaThemeId(id.endsWith('dark') ? id.replace('dark', 'light') : id.replace('light', 'dark')) }); }} style={{ backgroundColor: panel, borderWidth: 1, borderColor: line, borderRadius: 14, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>{resolveKodaThemeId(profile.themeId).endsWith('dark') ? <Sun size={20} color={muted} /> : <Moon size={20} color={muted} />}</Pressable>}>{screen}</RightPanelProvider></View>
+                    <View style={styles.desktopContent}><RightPanelProvider key={activeTab} title={desktopTabLabels[activeTab]} actions={<WorkspaceActions account={accountInfo} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} items={[...plannerItems, ...projectPlannerItems]} syncText={syncText} onOpenSection={setActiveTab} />}>{screen}</RightPanelProvider></View>
                   </View>
                 </View>
               )}
@@ -1632,6 +1634,10 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
             <View style={styles.mobileDrawerFooter}>
               <View style={[styles.syncStripDot, isOnline && !visibleSyncQueue.length && styles.syncStripDotOk, !isOnline && styles.syncStripDotOffline]} />
               <Text style={styles.desktopSyncText}>{syncText}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 12 }}>
+              <AccountAvatar name={accountDisplayName(accountInfo)} onPress={() => { setActiveTab('profile'); setMobileMenuOpen(false); }} />
+              <View style={{ flex: 1, minWidth: 0 }}><Text numberOfLines={1} style={styles.rowTitle}>{accountDisplayName(accountInfo)}</Text><Text style={styles.rowMeta}>Моё пространство</Text></View>
             </View>
           </Pressable>
         </Pressable>

@@ -2,6 +2,8 @@ import { StyleSheet } from 'react-native';
 import { accent, accentBorder, accentFaint, accentGlow, accentSoft, activeText, bg, faint, headerBg, line, muted, panel, panelSoft, sidebarBg, surfaceElevated, text } from './theme';
 
 export const styles = StyleSheet.create({
+  workspaceCaption: { color: muted, fontSize: 9, letterSpacing: 1.2 },
+  workspaceLabel: { color: muted, fontSize: 10, letterSpacing: 1.1, paddingHorizontal: 10, marginBottom: 8 },
   taskContextAction: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44, paddingVertical: 10 },
   safe: { backgroundColor: bg, flex: 1 },
   stage: {
@@ -159,9 +161,8 @@ export const styles = StyleSheet.create({
   },
   desktopNavItemActive: {
     backgroundColor: accentSoft,
-    borderColor: accent,
+    borderColor: 'transparent',
     borderWidth: 1,
-    boxShadow: `inset 0 0 18px ${accentFaint}`,
   },
   desktopNavItemFeatured: {
     marginVertical: 3,

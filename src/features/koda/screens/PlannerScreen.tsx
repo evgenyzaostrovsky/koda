@@ -1,14 +1,15 @@
-import { useReducedMotion } from '../components/RightPanel';
+import { usePanelRegistration, useReducedMotion } from '../components/RightPanel';
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LayoutChangeEvent } from 'react-native';
 import { Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Grid2X2, List, PanelRight, Pencil, Plus, Trash2, X } from 'lucide-react-native';
-import type { Goal, PlannerItem } from '../types';
+import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Grid2X2, Heart, List, Pencil, Plus, Trash2, X } from 'lucide-react-native';
+import type { Goal, PlannerItem, TabKey, ThemeId } from '../types';
 import { getGoalDayEntries } from '../kodaScore';
 import { upsertRoutineLog } from '../goalLogic';
 import { isProjectedPlannerItem } from '../plannerProjections';
-import { RoutineValueSheet, SectionTitle, type RoutineValueEditor } from '../components';
-import { accent, activeText, faint, muted, panel, text } from '../theme';
+import { RoutineValueSheet, type RoutineValueEditor } from '../components';
+import { CalmSupport } from '../components/CalmSupport';
+import { accent, activeText, faint, line, muted, panel, text } from '../theme';
 import { styles } from '../styles';
 import { getDaysInMonth, normalizeTimeValue, todayDateKey, uid } from '../utils';
 
@@ -60,6 +61,9 @@ export function PlannerScreen({
   onToggleSubtask,
   onUpdateItem,
   projectItems = [],
+  themeId,
+  onThemeChange,
+  onOpenSection,
 }: {
   goals: Goal[];
   isDesktop?: boolean;
@@ -74,6 +78,9 @@ export function PlannerScreen({
   onToggleSubtask: (itemId: string, subtaskId: string) => void;
   onUpdateItem: (id: string, item: Pick<PlannerItem, 'date' | 'time' | 'title'> & { subtasks?: PlannerItem['subtasks'] }) => void;
   projectItems?: PlannerItem[];
+  themeId?: ThemeId;
+  onThemeChange?: (id: ThemeId) => void;
+  onOpenSection?: (tab: TabKey) => void;
 }) {
   const [selectedDate, setSelectedDate] = useState(todayDateKey());
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
@@ -81,6 +88,8 @@ export function PlannerScreen({
   const [viewMode, setViewMode] = useState<PlannerViewMode>('day');
   const reduceMotion = useReducedMotion();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [mobileSupportOpen, setMobileSupportOpen] = useState(false);
+  usePanelRegistration(detailsOpen, () => setDetailsOpen((open) => !open), isDesktop);
   const [detailsMounted, setDetailsMounted] = useState(false);
   const detailsAnimation = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -145,7 +154,6 @@ export function PlannerScreen({
   const selectedOpenCount = selectedItems.filter((item) => !item.done && !item.failed).length;
   const selectedDoneCount = selectedItems.filter((item) => item.done && !item.failed).length;
   const selectedFailedCount = selectedItems.filter((item) => item.failed).length;
-  const selectedProgress = selectedItems.length ? Math.round((selectedDoneCount / selectedItems.length) * 100) : 0;
   const parsedNewItem = useMemo(() => parseQuickTaskInput(newTitle, newDate, newTime), [newDate, newTime, newTitle]);
   const canAddItem = Boolean(parsedNewItem);
   const canSaveEdit = canSubmitPlannerItem(editDate, editTime, editTitle);
@@ -494,10 +502,6 @@ export function PlannerScreen({
     }}>
     {detailsMounted ? <Animated.View style={{ width: 282, marginLeft: 20, transform: [{ translateX: detailsAnimation.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }] }}>
     <View style={styles.desktopAside} testID="desktop-right-column">
-      <View style={styles.rowBetween}>
-        <Text style={styles.desktopAsideTitle}>Планнер</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Закрыть правую панель" onPress={() => setDetailsOpen(false)} style={{ padding: 8 }}><X color={muted} size={18} /></Pressable>
-      </View>
       <View style={styles.desktopAsideCard}>
         <View style={styles.plannerMiniCalendarHead}>
           <Pressable accessibilityRole="button" accessibilityLabel="Предыдущий месяц" onPress={() => moveVisibleMonth(-1)} style={styles.plannerMiniCalendarArrow}><ChevronLeft color={muted} size={16} /></Pressable>
@@ -519,30 +523,9 @@ export function PlannerScreen({
             })}
           </View>)}
         </View>
-      </View>
-      <View style={styles.desktopAsideCard}>
-        <Text style={styles.desktopAsideTitle}>Быстрые действия</Text>
-        <Pressable onPress={() => setNewTitle('Новая задача на сегодня')} style={styles.desktopAsideRow}>
-          <Plus color={accent} size={16} />
-          <Text style={styles.desktopAsideRowText}>Новая задача на сегодня</Text>
-        </Pressable>
-        <Pressable onPress={() => setNewTime('')} style={styles.desktopAsideRow}>
-          <Calendar color={accent} size={15} />
-          <Text style={styles.desktopAsideRowText}>Задача без времени</Text>
-        </Pressable>
-        <Pressable onPress={() => setNewSubtaskOpen(true)} style={styles.desktopAsideRow}>
-          <List color={muted} size={15} />
-          <Text style={styles.desktopAsideRowText}>Добавить подзадачу</Text>
-        </Pressable>
-      </View>
-      <View style={styles.desktopAsideCard}>
-        <Text style={styles.desktopAsideTitle}>Фокус дня</Text>
-        <View style={styles.desktopFocusRow}>
-          <View style={styles.desktopFocusRing}>
-            <Text style={styles.desktopFocusNumber}>{selectedDoneCount}</Text>
-          </View>
-          <Text style={styles.desktopAsideMeta}>из {selectedItems.length} дел выполнено</Text>
-        </View>
+      <Pressable accessibilityRole="button" accessibilityLabel="Календарь: перейти к сегодня" onPress={selectToday} style={[styles.plannerTodayButton, { alignSelf: 'flex-end', marginTop: 4 }]}>
+        <Text style={styles.plannerTodayText}>Сегодня</Text>
+      </Pressable>
       </View>
       {viewMode === 'month' ? (
         <View style={styles.desktopAsideCard}>
@@ -563,34 +546,44 @@ export function PlannerScreen({
             <Text style={styles.notificationButtonText}>Добавить задачу</Text>
           </Pressable>
         </View>
-      ) : <View style={styles.desktopAsideCard}>
-        <Text style={styles.desktopAsideTitle}>Ближайшие задачи</Text>
-        {selectedItems.filter((item) => !item.done).slice(0, 4).map((item) => (
-          <View key={`aside-${item.id}`} style={styles.desktopAsideRow}>
-            <Text style={styles.plannerTime}>{item.time || 'День'}</Text>
-            <Text numberOfLines={1} style={styles.desktopAsideRowText}>{item.title}</Text>
-          </View>
-        ))}
-        {selectedItems.every((item) => item.done) ? <Text style={styles.desktopAsideMeta}>На выбранную дату всё спокойно.</Text> : null}
-      </View>}
-      <View style={styles.desktopAsideCard}>
-        <Text style={styles.desktopAsideTitle}>Прогресс дня</Text>
-        <View style={styles.desktopProgressRow}>
-          <Text style={styles.desktopProgressPercent}>{selectedProgress}%</Text>
-          <View style={styles.desktopProgressTrack}>
-            <View style={[styles.desktopProgressFill, { width: `${selectedProgress}%` }]} />
-          </View>
-        </View>
-        <Text style={styles.desktopAsideMeta}>{selectedDoneCount} из {selectedItems.length} дел завершено</Text>
-      </View>
+      ) : null}
+      <CalmSupport
+        date={selectedDate}
+        items={items}
+        onAddItem={onAddItem}
+        onOpenSection={onOpenSection}
+        onThemeChange={onThemeChange}
+        onToggleItem={onToggleItem}
+        themeId={themeId}
+      />
     </View>
     </Animated.View> : null}
     </Animated.View>
   ) : null;
 
-  const detailsToggle = <Pressable accessibilityRole="button" accessibilityLabel={detailsOpen ? 'Скрыть детали дня' : 'Показать детали дня'} accessibilityState={{ expanded: detailsOpen }} onPress={() => setDetailsOpen((open) => !open)} style={{ padding: 10 }}>
-    <PanelRight color={detailsOpen ? accent : muted} size={22} />
-  </Pressable>;
+  const plannerHeader = (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
+      <View style={{ flexGrow: 1, flexBasis: isDesktop ? 300 : 210 }}>
+        <Text style={{ color: accent, fontSize: 10, fontWeight: '700', letterSpacing: 1.4, marginBottom: 7 }}>ПЛАННЕР</Text>
+        <Text style={{ color: text, fontSize: isDesktop ? 25 : 22, fontWeight: '700', lineHeight: isDesktop ? 31 : 28, letterSpacing: -0.5 }}>Спокойный план — ясный день</Text>
+        <Text style={{ color: muted, fontSize: 12, marginTop: 5 }}>Выбирай самое важное. Остальное подождёт.</Text>
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, justifyContent: 'flex-end' }}>
+        <Pressable accessibilityRole="button" onPress={() => onOpenSection?.('timer')} style={{ minHeight: 44, paddingHorizontal: 11, borderRadius: 11, backgroundColor: panel, borderWidth: 1, borderColor: line, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Heart color={muted} size={14} />
+          <Text style={{ color: muted, fontSize: 10, fontWeight: '600' }}>Фокус на себе</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" onPress={() => {
+          setViewMode('day');
+          setNewDate(selectedDate);
+          setTimeout(() => newTaskInputRef.current?.focus(), 0);
+        }} style={{ minHeight: 44, paddingHorizontal: 11, borderRadius: 11, backgroundColor: accent, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Plus color={activeText} size={14} />
+          <Text style={{ color: activeText, fontSize: 10, fontWeight: '700' }}>Новая задача</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 
   const plannerDateSelector = (
     <View style={[styles.plannerDateBlock, isDesktop && styles.plannerDesktopDateBlock]}>
@@ -676,13 +669,18 @@ export function PlannerScreen({
         showsVerticalScrollIndicator={false}
         style={isDesktop ? styles.desktopScreenScroll : undefined}
       >
-      {!isDesktop ? <View style={{ gap: 12, marginBottom: 12 }}><SectionTitle title="Планнер" subtitle="День по времени, без лишнего шума" />{plannerModeControl}{plannerDateSelector}</View> : null}
+      {!isDesktop ? <View style={{ gap: 12, marginBottom: 12 }}>
+        {plannerHeader}{plannerModeControl}{plannerDateSelector}
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: mobileSupportOpen }} onPress={() => setMobileSupportOpen((open) => !open)} style={{ minHeight: 44, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, borderRadius: 12, backgroundColor: panel, borderWidth: 1, borderColor: line }}>
+          <Text style={{ color: accent, fontSize: 11, fontWeight: '600' }}>{mobileSupportOpen ? 'Скрыть поддержку' : 'Тихая поддержка'}</Text>
+        </Pressable>
+        {mobileSupportOpen ? <CalmSupport date={selectedDate} items={items} onAddItem={onAddItem} onOpenSection={onOpenSection} onThemeChange={onThemeChange} onToggleItem={onToggleItem} themeId={themeId} /> : null}
+      </View> : null}
       {viewMode !== 'day' && isDesktop ? (
         <View style={[styles.plannerDesktopDayLayout, { gap: 0 }]} testID="desktop-page-columns">
           <View style={styles.plannerDesktopMainColumn} testID="desktop-main-column">
         <View style={styles.plannerDesktopHeader}>
-          <SectionTitle title="Планнер" subtitle="День по времени, без лишнего шума" />
-          {detailsToggle}
+          {plannerHeader}
         </View>
             {plannerModeControl}
             {plannerDateSelector}
@@ -695,8 +693,7 @@ export function PlannerScreen({
       <View style={isDesktop ? styles.plannerDesktopMainColumn : undefined} testID={isDesktop ? 'desktop-main-column' : undefined}>
       {isDesktop ? (
         <View style={styles.plannerDesktopHeader}>
-          <SectionTitle title="Планнер" subtitle="День по времени, без лишнего шума" />
-          {detailsToggle}
+          {plannerHeader}
         </View>
       ) : null}
       {isDesktop ? plannerModeControl : null}
