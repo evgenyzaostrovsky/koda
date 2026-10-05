@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { Menu, Plus, X } from 'lucide-react-native';
 import type { TabKey } from '../types';
-import { accent, faint, muted, panel } from '../theme';
+import { accent, accentSoft, faint, muted, panel } from '../theme';
 import { styles } from '../styles';
 
 type BottomNavTab = { key: TabKey; label: string; icon: (active: boolean) => ReactNode };
@@ -41,7 +41,7 @@ export function BottomNav({
         const featured = tab.key === 'habits';
 
         return (
-          <Pressable key={tab.key} onPress={() => setActiveTab(tab.key)} style={[styles.navItem, featured ? styles.navItemFeatured : undefined, featured && active ? styles.navItemFeaturedActive : undefined]} testID={`tab-${tab.key}`}>
+          <Pressable accessibilityRole="button" accessibilityLabel={tab.label} accessibilityState={{ selected: active }} key={tab.key} onPress={() => setActiveTab(tab.key)} style={[styles.navItem, active && { backgroundColor: accentSoft }, featured ? styles.navItemFeatured : undefined, featured && active ? styles.navItemFeaturedActive : undefined]} testID={`tab-${tab.key}`}>
             <View style={featured ? styles.navFeaturedIcon : undefined}>
               {tab.icon(active)}
             </View>

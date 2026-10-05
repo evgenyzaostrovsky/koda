@@ -8,7 +8,7 @@ import { finalizeKodaDay } from '../kodaDaySync';
 import type { Goal, KodaDay, PlannerItem } from '../types';
 import { todayDateKey, uid } from '../utils';
 import { ProgressLine, RoutineValueSheet, SectionTitle, type RoutineValueEditor } from '../components';
-import { accent, accentBorder, accentFaint, faint, line, muted, panel, panelSoft, text } from '../theme';
+import { accent, accentBorder, accentFaint, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
 
 type GoalsChange = (updater: (goals: Goal[]) => Goal[]) => void;
 type KodaDaysChange = (updater: (days: KodaDay[]) => KodaDay[]) => void;
@@ -518,13 +518,13 @@ function formatHistoryDate(date: string) {
 
 const local = StyleSheet.create({
   screen: { flex: 1, minHeight: 0 },
-  editInput: { color: text, borderColor: line, borderWidth: 1, borderRadius: 7, padding: 10, fontSize: 14, minHeight: 42 },
+  editInput: { color: text, borderColor: line, borderWidth: 1, borderRadius: 12, padding: 10, fontSize: 14, minHeight: 42 },
   editTextArea: { minHeight: 72, textAlignVertical: 'top' },
   scroll: { gap: 12, paddingBottom: 94 },
   desktopScroll: { paddingBottom: 36, width: '100%' },
   desktopLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 0, width: '100%' },
   desktopMain: { flex: 1, gap: 12, minWidth: 0 },
-  desktopAside: { borderLeftColor: line, borderLeftWidth: 1, flexShrink: 0, gap: 12, paddingLeft: 20, width: 330 },
+  desktopAside: { borderLeftColor: line, borderLeftWidth: 1, flexShrink: 0, gap: 12, paddingLeft: 20, width: 282 },
   pageHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between', width: '100%' },
   finishHeaderButton: {
     alignItems: 'center',
@@ -536,7 +536,7 @@ const local = StyleSheet.create({
     paddingHorizontal: 16,
   },
   finishHeaderText: { color: accent, fontSize: 13, fontWeight: '700', lineHeight: 17 },
-  hero: { borderColor: line, borderRadius: 8, borderWidth: 1, gap: 8, padding: 14 },
+  hero: { backgroundColor: panel, borderColor: line, borderRadius: 16, borderWidth: 1, gap: 8, padding: 16 },
   reopenDayButton: {
     alignItems: 'center',
     alignSelf: 'flex-start',
@@ -548,8 +548,8 @@ const local = StyleSheet.create({
   },
   reopenDayText: { color: accent, fontSize: 13, fontWeight: '700', lineHeight: 17 },
   startHero: {
-    backgroundColor: '#121312',
-    borderColor: '#292a29',
+    backgroundColor: panel,
+    borderColor: line,
     borderRadius: 18,
     gap: 22,
     justifyContent: 'space-between',
@@ -558,7 +558,7 @@ const local = StyleSheet.create({
     padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.32,
+    shadowOpacity: 0.06,
     shadowRadius: 38,
     width: '100%',
   },
@@ -566,7 +566,7 @@ const local = StyleSheet.create({
   startHeroText: { flex: 1, gap: 8, minWidth: 0 },
   startMark: {
     alignItems: 'center',
-    backgroundColor: '#1f1712',
+    backgroundColor: accentFaint,
     borderColor: accentBorder,
     borderRadius: 18,
     borderWidth: 1,
@@ -577,14 +577,14 @@ const local = StyleSheet.create({
   startMarkText: { color: accent, fontSize: 29, fontWeight: '900', lineHeight: 34 },
   startHeroBottom: {
     alignItems: 'flex-end',
-    borderTopColor: '#252625',
+    borderTopColor: line,
     borderTopWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingTop: 16,
   },
-  consoleGrid: { borderTopColor: '#252625', borderTopWidth: 1, flexDirection: 'row', gap: 12, paddingTop: 18 },
-  consoleCell: { backgroundColor: '#0e0f0e', borderColor: '#292a29', borderRadius: 10, borderWidth: 1, flex: 1, gap: 7, minHeight: 112, minWidth: 0, padding: 14 },
+  consoleGrid: { borderTopColor: line, borderTopWidth: 1, flexDirection: 'row', gap: 12, paddingTop: 18 },
+  consoleCell: { backgroundColor: panelSoft, borderColor: line, borderRadius: 10, borderWidth: 1, flex: 1, gap: 7, minHeight: 112, minWidth: 0, padding: 14 },
   consoleValue: { color: text, fontSize: 17, lineHeight: 22 },
   startHintValue: { color: text, fontSize: 28, fontWeight: '300', lineHeight: 32 },
   startHintLabel: { color: muted, fontSize: 11, lineHeight: 15 },
@@ -595,7 +595,7 @@ const local = StyleSheet.create({
   meta: { color: muted, fontSize: 12, lineHeight: 17 },
   section: { gap: 8 },
   sectionTitle: { color: text, fontSize: 18, lineHeight: 24 },
-  goalBlock: { backgroundColor: panelSoft, borderColor: line, borderRadius: 8, borderWidth: 1, gap: 8, padding: 10 },
+  goalBlock: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 8, padding: 10 },
   goalTitle: { color: text, fontSize: 14, lineHeight: 19 },
   actionRow: { alignItems: 'center', flexDirection: 'row', gap: 8, minHeight: 42 },
   actionText: { flex: 1, minWidth: 0 },
@@ -606,7 +606,7 @@ const local = StyleSheet.create({
   suggestion: { color: text, fontSize: 13, lineHeight: 19 },
   metricRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   metricValue: { color: text, fontSize: 13 },
-  historyRow: { alignItems: 'center', borderBottomColor: '#202120', borderBottomWidth: 1, flexDirection: 'row', minHeight: 34 },
+  historyRow: { alignItems: 'center', borderBottomColor: line, borderBottomWidth: 1, flexDirection: 'row', minHeight: 34 },
   historyDate: { color: muted, fontSize: 12, width: 82 },
   historyScore: { color: text, flex: 1, fontSize: 13 },
   historyDeleteButton: {
@@ -625,10 +625,10 @@ const local = StyleSheet.create({
   sheetTitle: { color: text, fontSize: 19, lineHeight: 25 },
   iconButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, height: 36, justifyContent: 'center', width: 36 },
   sheetActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end' },
-  primaryButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 7, minHeight: 42, justifyContent: 'center', paddingHorizontal: 14 },
-  primaryText: { color: panel, fontSize: 13, fontWeight: '700' },
-  dangerButton: { alignItems: 'center', backgroundColor: '#ff4d4f', borderRadius: 7, minHeight: 42, justifyContent: 'center', paddingHorizontal: 14 },
-  dangerText: { color: panel, fontSize: 13, fontWeight: '700' },
+  primaryButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 12, minHeight: 42, justifyContent: 'center', paddingHorizontal: 14 },
+  primaryText: { color: activeText, fontSize: 13, fontWeight: '700' },
+  dangerButton: { alignItems: 'center', backgroundColor: '#ff4d4f', borderRadius: 12, minHeight: 42, justifyContent: 'center', paddingHorizontal: 14 },
+  dangerText: { color: activeText, fontSize: 13, fontWeight: '700' },
   startButton: {
     alignSelf: 'flex-end',
     borderRadius: 14,
@@ -638,6 +638,6 @@ const local = StyleSheet.create({
     width: 150,
   },
   startButtonText: { fontSize: 16, lineHeight: 22 },
-  secondaryButton: { alignItems: 'center', borderColor: line, borderRadius: 7, borderWidth: 1, minHeight: 42, justifyContent: 'center', paddingHorizontal: 14 },
+  secondaryButton: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, minHeight: 42, justifyContent: 'center', paddingHorizontal: 14 },
   secondaryText: { color: text, fontSize: 13 },
 });

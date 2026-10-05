@@ -3,7 +3,7 @@ import { Archive, Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SectionTitle } from '../components';
-import { accent, accentBorder, faint, line, muted, panel, panelSoft, text } from '../theme';
+import { accent, accentBorder, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
 import type { Project, ProjectTask } from '../types';
 import { uid } from '../utils';
 
@@ -198,7 +198,7 @@ export function ProjectsScreen({
             <Text style={local.ghostText}>Архив · {archivedProjects.length}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Создать проект" onPress={openProjectModal} style={local.addButton}>
-            <Plus color={panel} size={19} strokeWidth={3} />
+            <Plus color={activeText} size={19} strokeWidth={3} />
           </Pressable>
           </View>
         </View>
@@ -302,7 +302,7 @@ export function ProjectsScreen({
                     return (
                       <View key={task.id} style={[local.taskRow, done && local.taskRowDone]}>
                         <Pressable onPress={() => toggleTask(task.id)} style={[local.taskCheck, done && local.taskCheckDone]}>
-                          {done ? <Check color={panel} size={13} strokeWidth={3} /> : null}
+                          {done ? <Check color={activeText} size={13} strokeWidth={3} /> : null}
                         </Pressable>
                         <View style={local.flexText}>
                           <Text style={[local.taskTitle, done && local.doneText]}>{task.title}</Text>
@@ -496,20 +496,20 @@ const local = StyleSheet.create({
   desktopScroll: { paddingBottom: 36, width: '100%' },
   header: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', width: '100%' },
   headerActions: { alignItems: 'center', flexDirection: 'row', gap: 10 },
-  archiveButton: { alignItems: 'center', flexDirection: 'row', gap: 7, borderColor: line, borderWidth: 1, borderRadius: 8, minHeight: 44, paddingHorizontal: 12 },
+  archiveButton: { alignItems: 'center', flexDirection: 'row', gap: 7, borderColor: line, borderWidth: 1, borderRadius: 12, minHeight: 44, paddingHorizontal: 12 },
   listTabs: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  listTab: { flex: 1, alignItems: 'center', justifyContent: 'center', borderColor: line, borderWidth: 1, borderRadius: 8, minHeight: 44, paddingHorizontal: 6 },
+  listTab: { flex: 1, alignItems: 'center', justifyContent: 'center', borderColor: line, borderWidth: 1, borderRadius: 12, minHeight: 44, paddingHorizontal: 6 },
   archiveList: { gap: 10 },
   addButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 999, height: 44, justifyContent: 'center', width: 44 },
   desktopLayout: { alignItems: 'flex-start', flexDirection: 'row-reverse', gap: 0, width: '100%' },
   mobileLayout: { gap: 14 },
-  projectColumn: { borderLeftColor: line, borderLeftWidth: 1, flexShrink: 0, gap: 10, paddingLeft: 20, width: 310 },
+  projectColumn: { borderLeftColor: line, borderLeftWidth: 1, flexShrink: 0, gap: 10, paddingLeft: 20, width: 282 },
   taskColumn: { flex: 1, gap: 12, minWidth: 0 },
   rightHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 52 },
   rightTitle: { color: text, fontSize: 18, fontWeight: '800', lineHeight: 24 },
-  rightAddButton: { alignItems: 'center', backgroundColor: panelSoft, borderRadius: 7, height: 32, justifyContent: 'center', width: 32 },
+  rightAddButton: { alignItems: 'center', backgroundColor: panelSoft, borderRadius: 12, height: 32, justifyContent: 'center', width: 32 },
   mainEmptyState: { gap: 8, justifyContent: 'center', minHeight: 220 },
-  projectCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 8, borderWidth: 1, gap: 9, padding: 14 },
+  projectCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 9, padding: 14 },
   projectCardActive: { borderColor: accentBorder },
   projectTop: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
   flexText: { flex: 1, gap: 3, minWidth: 0 },
@@ -517,20 +517,20 @@ const local = StyleSheet.create({
   detailTitle: { color: text, fontSize: 22, fontWeight: '800', lineHeight: 28 },
   meta: { color: muted, fontSize: 12, lineHeight: 17 },
   percent: { color: text, fontSize: 18, lineHeight: 24 },
-  progressTrack: { backgroundColor: '#252625', height: 2, width: '100%' },
+  progressTrack: { backgroundColor: line, borderRadius: 999, height: 4, width: '100%' },
   progressFill: { backgroundColor: accent, height: 2 },
-  emptyState: { borderColor: line, borderRadius: 8, borderWidth: 1, gap: 10, padding: 16 },
+  emptyState: { borderColor: line, borderRadius: 12, borderWidth: 1, gap: 10, padding: 16 },
   emptyTitle: { color: text, fontSize: 18, fontWeight: '700', lineHeight: 24 },
-  primaryButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 8, justifyContent: 'center', minHeight: 44, paddingHorizontal: 16 },
-  primaryText: { color: panel, fontSize: 13, fontWeight: '800' },
+  primaryButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 12, justifyContent: 'center', minHeight: 44, paddingHorizontal: 16 },
+  primaryText: { color: activeText, fontSize: 13, fontWeight: '800' },
   detailHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between', width: '100%' },
   ghostButton: { borderBottomColor: accent, borderBottomWidth: 1, minHeight: 30, paddingTop: 4 },
   ghostText: { color: accent, fontSize: 12, fontWeight: '700' },
-  summaryRow: { alignItems: 'center', borderColor: line, borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 14, padding: 14 },
+  summaryRow: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 14, padding: 14 },
   summaryValue: { color: text, fontSize: 30, lineHeight: 36 },
   inlineAdd: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: 7, minHeight: 34 },
   inlineAddText: { color: accent, fontSize: 13, fontWeight: '700' },
-  taskList: { borderColor: line, borderRadius: 8, borderWidth: 1, overflow: 'hidden' },
+  taskList: { borderColor: line, borderRadius: 12, borderWidth: 1, overflow: 'hidden' },
   taskRow: { alignItems: 'flex-start', borderBottomColor: line, borderBottomWidth: 1, flexDirection: 'row', gap: 10, minHeight: 54, padding: 12 },
   taskRowDone: { opacity: 0.66 },
   taskCheck: { alignItems: 'center', borderColor: muted, borderRadius: 5, borderWidth: 1, height: 20, justifyContent: 'center', marginTop: 1, width: 20 },
@@ -542,19 +542,19 @@ const local = StyleSheet.create({
   taskActions: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   iconButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, height: 32, justifyContent: 'center', width: 32 },
   modalOverlay: { alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.72)', flex: 1, justifyContent: 'center', padding: 18 },
-  modalCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 8, borderWidth: 1, gap: 12, maxWidth: 430, padding: 16, width: '100%' },
-  confirmCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 8, borderWidth: 1, gap: 12, maxWidth: 360, padding: 16, width: '100%' },
+  modalCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 12, maxWidth: 430, padding: 16, width: '100%' },
+  confirmCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 12, maxWidth: 360, padding: 16, width: '100%' },
   modalHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   modalTitle: { color: text, fontSize: 18, fontWeight: '700', lineHeight: 24 },
   closeButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },
-  input: { borderColor: line, borderRadius: 7, borderWidth: 1, color: text, fontSize: 14, minHeight: 44, paddingHorizontal: 12 },
+  input: { borderColor: line, borderRadius: 12, borderWidth: 1, color: text, fontSize: 14, minHeight: 44, paddingHorizontal: 12 },
   taskScheduleRow: { flexDirection: 'row', gap: 8 },
   scheduleInput: { flex: 1 },
   timeInput: { width: 104 },
   textArea: { minHeight: 86, paddingTop: 12, textAlignVertical: 'top' },
   disabled: { opacity: 0.35 },
   confirmActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end' },
-  secondaryButton: { alignItems: 'center', borderColor: line, borderRadius: 8, borderWidth: 1, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
+  secondaryButton: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
   secondaryText: { color: text, fontSize: 13, fontWeight: '700' },
-  dangerButton: { alignItems: 'center', backgroundColor: '#ff4d4d', borderRadius: 8, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
+  dangerButton: { alignItems: 'center', backgroundColor: '#ff4d4d', borderRadius: 12, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
 });

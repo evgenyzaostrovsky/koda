@@ -1,3 +1,4 @@
+import { accent, activeText, bg, panel, line, text, muted, faint } from '../koda/theme';
 import { Lock, User } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -210,7 +211,7 @@ function AuthInput({
   secureTextEntry?: boolean;
   value: string;
 }) {
-  const iconColor = '#8e8f8e';
+  const iconColor = muted;
   const iconNode = icon === 'lock' ? <Lock size={18} color={iconColor} /> : <User size={18} color={iconColor} />;
 
   return (
@@ -222,7 +223,7 @@ function AuthInput({
         onChangeText={onChangeText}
         onSubmitEditing={onSubmitEditing}
         placeholder={placeholder}
-        placeholderTextColor="#5d5e5d"
+        placeholderTextColor={faint}
         secureTextEntry={secureTextEntry}
         style={styles.input}
         value={value}
@@ -234,23 +235,24 @@ function AuthInput({
 const styles = StyleSheet.create({
   screen: {
     alignItems: 'center',
-    backgroundColor: '#050605',
+    backgroundColor: bg,
     flex: 1,
     justifyContent: 'center',
     padding: 18,
   },
   panel: {
-    borderColor: '#333433',
-    borderRadius: 8,
+    backgroundColor: panel,
+    borderColor: line,
+    borderRadius: 16,
     borderWidth: 1,
     gap: 13,
     maxWidth: 390,
     padding: 18,
     width: '100%',
   },
-  logo: { color: '#e3e3e3', fontSize: 12, letterSpacing: 8, marginBottom: 4, textAlign: 'center' },
+  logo: { color: text, fontSize: 12, letterSpacing: 2, marginBottom: 4, textAlign: 'center' },
   tabs: {
-    borderColor: '#333433',
+    borderColor: line,
     borderRadius: 7,
     borderWidth: 1,
     flexDirection: 'row',
@@ -263,12 +265,12 @@ const styles = StyleSheet.create({
     minHeight: 34,
     justifyContent: 'center',
   },
-  tabActive: { backgroundColor: '#ff6b16' },
-  tabText: { color: '#8e8f8e', fontSize: 13 },
-  tabTextActive: { color: '#090a09', fontWeight: '700' },
+  tabActive: { backgroundColor: accent },
+  tabText: { color: muted, fontSize: 13 },
+  tabTextActive: { color: activeText, fontWeight: '700' },
   inputWrap: {
     alignItems: 'center',
-    borderColor: '#333433',
+    borderColor: line,
     borderRadius: 7,
     borderWidth: 1,
     flexDirection: 'row',
@@ -277,20 +279,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   input: {
-    color: '#e3e3e3',
+    color: text,
     flex: 1,
     fontSize: 15,
     minHeight: 46,
   },
   button: {
     alignItems: 'center',
-    backgroundColor: '#ff6b16',
+    backgroundColor: accent,
     borderRadius: 7,
     minHeight: 44,
     justifyContent: 'center',
   },
   buttonDisabled: { opacity: 0.55 },
-  buttonText: { color: '#090a09', fontSize: 14, fontWeight: '700' },
-  message: { color: '#8e8f8e', fontSize: 12, lineHeight: 18 },
-  messageSuccess: { color: '#ff6b16' },
+  buttonText: { color: activeText, fontSize: 14, fontWeight: '700' },
+  message: { color: muted, fontSize: 12, lineHeight: 18 },
+  messageSuccess: { color: accent },
 });

@@ -10,7 +10,7 @@ import type { JournalEntry, JournalMood } from '../types';
 import { dayTagOptions, defaultJournalEntry } from '../constants';
 import { sleepDurationMinutes } from '../utils';
 import { Card, SectionTitle } from '../components';
-import { accent, faint, muted, panel } from '../theme';
+import { accent, activeText, faint, muted, panel } from '../theme';
 import { styles } from '../styles';
 
 const hours = Array.from({ length: 24 }, (_, index) => index);
@@ -176,7 +176,7 @@ export function JournalScreen({
                       onPress={(event) => requestDeleteEntry(item.id, event)}
                       style={[styles.journalHistoryDeleteButton, hoveredDeleteEntryId === item.id && styles.journalHistoryDeleteButtonHover]}
                     >
-                      <Trash2 color={hoveredDeleteEntryId === item.id ? accent : active ? panel : muted} size={13} />
+                      <Trash2 color={hoveredDeleteEntryId === item.id ? accent : active ? activeText : muted} size={13} />
                     </Pressable>
                   </Pressable>
                 );
@@ -389,7 +389,7 @@ export function JournalScreen({
       ) : null}
       {isCurrentEntry ? (
         <Pressable disabled={!canAddEntry} onPress={onAddEntry} style={[styles.journalBottomAddButton, !canAddEntry && styles.journalBottomAddButtonDisabled]}>
-          <Plus color={panel} size={15} strokeWidth={2.8} />
+          <Plus color={activeText} size={15} strokeWidth={2.8} />
           <Text style={styles.journalBottomAddText}>Добавить запись</Text>
         </Pressable>
       ) : null}

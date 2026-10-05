@@ -4,18 +4,18 @@ import { View } from 'react-native';
 import { styles } from '../styles';
 
 export const desktopLayout = {
-  globalNavWidth: 330,
+  globalNavWidth: 238,
   globalNavCollapsedWidth: 72,
-  pageMaxWidth: '100%',
-  pagePadding: 16,
+  pageMaxWidth: 1600,
+  pagePadding: 24,
   columnGap: 24,
-  rightColumnWidth: 330,
-  compactRightColumnWidth: 300,
+  rightColumnWidth: 282,
+  compactRightColumnWidth: 282,
 } as const;
 
 export function DesktopShell({ globalNavigation, workspace }: { globalNavigation: ReactNode; workspace: ReactNode }) {
   return (
-    <View style={styles.desktopShell}>
+    <View style={[styles.desktopShell, { maxWidth: desktopLayout.pageMaxWidth, alignSelf: 'center' }]}>
       {globalNavigation}
       <View style={styles.desktopPageHost}>{workspace}</View>
     </View>

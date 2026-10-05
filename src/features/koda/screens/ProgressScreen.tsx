@@ -4,6 +4,7 @@ import type { Goal } from '../types';
 import { Card, ProgressLine, SectionTitle } from '../components';
 import { styles } from '../styles';
 import { DesktopPageLayout } from '../components/DesktopShell';
+import { line, panel, panelSoft, text } from '../theme';
 
 export function ProgressScreen({
   completedTasks,
@@ -87,15 +88,15 @@ function BreakdownRow({ label, value }: { label: string; value: number }) {
 const local = StyleSheet.create({
   main: { gap: 14, minWidth: 0 },
   metrics: { flexDirection: 'row', gap: 12, minWidth: 0 },
-  metric: { borderColor: '#303230', borderRadius: 10, borderWidth: 1, flex: 1, gap: 9, minWidth: 0, padding: 16 },
-  metricValue: { color: '#f2f2ef', fontSize: 24, fontWeight: '300', lineHeight: 30 },
-  scorePanel: { backgroundColor: '#111211', borderColor: '#303230', borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 32, minHeight: 220, padding: 24 },
-  scoreLead: { flex: 0.8, gap: 10, justifyContent: 'center', minWidth: 0 },
-  score: { color: '#f2f2ef', fontSize: 62, fontWeight: '300', lineHeight: 68 },
-  breakdown: { flex: 1.2, gap: 22, justifyContent: 'center', minWidth: 0 },
+  metric: { backgroundColor: panel, borderColor: line, borderRadius: 16, borderWidth: 1, flex: 1, gap: 9, minWidth: 0, padding: 16 },
+  metricValue: { color: text, fontSize: 24, fontWeight: '500', lineHeight: 30 },
+  scorePanel: { backgroundColor: panelSoft, borderColor: line, borderRadius: 18, borderWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 18, minHeight: 220, padding: 24 },
+  scoreLead: { flex: 0.8, gap: 10, justifyContent: 'center', minWidth: 140 },
+  score: { color: text, fontSize: 62, fontWeight: '500', lineHeight: 68 },
+  breakdown: { flex: 1.2, gap: 22, justifyContent: 'center', minWidth: 180 },
   breakdownRow: { gap: 8 },
   breakdownLabel: { flexDirection: 'row', justifyContent: 'space-between' },
-  sectionValue: { color: '#f2f2ef', fontSize: 20, lineHeight: 26, marginVertical: 8 },
+  sectionValue: { color: text, fontSize: 20, lineHeight: 26, marginVertical: 8 },
   aside: { gap: 12 },
-  asideTitle: { color: '#f2f2ef', fontSize: 18, lineHeight: 24 },
+  asideTitle: { color: text, fontSize: 18, lineHeight: 24 },
 });

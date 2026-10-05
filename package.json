@@ -49,8 +49,9 @@
     "test:timer": "tsx scripts/test-pomodoro-timer.ts",
     "test:offline": "node scripts/test-offline-shell.cjs",
     "typecheck": "node --stack-size=8192 node_modules/typescript/bin/tsc --noEmit",
-    "test": "npm run test:score && npm run test:koda-day-sync && npm run test:emotions && npm run test:timer && npm run test:offline && npm run test:sync",
-    "test:sync": "tsx scripts/test-sync-coordinator.ts"
+    "test": "npm run test:score && npm run test:koda-day-sync && npm run test:emotions && npm run test:timer && npm run test:offline && npm run test:sync && npm run test:themes",
+    "test:sync": "tsx scripts/test-sync-coordinator.ts",
+    "test:themes": "tsx scripts/test-theme-persistence.ts"
   },
   "private": true
 }

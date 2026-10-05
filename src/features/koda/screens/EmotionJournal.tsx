@@ -107,7 +107,7 @@ const s = StyleSheet.create({
   main: { flex: 1, minWidth: 0, gap: 18 },
   desktopMain: { maxWidth: 860, marginRight: 'auto' },
   history: { gap: 14 },
-  desktopHistory: { width: 330, borderLeftWidth: 1, borderLeftColor: line, paddingLeft: 20 },
+  desktopHistory: { width: 282, borderLeftWidth: 1, borderLeftColor: line, paddingLeft: 20 },
   historyList: { borderWidth: 1, borderColor: line, borderRadius: 10, overflow: 'hidden' },
   historyRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: line, backgroundColor: panel },
   historyDate: { color: muted, fontSize: 13, flexShrink: 0 },

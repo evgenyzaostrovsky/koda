@@ -32,8 +32,8 @@ const manifest = {
   display: 'standalone',
   display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
   orientation: 'any',
-  background_color: '#050605',
-  theme_color: '#050605',
+  background_color: '#f5f6f2',
+  theme_color: '#f5f6f2',
   categories: ['productivity', 'lifestyle'],
   icons: [
     {
@@ -208,7 +208,7 @@ let html = fs.readFileSync(indexPath, 'utf8');
 // The bootstrap creates the themed icon before the app loads. A later static
 // favicon link would override it and briefly restore the orange icon on reload.
 html = html.replace(/<link\b(?=[^>]*\brel=["'](?:shortcut\s+)?icon["'])[^>]*>/gi, '');
-const themeBootstrap = `<script id="koda-theme-bootstrap">(function(){var themes=${JSON.stringify(themeOptions)};var id;try{id=localStorage.getItem('koda:theme:v1');}catch(e){}var theme=themes.find(function(t){return t.id===id;})||themes[0];var root=document.documentElement;root.dataset.theme=theme.id;Object.keys(theme.colors).forEach(function(key){root.style.setProperty(key,theme.colors[key]);});(${applyKodaFavicon.toString()})(theme.colors);})();</script>`;
+const themeBootstrap = `<script id="koda-theme-bootstrap">(function(){var themes=${JSON.stringify(themeOptions)};var id;try{id=localStorage.getItem('koda:theme:v1');}catch(e){}if(id==='koda-dark')id='calm-dark';if(id==='reference-dark')id='calm-sky-dark';var theme=themes.find(function(t){return t.id===id;})||themes[0];var root=document.documentElement;root.dataset.theme=theme.id;root.style.colorScheme=theme.id.endsWith('dark')?'dark':'light';Object.keys(theme.colors).forEach(function(key){root.style.setProperty(key,theme.colors[key]);});(${applyKodaFavicon.toString()})(theme.colors);})();</script>`;
 html = html.replace('<head>', `<head>\n${themeBootstrap}`);
 const pwaTags = [
   '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
@@ -218,7 +218,7 @@ const pwaTags = [
   '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
   '<link rel="manifest" href="/manifest.webmanifest">',
   '<link rel="apple-touch-icon" href="/apple-touch-icon.png">',
-  '<style id="koda-pwa-shell">html,body,#root{height:100%;min-height:100%;background:var(--koda-app-bg,#050605);touch-action:manipulation;}@supports (height:100dvh){html,body,#root{height:100dvh;min-height:100dvh;}}body{overflow:hidden;-webkit-text-size-adjust:100%;}@media(pointer:coarse){input,textarea,select{font-size:16px!important;}}*{scrollbar-width:thin;scrollbar-color:#ff5f1a #050605;}*::-webkit-scrollbar{width:8px;height:8px;}*::-webkit-scrollbar-track{background:#050605;border-left:1px solid #242424;}*::-webkit-scrollbar-thumb{background:#ff5f1a;border:2px solid #050605;border-radius:999px;}*::-webkit-scrollbar-thumb:hover{background:#ff7a33;}*::-webkit-scrollbar-button{display:none;width:0;height:0;}*::-webkit-scrollbar-corner{background:#050605;}</style>',
+  '<style id="koda-pwa-shell">html,body,#root{height:100%;min-height:100%;background:var(--koda-app-bg,#f5f6f2);touch-action:manipulation;}@supports (height:100dvh){html,body,#root{height:100dvh;min-height:100dvh;}}body{overflow:hidden;-webkit-text-size-adjust:100%;}@media(pointer:coarse){input,textarea,select{font-size:16px!important;}}*{scrollbar-width:thin;scrollbar-color:var(--koda-border-strong) var(--koda-app-bg);}*::-webkit-scrollbar{width:8px;height:8px;}*::-webkit-scrollbar-track{background:var(--koda-app-bg);border-left:1px solid var(--koda-border);}*::-webkit-scrollbar-thumb{background:var(--koda-border-strong);border:2px solid var(--koda-app-bg);border-radius:999px;}*::-webkit-scrollbar-thumb:hover{background:var(--koda-accent);}*::-webkit-scrollbar-button{display:none;width:0;height:0;}*::-webkit-scrollbar-corner{background:var(--koda-app-bg);}</style>',
 ].join('\n');
 
 html = html.replace(/<meta\s+name=["']viewport["'][^>]*>/i, '');

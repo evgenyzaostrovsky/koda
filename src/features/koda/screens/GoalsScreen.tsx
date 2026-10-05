@@ -22,7 +22,7 @@ import {
 import type { Goal, GoalAction, GoalMilestone, GoalPriority, GoalRoutine, GoalRoutineFrequencyType, GoalRoutineMetricType } from '../types';
 import { todayDateKey } from '../utils';
 import { ProgressLine, SectionTitle } from '../components';
-import { accent, accentBorder, accentFaint, faint, line, muted, panel, panelSoft, text } from '../theme';
+import { accent, accentBorder, accentFaint, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
 
 type GoalsChange = (updater: (goals: Goal[]) => Goal[]) => void;
 type AddKind = 'milestone' | 'action' | 'routine';
@@ -111,7 +111,7 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline 
       <View style={local.topRow}>
         <SectionTitle title="Цели" subtitle={isOnline ? 'Синхронизируется с аккаунтом' : 'Офлайн: изменения сохранятся локально'} />
         <Pressable onPress={() => setCreateOpen(true)} style={local.roundAccentButton}>
-          <Plus color={panel} size={20} strokeWidth={3} />
+          <Plus color={activeText} size={20} strokeWidth={3} />
         </Pressable>
       </View>
 
@@ -464,7 +464,7 @@ function MilestoneItem({ milestone, actions, onUpdateGoal }: { milestone: GoalMi
               value={newActionTitle}
             />
             <Pressable disabled={!newActionTitle.trim()} onPress={addActionToMilestone} style={[local.inlinePlusButton, !newActionTitle.trim() && local.disabledButton]}>
-              <Plus color={panel} size={15} strokeWidth={3} />
+              <Plus color={activeText} size={15} strokeWidth={3} />
             </Pressable>
           </View>
           {progress === 100 && milestone.status !== 'completed' ? <TinyButton label="Завершить этап" onPress={toggleComplete} /> : null}
@@ -561,7 +561,7 @@ function ActionRow({ action, onToggle }: { action: GoalAction; onToggle: () => v
   const done = action.status === 'completed';
   return (
     <Pressable onPress={onToggle} style={[local.actionRow, done && local.actionRowDone]}>
-      <View style={[local.checkCircle, done && local.checkCircleDone]}>{done ? <Check color={panel} size={13} strokeWidth={3} /> : null}</View>
+      <View style={[local.checkCircle, done && local.checkCircleDone]}>{done ? <Check color={activeText} size={13} strokeWidth={3} /> : null}</View>
       <View style={local.flexText}>
         <Text style={[local.actionTitle, done && local.doneText]}>{action.title}</Text>
         {action.dueDate || action.estimatedMinutes ? <Text style={local.goalMeta}>{action.dueDate ? formatDateLong(action.dueDate) : ''}{action.estimatedMinutes ? ` · ${action.estimatedMinutes} мин` : ''}</Text> : null}
@@ -1058,7 +1058,7 @@ const local = StyleSheet.create({
   desktopLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 0, width: '100%' },
   desktopDetailsLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 0, width: '100%' },
   desktopMainColumn: { flex: 1, gap: 12, minWidth: 0, maxWidth: 1080, marginRight: 'auto' },
-  desktopAside: { borderLeftColor: line, borderLeftWidth: 1, flexShrink: 0, gap: 12, paddingLeft: 20, width: 330 },
+  desktopAside: { borderLeftColor: line, borderLeftWidth: 1, flexShrink: 0, gap: 12, paddingLeft: 20, width: 282 },
   goalNavigation: { borderBottomColor: line, borderBottomWidth: 1, gap: 4, paddingBottom: 12 },
   navigationHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 34 },
   navigationAdd: { alignItems: 'center', height: 30, justifyContent: 'center', width: 30 },
@@ -1067,11 +1067,11 @@ const local = StyleSheet.create({
   navigationText: { color: text, flex: 1, fontSize: 13, lineHeight: 18 },
   navigationTextActive: { color: accent, fontWeight: '700' },
   desktopGoalGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, width: '100%' },
-  desktopInfoCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 8, borderWidth: 1, gap: 9, padding: 14 },
-  divider: { backgroundColor: '#242524', height: 1, marginVertical: 2 },
+  desktopInfoCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 9, padding: 14 },
+  divider: { backgroundColor: line, height: 1, marginVertical: 2 },
   topRow: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   roundAccentButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 999, height: 42, justifyContent: 'center', width: 42 },
-  goalCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 8, borderWidth: 1, gap: 9, padding: 12 },
+  goalCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 9, padding: 12 },
   goalCardDesktop: { flexBasis: 320, flexGrow: 1, minHeight: 128, padding: 16 },
   goalCardDesktopFeatured: { flexBasis: '100%' },
   goalCardFeatured: { borderColor: accentBorder },
@@ -1086,17 +1086,17 @@ const local = StyleSheet.create({
   previewLine: { color: text, fontSize: 13, lineHeight: 18 },
   cardFooter: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
   statusPill: { color: accent, fontSize: 11 },
-  empty: { alignItems: 'flex-start', borderColor: line, borderRadius: 8, borderWidth: 1, gap: 10, padding: 16 },
+  empty: { alignItems: 'flex-start', borderColor: line, borderRadius: 12, borderWidth: 1, gap: 10, padding: 16 },
   emptyTitle: { color: text, fontSize: 20, lineHeight: 26 },
   emptyText: { color: muted, fontSize: 13, lineHeight: 19 },
-  primaryButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 7, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
-  primaryButtonText: { color: panel, fontSize: 13, fontWeight: '700' },
+  primaryButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 12, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
+  primaryButtonText: { color: activeText, fontSize: 13, fontWeight: '700' },
   formActions: { flexDirection: 'row', gap: 8 },
   formPrimaryButton: { flex: 1 },
   disabledButton: { opacity: 0.4 },
   detailsHeader: { alignItems: 'center', flexDirection: 'row', gap: 10, paddingBottom: 8 },
   iconButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, height: 36, justifyContent: 'center', width: 36 },
-  inlineMenu: { borderColor: line, borderRadius: 8, borderWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8, padding: 8 },
+  inlineMenu: { borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8, padding: 8 },
   menuButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, flexDirection: 'row', gap: 5, minHeight: 34, paddingHorizontal: 10 },
   menuButtonText: { color: text, fontSize: 12 },
   dangerText: { color: '#ff4d4d' },
@@ -1105,14 +1105,14 @@ const local = StyleSheet.create({
   block: { gap: 8 },
   blockTitle: { color: text, fontSize: 18, lineHeight: 24, marginTop: 8 },
   compactList: { gap: 7 },
-  todayRow: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 8, minHeight: 50, paddingHorizontal: 10 },
-  sectionItem: { backgroundColor: panelSoft, borderColor: line, borderRadius: 8, borderWidth: 1, gap: 8, padding: 10 },
-  nestedList: { borderTopColor: '#202120', borderTopWidth: 1, gap: 7, paddingTop: 8 },
+  todayRow: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 8, minHeight: 50, paddingHorizontal: 10 },
+  sectionItem: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 8, padding: 10 },
+  nestedList: { borderTopColor: line, borderTopWidth: 1, gap: 7, paddingTop: 8 },
   milestoneActionRow: { alignItems: 'center', flexDirection: 'row', gap: 8, minHeight: 28 },
-  inlineInputRow: { alignItems: 'center', borderColor: line, borderRadius: 7, borderWidth: 1, flexDirection: 'row', gap: 8, minHeight: 38, paddingHorizontal: 10 },
+  inlineInputRow: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 8, minHeight: 38, paddingHorizontal: 10 },
   inlineInput: { color: text, flex: 1, fontSize: 13, minHeight: 34, padding: 0 },
   inlinePlusButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 999, height: 28, justifyContent: 'center', width: 28 },
-  actionRow: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 10, minHeight: 46, paddingHorizontal: 10 },
+  actionRow: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 10, minHeight: 46, paddingHorizontal: 10 },
   actionRowDone: { opacity: 0.62 },
   checkCircle: { alignItems: 'center', borderColor: muted, borderRadius: 999, borderWidth: 1, height: 22, justifyContent: 'center', width: 22 },
   checkCircleDone: { backgroundColor: accent, borderColor: accent },
@@ -1138,21 +1138,21 @@ const local = StyleSheet.create({
   confirmCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 10, borderWidth: 1, gap: 14, maxWidth: 420, padding: 16, width: '100%' },
   sheetTitle: { color: text, fontSize: 19, lineHeight: 25 },
   prompt: { color: text, fontSize: 16, lineHeight: 22 },
-  input: { borderColor: line, borderRadius: 8, borderWidth: 1, color: text, fontSize: 16, minHeight: 44, paddingHorizontal: 11 },
+  input: { borderColor: line, borderRadius: 12, borderWidth: 1, color: text, fontSize: 16, minHeight: 44, paddingHorizontal: 11 },
   segmentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   segment: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, flexGrow: 1, minHeight: 38, justifyContent: 'center', paddingHorizontal: 10 },
   scheduleSegment: { flexBasis: '30%' },
   segmentActive: { backgroundColor: accent, borderColor: accent },
   segmentText: { color: muted, fontSize: 12 },
-  segmentTextActive: { color: panel, fontWeight: '700' },
+  segmentTextActive: { color: activeText, fontWeight: '700' },
   weekdayRow: { flexDirection: 'row', gap: 6, justifyContent: 'space-between' },
-  weekdayButton: { alignItems: 'center', borderColor: line, borderRadius: 7, borderWidth: 1, flex: 1, minHeight: 38, justifyContent: 'center' },
+  weekdayButton: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, flex: 1, minHeight: 38, justifyContent: 'center' },
   weekdayButtonActive: { backgroundColor: accent, borderColor: accent },
   weekdayText: { color: muted, fontSize: 11 },
-  weekdayTextActive: { color: panel, fontWeight: '700' },
-  secondaryButton: { alignItems: 'center', borderColor: line, borderRadius: 7, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
+  weekdayTextActive: { color: activeText, fontWeight: '700' },
+  secondaryButton: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
   secondaryButtonText: { color: text, fontSize: 13 },
-  deleteOutlineButton: { borderColor: '#56302f', marginRight: 'auto' },
+  deleteOutlineButton: { borderColor: accentBorder, marginRight: 'auto' },
   deleteOutlineText: { color: '#ff4d4d', fontSize: 13 },
   confirmActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end' },
   dangerButton: { backgroundColor: '#ff4d4d' },

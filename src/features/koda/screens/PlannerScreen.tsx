@@ -8,7 +8,7 @@ import { getGoalDayEntries } from '../kodaScore';
 import { upsertRoutineLog } from '../goalLogic';
 import { isProjectedPlannerItem } from '../plannerProjections';
 import { RoutineValueSheet, SectionTitle, type RoutineValueEditor } from '../components';
-import { accent, faint, muted, panel, text } from '../theme';
+import { accent, activeText, faint, muted, panel, text } from '../theme';
 import { styles } from '../styles';
 import { getDaysInMonth, normalizeTimeValue, todayDateKey, uid } from '../utils';
 
@@ -460,10 +460,10 @@ export function PlannerScreen({
           </Pressable>
           {!projected ? (
             <View style={styles.plannerRowActions}>
-              <Pressable onPress={() => openEditItem(item)} style={styles.plannerEditButton}>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Редактировать задачу «${item.title}»`} onPress={() => openEditItem(item)} style={styles.plannerEditButton}>
                 <Pencil color={muted} size={14} />
               </Pressable>
-              <Pressable onPress={() => setDeleteCandidate(item)} style={styles.plannerEditButton}>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Удалить задачу «${item.title}»`} onPress={() => setDeleteCandidate(item)} style={styles.plannerEditButton}>
                 <Trash2 color={muted} size={14} />
               </Pressable>
             </View>
@@ -489,14 +489,36 @@ export function PlannerScreen({
   const plannerDayAside = isDesktop ? (
     <Animated.View pointerEvents={detailsOpen ? 'auto' : 'none'} style={{
       flexShrink: 0, overflow: 'hidden',
-      width: detailsAnimation.interpolate({ inputRange: [0, 1], outputRange: [0, 354] }),
+      width: detailsAnimation.interpolate({ inputRange: [0, 1], outputRange: [0, 302] }),
       opacity: detailsAnimation,
     }}>
-    {detailsMounted ? <Animated.View style={{ width: 330, marginLeft: 24, transform: [{ translateX: detailsAnimation.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }] }}>
+    {detailsMounted ? <Animated.View style={{ width: 282, marginLeft: 20, transform: [{ translateX: detailsAnimation.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }] }}>
     <View style={styles.desktopAside} testID="desktop-right-column">
       <View style={styles.rowBetween}>
-        <Text style={styles.desktopAsideTitle}>Детали дня</Text>
+        <Text style={styles.desktopAsideTitle}>Планнер</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="Закрыть правую панель" onPress={() => setDetailsOpen(false)} style={{ padding: 8 }}><X color={muted} size={18} /></Pressable>
+      </View>
+      <View style={styles.desktopAsideCard}>
+        <View style={styles.plannerMiniCalendarHead}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Предыдущий месяц" onPress={() => moveVisibleMonth(-1)} style={styles.plannerMiniCalendarArrow}><ChevronLeft color={muted} size={16} /></Pressable>
+          <Text style={styles.plannerMiniCalendarTitle}>{monthPickerNames[visibleMonth.getMonth()]} {visibleMonth.getFullYear()}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Следующий месяц" onPress={() => moveVisibleMonth(1)} style={styles.plannerMiniCalendarArrow}><ChevronRight color={muted} size={16} /></Pressable>
+        </View>
+        <View style={styles.plannerMiniCalendarWeek}>{weekDays.map((day) => <Text key={day} style={styles.plannerMiniCalendarWeekday}>{day.slice(0, 1)}</Text>)}</View>
+        <View style={styles.plannerMiniCalendarGrid}>
+          {buildMonthWeeks(visibleMonth).map((week, weekIndex) => <View key={`aside-week-${weekIndex}`} style={styles.plannerMiniCalendarRow}>
+            {week.map((day, dayIndex) => {
+              if (!day) return <View key={`aside-blank-${weekIndex}-${dayIndex}`} style={styles.plannerMiniCalendarBlank} />;
+              const dateKeyValue = toDateKey(day);
+              const selected = dateKeyValue === selectedDate;
+              const hasItems = displayItems.some((item) => item.date === dateKeyValue);
+              return <Pressable key={dateKeyValue} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => selectDate(dateKeyValue)} style={[styles.plannerMiniCalendarDay, selected && styles.plannerMiniCalendarDaySelected]}>
+                <Text style={[styles.plannerMiniCalendarDayText, selected && styles.plannerMiniCalendarDaySelectedText]}>{day.getDate()}</Text>
+                {hasItems ? <View style={[styles.plannerMiniCalendarDot, selected && styles.plannerMiniCalendarDotSelected]} /> : null}
+              </Pressable>;
+            })}
+          </View>)}
+        </View>
       </View>
       <View style={styles.desktopAsideCard}>
         <Text style={styles.desktopAsideTitle}>Быстрые действия</Text>
@@ -600,15 +622,15 @@ export function PlannerScreen({
   const plannerModeControl = (
     <View style={styles.plannerModeToggle}>
       <Pressable accessibilityRole="button" accessibilityState={{ selected: viewMode === 'day' }} onPress={() => setViewMode('day')} style={[styles.plannerModeButton, viewMode === 'day' && styles.plannerModeButtonActive]}>
-        <List color={viewMode === 'day' ? panel : muted} size={15} />
+        <List color={viewMode === 'day' ? activeText : muted} size={15} />
         <Text style={[styles.plannerModeText, viewMode === 'day' && styles.plannerModeTextActive]}>День</Text>
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityState={{ selected: viewMode === 'month' }} onPress={() => setViewMode('month')} style={[styles.plannerModeButton, viewMode === 'month' && styles.plannerModeButtonActive]}>
-        <Grid2X2 color={viewMode === 'month' ? panel : muted} size={15} />
+        <Grid2X2 color={viewMode === 'month' ? activeText : muted} size={15} />
         <Text style={[styles.plannerModeText, viewMode === 'month' && styles.plannerModeTextActive]}>Месяц</Text>
       </Pressable>
       <Pressable accessibilityRole="button" accessibilityState={{ selected: viewMode === 'goals' }} onPress={() => setViewMode('goals')} style={[styles.plannerModeButton, viewMode === 'goals' && styles.plannerModeButtonActive]}>
-        <Grid2X2 color={viewMode === 'goals' ? panel : muted} size={15} />
+        <Grid2X2 color={viewMode === 'goals' ? activeText : muted} size={15} />
         <Text style={[styles.plannerModeText, viewMode === 'goals' && styles.plannerModeTextActive]}>Цели</Text>
       </Pressable>
     </View>
@@ -654,6 +676,7 @@ export function PlannerScreen({
         showsVerticalScrollIndicator={false}
         style={isDesktop ? styles.desktopScreenScroll : undefined}
       >
+      {!isDesktop ? <View style={{ gap: 12, marginBottom: 12 }}><SectionTitle title="Планнер" subtitle="День по времени, без лишнего шума" />{plannerModeControl}{plannerDateSelector}</View> : null}
       {viewMode !== 'day' && isDesktop ? (
         <View style={[styles.plannerDesktopDayLayout, { gap: 0 }]} testID="desktop-page-columns">
           <View style={styles.plannerDesktopMainColumn} testID="desktop-main-column">
@@ -748,7 +771,7 @@ export function PlannerScreen({
             value={newTitle}
           />
           <Pressable disabled={!canAddItem} onPress={addItem} style={[styles.plannerQuickAddButton, !canAddItem && styles.plannerQuickAddButtonDisabled]}>
-            <Check color={panel} size={15} strokeWidth={3} />
+            <Check color={activeText} size={15} strokeWidth={3} />
           </Pressable>
         </View>
         {newSubtasks.length || newSubtaskOpen ? (
@@ -777,7 +800,7 @@ export function PlannerScreen({
                 value={newSubtaskDraft}
               />
               <Pressable disabled={!newSubtaskDraft.trim()} onPress={addNewSubtask} style={[styles.plannerQuickAddButton, !newSubtaskDraft.trim() && styles.plannerQuickAddButtonDisabled]}>
-                <Plus color={panel} size={15} strokeWidth={3} />
+                <Plus color={activeText} size={15} strokeWidth={3} />
               </Pressable>
             </View>
           </View>
@@ -903,7 +926,7 @@ export function PlannerScreen({
                     value={editSubtaskDraft}
                   />
                   <Pressable accessibilityRole="button" accessibilityLabel="Добавить подзадачу" disabled={!editSubtaskDraft.trim()} onPress={addEditSubtask} style={[styles.plannerQuickAddButton, !editSubtaskDraft.trim() && styles.plannerQuickAddButtonDisabled]}>
-                    <Plus color={panel} size={15} strokeWidth={3} />
+                    <Plus color={activeText} size={15} strokeWidth={3} />
                   </Pressable>
                 </View>
               </View>
@@ -1526,9 +1549,9 @@ function PlannerMonthView({
                 {isDesktop ? (
                   <Check color={item.done ? accent : muted} size={17} strokeWidth={2.4} />
                 ) : item.done ? (
-                  <Check color={panel} size={12} strokeWidth={2.8} />
+                  <Check color={activeText} size={12} strokeWidth={2.8} />
                 ) : (
-                  <Calendar color={panel} size={12} strokeWidth={2.4} />
+                  <Calendar color={activeText} size={12} strokeWidth={2.4} />
                 )}
               </View>
               <Text style={[styles.plannerMonthEventTitle, !isDesktop && styles.plannerMobileMonthEventTitle, item.done && styles.doneText]} numberOfLines={1}>{item.title}</Text>

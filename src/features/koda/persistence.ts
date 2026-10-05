@@ -15,7 +15,7 @@ export const defaultPomodoroSettings: PomodoroSettings = {
 };
 
 export const defaultProfile: ProfileState = {
-  themeId: 'koda-dark',
+  themeId: 'calm-light',
   version: '',
   daysLeft: '',
   level: '',
@@ -246,7 +246,7 @@ function timeValue(value?: string | null) {
 }
 
 function isProfileEmpty(profile: ProfileState) {
-  return profile.themeId === defaultProfile.themeId && !profile.version && !profile.daysLeft && !profile.level && !profile.streak && !profile.xp && !profile.values && !profile.futureSelf && !profile.focus && !profile.milestone;
+  return normalizeThemeId(profile.themeId) === defaultProfile.themeId && !profile.version && !profile.daysLeft && !profile.level && !profile.streak && !profile.xp && !profile.values && !profile.futureSelf && !profile.focus && !profile.milestone;
 }
 
 function normalizePomodoroSettings(value: unknown): PomodoroSettings {
@@ -305,11 +305,23 @@ function clampPomodoroMinutes(value: unknown, fallback: number, min: number, max
 
 function normalizeProfileState(value: unknown): ProfileState {
   if (!isProfileState(value)) return defaultProfile;
-  return { ...defaultProfile, ...value, themeId: normalizeThemeId((value as Partial<ProfileState>).themeId), emotionEntries: parseEmotionEntries(value.emotionEntries) };
+  return { ...defaultProfile, ...value, themeId: normalizeThemeId(value.themeId), emotionEntries: parseEmotionEntries(value.emotionEntries) };
 }
 
 function normalizeThemeId(value: unknown): ThemeId {
-  return value === 'reference-dark' ? 'reference-dark' : 'koda-dark';
+  if (value === 'koda-dark') return 'calm-dark';
+  if (value === 'reference-dark') return 'calm-sky-dark';
+  switch (value) {
+    case 'calm-light':
+    case 'calm-dark':
+    case 'calm-sky-light':
+    case 'calm-sky-dark':
+    case 'calm-lavender-light':
+    case 'calm-lavender-dark':
+      return value;
+    default:
+      return 'calm-light';
+  }
 }
 
 function mergeJournalEntriesByFreshness(remoteEntries: JournalEntry[], localEntries: JournalEntry[]) {
@@ -499,7 +511,7 @@ function normalizeProjectTask(value: unknown): Project['tasks'][number] | null {
   };
 }
 
-function isProfileState(value: unknown): value is ProfileState {
+function isProfileState(value: unknown): value is Omit<ProfileState, 'themeId'> & { themeId?: unknown } {
   if (!value || typeof value !== 'object') return false;
 
   const profile = value as ProfileState;
@@ -513,7 +525,8 @@ function isProfileState(value: unknown): value is ProfileState {
     typeof profile.values === 'string' &&
     typeof profile.futureSelf === 'string' &&
     typeof profile.focus === 'string' &&
-    typeof profile.milestone === 'string' &&
-    (profile.themeId === undefined || profile.themeId === 'koda-dark' || profile.themeId === 'reference-dark')
+    // Theme IDs are normalized separately so an obsolete or invalid preference
+    // cannot discard the rest of an otherwise valid stored profile.
+    typeof profile.milestone === 'string'
   );
 }

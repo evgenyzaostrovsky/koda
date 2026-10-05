@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { ChevronDown, Pause, Play, RotateCcw, Volume2 } from 'lucide-react-native';
 import { ProgressLine, SectionTitle } from '../components';
-import { accent, accentBorder, accentFaint, faint, line, muted, panel, panelSoft, text } from '../theme';
+import { accent, accentBorder, accentFaint, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
 import type { PomodoroSettings, PomodoroSoundId } from '../types';
 
 type PomodoroMode = 'work' | 'break' | 'longBreak';
@@ -149,12 +149,12 @@ export function PomodoroScreen({
             <View style={local.controls}>
               {status === 'running' ? (
                 <Pressable accessibilityRole="button" onPress={pauseTimer} style={local.primaryControl}>
-                  <Pause color={panel} size={20} fill={panel} />
+                  <Pause color={activeText} size={20} fill={panel} />
                   <Text style={local.primaryControlText}>Пауза</Text>
                 </Pressable>
               ) : (
                 <Pressable accessibilityRole="button" onPress={startTimer} style={local.primaryControl}>
-                  <Play color={panel} size={20} fill={panel} />
+                  <Play color={activeText} size={20} fill={panel} />
                   <Text style={local.primaryControlText}>{status === 'paused' ? 'Продолжить' : 'Начать'}</Text>
                 </Pressable>
               )}
@@ -408,7 +408,7 @@ const local: Record<string, any> = {
     alignItems: 'center',
     backgroundColor: panelSoft,
     borderColor: line,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 10,
@@ -420,7 +420,7 @@ const local: Record<string, any> = {
   dropdownMenu: {
     backgroundColor: panelSoft,
     borderColor: line,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     overflow: 'hidden',
   },
@@ -497,7 +497,7 @@ const local: Record<string, any> = {
     minHeight: 52,
     outlineStyle: 'none',
   },
-  primaryControlText: { color: panel, fontSize: 15, fontWeight: '900' },
+  primaryControlText: { color: activeText, fontSize: 15, fontWeight: '900' },
   scroll: { gap: 18, paddingBottom: 104 },
   secondaryControl: {
     alignItems: 'center',
@@ -515,7 +515,7 @@ const local: Record<string, any> = {
   secondaryControlText: { color: muted, fontSize: 13, fontWeight: '800' },
   sessionText: { color: faint, fontSize: 12, lineHeight: 17, textAlign: 'right' },
   settingsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  sideColumn: { gap: 14, width: 330 },
+  sideColumn: { gap: 14, width: 282 },
   soundDot: { borderColor: line, borderRadius: 999, borderWidth: 1, height: 14, width: 14 },
   soundDotActive: { backgroundColor: accent, borderColor: accent },
   soundMeta: { color: faint, fontSize: 12, lineHeight: 16 },
@@ -528,7 +528,7 @@ const local: Record<string, any> = {
   timerField: {
     backgroundColor: panelSoft,
     borderColor: line,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     flexBasis: '47%',
     flexGrow: 1,

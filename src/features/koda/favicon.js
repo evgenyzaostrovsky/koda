@@ -5,7 +5,7 @@ function applyKodaFavicon(colors) {
   if (typeof document === 'undefined') return;
   const accent = colors['--koda-accent'];
   const background = colors['--koda-app-bg'];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><path fill="${background}" d="M0 0h1024v1024H0z"/><g fill="none" stroke="${accent}" stroke-width="204" stroke-linecap="round"><path opacity=".55" d="M410 410l204 204"/><path opacity=".25" d="M434 638l204-204"/><path d="M410 614l204-204"/></g></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="6" fill="${background}"/><g fill="none" stroke="${accent}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17c3-6 5-7 8-4s5 1 8-3M5 21h14M5 8l3-3 3 3"/><circle cx="17" cy="6" r="2"/></g></svg>`;
   const href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
   let icons = Array.from(document.querySelectorAll('link[rel~="icon"]'));
   if (!icons.length) {

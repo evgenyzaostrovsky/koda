@@ -4,7 +4,7 @@ import { Linking, Modal, Pressable, ScrollView, Text, TextInput, View } from 're
 import { ListChecks, LogOut, Palette, Plus, X } from 'lucide-react-native';
 import type { AccountInfo, Habit, PlannerItem, ProfileState, ThemeId } from '../types';
 import { Card } from '../components';
-import { accent, faint, muted, themeOptions } from '../theme';
+import { accent, faint, muted, resolveKodaThemeId, themeOptions } from '../theme';
 import { styles } from '../styles';
 import { enablePushNotifications, getPushStatus } from '../../../lib/pushNotifications';
 import { env } from '../../../config/env';
@@ -219,10 +219,13 @@ export function ProfileScreen({
         </View>
         <View style={styles.profileThemeList}>
           {themeOptions.map((theme) => {
-            const active = profile.themeId === theme.id;
+            const active = resolveKodaThemeId(profile.themeId) === theme.id;
             return (
               <Pressable
                 key={theme.id}
+                accessibilityRole="button"
+                accessibilityLabel={theme.name}
+                accessibilityState={{ selected: active }}
                 onPress={() => onProfileChange({ themeId: theme.id })}
                 style={[styles.profileThemeOption, active && styles.profileThemeOptionActive]}
               >
@@ -232,7 +235,7 @@ export function ProfileScreen({
                   <View style={[styles.profileThemeSwatch, { backgroundColor: theme.colors['--koda-accent'] }]} />
                 </View>
                 <View style={styles.profileSettingText}>
-                  <Text style={styles.rowTitle}>{theme.id === 'koda-dark' ? 'Основная' : 'Альтернативная'}</Text>
+                  <Text style={styles.rowTitle}>{theme.name}</Text>
                   <Text style={styles.rowMeta}>{theme.description}</Text>
                 </View>
                 <Text style={[styles.profileThemeState, active && styles.profileThemeStateActive]}>{active ? 'выбрана' : 'выбрать'}</Text>
@@ -406,7 +409,7 @@ function formatAccountDate(value: string) {
 }
 
 function getThemeName(themeId: ThemeId) {
-  return themeOptions.find((theme) => theme.id === themeId)?.name ?? 'KODA Dark';
+  return themeOptions.find((theme) => theme.id === resolveKodaThemeId(themeId))?.name ?? 'Шалфей · светлый';
 }
 
 function SettingRow({

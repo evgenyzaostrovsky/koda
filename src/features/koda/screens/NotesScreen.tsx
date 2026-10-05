@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SectionTitle } from '../components';
 import { DesktopPageLayout } from '../components/DesktopShell';
-import { accent, accentFaint, accentSoft, faint, line, muted, panel, panelSoft, surfaceElevated, text } from '../theme';
+import { accent, accentFaint, accentSoft, activeText, faint, line, muted, panel, panelSoft, surfaceElevated, text } from '../theme';
 import type { Note, NoteBlock, NoteBlockType, NoteDocument } from '../types';
 import { uid } from '../utils';
 
@@ -394,7 +394,7 @@ function NoteBlockEditor({
         <Pressable onPress={() => onOpenBlockMenu(null)} style={local.blockHandle}>
           {block.type === 'checklist' ? (
             <Pressable onPress={() => onChange(block.id, { checked: !block.checked })} style={[local.checkBox, block.checked && local.checkBoxDone]}>
-              {block.checked ? <Check color={panel} size={12} strokeWidth={3} /> : null}
+              {block.checked ? <Check color={activeText} size={12} strokeWidth={3} /> : null}
             </Pressable>
           ) : block.type === 'toggle' ? (
             <Pressable onPress={() => onChange(block.id, { collapsed: !block.collapsed })} style={local.blockIconButton}>
@@ -496,7 +496,7 @@ function ChildNoteBlockEditor({
         <Pressable onPress={onOpenBlockMenu} style={local.blockHandle}>
           {block.type === 'checklist' ? (
             <Pressable onPress={() => onChange(block.id, { checked: !block.checked })} style={[local.checkBox, block.checked && local.checkBoxDone]}>
-              {block.checked ? <Check color={panel} size={12} strokeWidth={3} /> : null}
+              {block.checked ? <Check color={activeText} size={12} strokeWidth={3} /> : null}
             </Pressable>
           ) : (
             <Text style={local.blockPrefix}>{prefix}</Text>
@@ -696,7 +696,7 @@ const local: Record<string, any> = {
   codeBlock: {
     backgroundColor: surfaceElevated,
     borderColor: line,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 8,
   },
@@ -715,7 +715,7 @@ const local: Record<string, any> = {
   dangerButton: {
     backgroundColor: 'var(--koda-error-soft, #2b1919)',
     borderColor: 'var(--koda-error, #d97875)',
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     minHeight: 38,
     outlineStyle: 'none' as const,
@@ -726,7 +726,7 @@ const local: Record<string, any> = {
   desktopContextTitle: { color: text, fontSize: 18, fontWeight: '800' as const, lineHeight: 24 },
   desktopAddButton: { backgroundColor: accentSoft, borderRadius: 6, height: 30, width: 30 },
   desktopEmptyState: { borderWidth: 0, paddingHorizontal: 0 },
-  desktopEditorPanel: { borderRadius: 0, borderWidth: 0, width: '100%' as const },
+  desktopEditorPanel: { borderColor: line, borderRadius: 20, borderWidth: 1, width: '100%' as const },
   desktopNoteRow: { borderLeftColor: 'transparent', borderLeftWidth: 2, borderRadius: 5, minHeight: 64, paddingHorizontal: 10, paddingVertical: 8 },
   desktopNoteRowActive: { borderLeftColor: accent },
   desktopNotesListPanel: { backgroundColor: panel, borderRadius: 0, borderWidth: 0, padding: 0, width: '100%' as const },
@@ -737,7 +737,7 @@ const local: Record<string, any> = {
   editorPanel: {
     backgroundColor: panel,
     borderColor: line,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     flex: 1,
     minHeight: 0,
@@ -756,7 +756,7 @@ const local: Record<string, any> = {
   editorToolbarActions: { alignItems: 'center', flexDirection: 'row' as const, gap: 8 },
   emptyState: {
     borderColor: line,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     gap: 10,
     padding: 16,
@@ -821,7 +821,7 @@ const local: Record<string, any> = {
   notePreview: { color: muted, fontSize: 12, lineHeight: 17 },
   noteRow: {
     borderColor: line,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     gap: 6,
     minHeight: 86,
@@ -836,7 +836,7 @@ const local: Record<string, any> = {
   notesListPanel: {
     backgroundColor: panel,
     borderColor: line,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     flexShrink: 0,
     gap: 14,
@@ -847,13 +847,13 @@ const local: Record<string, any> = {
   primaryButton: {
     alignItems: 'center',
     backgroundColor: accent,
-    borderRadius: 8,
+    borderRadius: 12,
     minHeight: 40,
     justifyContent: 'center',
     outlineStyle: 'none' as const,
     paddingHorizontal: 14,
   },
-  primaryButtonText: { color: panel, fontSize: 13, fontWeight: '800' as const, lineHeight: 17 },
+  primaryButtonText: { color: activeText, fontSize: 13, fontWeight: '800' as const, lineHeight: 17 },
   quoteBlock: { borderLeftColor: accent, borderLeftWidth: 2, paddingLeft: 8 },
   quoteInput: { color: text, fontStyle: 'italic' as const },
   roundAddButton: {
@@ -871,7 +871,7 @@ const local: Record<string, any> = {
     alignItems: 'center',
     backgroundColor: panelSoft,
     borderColor: line,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     flexDirection: 'row' as const,
     gap: 8,
@@ -889,7 +889,7 @@ const local: Record<string, any> = {
   },
   secondaryButton: {
     borderColor: line,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     minHeight: 38,
     outlineStyle: 'none' as const,

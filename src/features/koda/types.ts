@@ -1,7 +1,7 @@
 import type { Database } from '../../types/database';
 
 export type TabKey = 'planner' | 'goals' | 'projects' | 'notes' | 'habits' | 'timer' | 'profile' | 'journal' | 'progress' | 'koda';
-export type ThemeId = 'koda-dark' | 'reference-dark';
+export type ThemeId = 'calm-light' | 'calm-dark' | 'calm-sky-light' | 'calm-sky-dark' | 'calm-lavender-light' | 'calm-lavender-dark';
 export type AccountInfo = { name: string; username: string; createdAt: string };
 export type GoalStatus = 'active' | 'paused' | 'completed' | 'archived';
 export type GoalPriority = 'main' | 'important' | 'supporting';

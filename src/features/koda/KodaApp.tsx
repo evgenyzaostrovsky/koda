@@ -1,15 +1,16 @@
+import { KodaIcon } from './components/KodaIcon';
 import { mergeEmotionEntries, type EmotionEntry } from './emotionJournal';
 import { SyncCoordinator, parseDeletedIds, journalRowId } from './syncCoordinator';
 import { RightPanelProvider } from './components/RightPanel';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
-import { BarChart3, Bot, CalendarDays, CircleCheck, Clock3, FileText, FolderKanban, ListChecks, NotebookText, PanelLeftClose, PanelLeftOpen, Plus, User, X } from 'lucide-react-native';
+import { BarChart3, Bot, CalendarDays, CircleCheck, Clock3, FileText, FolderKanban, ListChecks, NotebookText, Sun, Moon, PanelLeftClose, PanelLeftOpen, Plus, User, X } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, SafeAreaView, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { isSupabaseConfigured } from '../../config/env';
 import { supabase } from '../../lib/supabase';
-import { Header } from './components';
+import { Header, BottomNav } from './components';
 import { DesktopShell } from './components/DesktopShell';
 import { defaultHabitMonth, defaultHabitYear, defaultJournalEntry, initialGoals, initialHabits, journalMoodByName, journalMoodByValue, journalOwnerKey } from './constants';
 import { calculateGoalProgress } from './goalLogic';
@@ -28,57 +29,23 @@ import { ProjectsScreen } from './screens/ProjectsScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { ProgressScreen } from './screens/ProgressScreen';
 import { styles } from './styles';
-import { accent, applyKodaTheme, muted, panel, resolveKodaThemeId } from './theme';
+import { accent, applyKodaTheme, muted, panel, line, resolveKodaThemeId } from './theme';
 import type { AccountInfo, ChatMessage, Goal, Habit, JournalEntry, KodaDay, Note, PlannerItem, PomodoroSettings, ProfileState, Project, TabKey } from './types';
 import { buildMonthDays, displayTimeValue, getCurrentWeekDates, getHabitMonthDays, monthKey, normalizeTimeValue, sleepDurationMinutes, todayDateKey, uid } from './utils';
 
-function KodaMarkIcon({ active = false, size = 18 }: { active?: boolean; size?: number }) {
-  const scale = size / 18;
-
-  return (
-    <View style={[styles.kodaMarkIcon, { height: size, width: size }]}> 
-      <View
-        style={[
-          styles.kodaMarkIconBlade,
-          styles.kodaMarkIconBladeBack,
-          active && styles.kodaMarkIconBladeActive,
-          {
-            borderRadius: 3.8 * scale,
-            height: 7.2 * scale,
-            left: 1.7 * scale,
-            top: 5.4 * scale,
-            width: 14.6 * scale,
-          },
-        ]}
-      />
-      <View
-        style={[
-          styles.kodaMarkIconBlade,
-          active && styles.kodaMarkIconBladeActive,
-          {
-            borderRadius: 3.8 * scale,
-            height: 7.2 * scale,
-            left: 1.7 * scale,
-            top: 5.4 * scale,
-            width: 14.6 * scale,
-          },
-        ]}
-      />
-    </View>
-  );
-}
+function KodaMarkIcon({ active = false, size = 18 }: { active?: boolean; size?: number }) { return <KodaIcon name="brand" size={size} color={active ? accent : muted} />; }
 
 const tabs: Array<{ key: TabKey; label: string; icon: (active: boolean) => ReactNode }> = [
-  { key: 'planner', label: 'Планнер', icon: (active) => <CalendarDays color={active ? accent : muted} size={17} /> },
-  { key: 'goals', label: 'Цели', icon: (active) => <CircleCheck color={active ? accent : muted} size={17} /> },
-  { key: 'projects', label: 'Проекты', icon: (active) => <FolderKanban color={active ? accent : muted} size={17} /> },
-  { key: 'notes', label: 'Заметки', icon: (active) => <NotebookText color={active ? accent : muted} size={17} /> },
-  { key: 'journal', label: 'Дневник', icon: (active) => <FileText color={active ? accent : muted} size={17} /> },
-  { key: 'habits', label: 'KODA', icon: (active) => <KodaMarkIcon active={active} size={18} /> },
-  { key: 'timer', label: 'Таймер', icon: (active) => <Clock3 color={active ? accent : muted} size={17} /> },
-  { key: 'progress', label: 'Прогресс', icon: (active) => <BarChart3 color={active ? accent : muted} size={17} /> },
-  { key: 'profile', label: 'Профиль', icon: (active) => <User color={active ? accent : muted} size={17} /> },
-  { key: 'koda', label: 'Помощник', icon: (active) => <Bot color={active ? accent : muted} size={17} /> },
+  { key: 'planner', label: 'Планнер', icon: (active) => <KodaIcon name="planner" color={active ? accent : muted} size={21} /> },
+  { key: 'goals', label: 'Цели', icon: (active) => <KodaIcon name="goals" color={active ? accent : muted} size={21} /> },
+  { key: 'projects', label: 'Проекты', icon: (active) => <KodaIcon name="projects" color={active ? accent : muted} size={21} /> },
+  { key: 'notes', label: 'Заметки', icon: (active) => <KodaIcon name="notes" color={active ? accent : muted} size={21} /> },
+  { key: 'journal', label: 'Дневник', icon: (active) => <KodaIcon name="journal" color={active ? accent : muted} size={21} /> },
+  { key: 'habits', label: 'KODA', icon: (active) => <KodaIcon name="habits" color={active ? accent : muted} size={21} /> },
+  { key: 'timer', label: 'Таймер', icon: (active) => <KodaIcon name="timer" color={active ? accent : muted} size={21} /> },
+  { key: 'progress', label: 'Прогресс', icon: (active) => <KodaIcon name="progress" color={active ? accent : muted} size={21} /> },
+  { key: 'profile', label: 'Профиль', icon: (active) => <KodaIcon name="profile" color={active ? accent : muted} size={21} /> },
+  { key: 'koda', label: 'Помощник', icon: (active) => <KodaIcon name="koda" color={active ? accent : muted} size={21} /> },
 ];
 
 const desktopTabLabels: Record<TabKey, string> = {
@@ -112,7 +79,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { width } = useWindowDimensions();
   const isDesktopLayout = width >= 1040;
-  const desktopSidebarWidth = desktopSidebarCollapsed ? 72 : 330;
+  const desktopSidebarWidth = desktopSidebarCollapsed ? 72 : 238;
   const desktopContentMaxWidth = 1360;
   const desktopContentPadding = 32;
   const desktopAvailableWidth = Math.max(0, width - desktopSidebarWidth);
@@ -1581,7 +1548,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   return (
     <PomodoroProvider settings={pomodoro} owner={userId ?? 'guest'} onPhase={() => playPomodoroSound(pomodoro.soundId, 'end')}>
     <SafeAreaView style={styles.safe}>
-      <StatusBar style="light" />
+      <StatusBar style={resolveKodaThemeId(profile.themeId).endsWith('dark') ? 'light' : 'dark'} />
       <View style={[styles.stage, isDesktopLayout && styles.desktopStage]}>
         <View style={[styles.frame, isDesktopLayout && styles.desktopFrame]}>
           {isDesktopLayout ? (
@@ -1590,13 +1557,10 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
               <View style={[styles.desktopSidebar, desktopSidebarCollapsed && styles.desktopSidebarCollapsed]}>
                 <View style={styles.desktopSidebarHeader}>
                   <View style={[styles.desktopLogoGroup, desktopSidebarCollapsed && styles.desktopLogoGroupCollapsed]}>
-                    <View style={styles.desktopLogoMark}>
-                      <View style={[styles.desktopLogoMarkBlade, styles.desktopLogoMarkBladeOne]} />
-                      <View style={[styles.desktopLogoMarkBlade, styles.desktopLogoMarkBladeTwo]} />
-                    </View>
-                    {!desktopSidebarCollapsed ? <Text style={styles.desktopLogoWord}>KODA</Text> : null}
+                    <KodaIcon name="brand" size={30} />
+                    {!desktopSidebarCollapsed ? <Text style={styles.desktopLogoWord}>koda</Text> : null}
                   </View>
-                  <Pressable onPress={() => setDesktopSidebarCollapsed((collapsed) => !collapsed)} style={styles.desktopSidebarToggle}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Свернуть или развернуть меню" onPress={() => setDesktopSidebarCollapsed((collapsed) => !collapsed)} style={styles.desktopSidebarToggle}>
                     {desktopSidebarCollapsed ? <PanelLeftOpen color={muted} size={16} /> : <PanelLeftClose color={muted} size={16} />}
                   </Pressable>
                 </View>
@@ -1618,7 +1582,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
               workspace={(
                 <View nativeID="koda-desktop-workspace" style={styles.desktopWorkspace}>
                   <View style={styles.desktopContentGrid}>
-                    <View style={styles.desktopContent}><RightPanelProvider key={activeTab}>{screen}</RightPanelProvider></View>
+                    <View style={styles.desktopContent}><RightPanelProvider key={activeTab} title={desktopTabLabels[activeTab]} actions={<Pressable accessibilityRole="button" accessibilityLabel="Переключить светлую и тёмную тему" onPress={() => { const id = resolveKodaThemeId(profile.themeId); updateProfile({ themeId: resolveKodaThemeId(id.endsWith('dark') ? id.replace('dark', 'light') : id.replace('light', 'dark')) }); }} style={{ backgroundColor: panel, borderWidth: 1, borderColor: line, borderRadius: 14, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>{resolveKodaThemeId(profile.themeId).endsWith('dark') ? <Sun size={20} color={muted} /> : <Moon size={20} color={muted} />}</Pressable>}>{screen}</RightPanelProvider></View>
                   </View>
                 </View>
               )}
@@ -1626,7 +1590,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
           ) : (
             <>
               <Header hasPendingSync={Boolean(visibleSyncQueue.length)} isOnline={isOnline} onMenuPress={() => setMobileMenuOpen(true)} syncText={syncText} />
-              <View style={styles.content}>{screen}</View>
+              <View style={styles.content}>{screen}</View><BottomNav activeTab={activeTab} setActiveTab={setActiveTab} tabs={tabs.filter(tab => ['planner', 'projects', 'journal', 'timer'].includes(tab.key))} />
             </>
           )}
         </View>
@@ -1649,6 +1613,9 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
                 return (
                   <Pressable
                     key={tab.key}
+                    accessibilityRole="button"
+                    accessibilityLabel={desktopTabLabels[tab.key]}
+                    accessibilityState={{ selected: active }}
                     onPress={() => {
                       setActiveTab(tab.key);
                       setMobileMenuOpen(false);
