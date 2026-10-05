@@ -12,15 +12,15 @@ export function Header({ isOnline, syncText, hasPendingSync, onMenuPress }: { ha
   return (
     <View style={styles.header}>
       <View style={styles.headerLeft}>
-        <Pressable accessibilityLabel="Открыть меню" onPress={onMenuPress} style={styles.mobileMenuButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Открыть меню" onPress={onMenuPress} style={styles.mobileMenuButton}>
           <Menu color={muted} size={22} />
         </Pressable>
         <View style={styles.headerSync}>
           <View style={[styles.syncStripDot, isOnline && !hasPendingSync && styles.syncStripDotOk, !isOnline && styles.syncStripDotOffline]} />
-          <Text style={styles.syncStripText}>{syncText}</Text>
+          <Text numberOfLines={1} style={[styles.syncStripText, { flexShrink: 1 }]}>{syncText}</Text>
         </View>
       </View>
-      <Text style={styles.logo}>K O D A</Text>
+      <Text numberOfLines={1} style={styles.logo}>KODA</Text>
     </View>
   );
 }

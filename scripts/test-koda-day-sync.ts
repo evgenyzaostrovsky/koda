@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { autoFinalizeExpiredKodaDays, getKodaDayAutoCloseAt, kodaDayId, mergeKodaDaySources, toKodaDayRow } from '../src/features/koda/kodaDaySync';
 import type { KodaDay, KodaDayStatus } from '../src/features/koda/types';
+import { mergeStoredKodaState } from '../src/features/koda/persistence';
+import { initialGoals, initialHabits } from '../src/features/koda/constants';
+import { defaultPomodoroSettings, defaultProfile } from '../src/features/koda/persistence';
 
 function day(status: KodaDayStatus, updatedAt: string, id = 'legacy-device-id'): KodaDay {
   return {
@@ -45,6 +48,15 @@ const offlineLocal = day('active', fresh);
 const afterReconnect = mergeKodaDaySources([], [offlineLocal]);
 assert.equal(afterReconnect[0].status, 'active');
 assert.equal(toKodaDayRow(afterReconnect[0], userId).status, 'active');
+
+const remoteGoals = initialGoals.map((goal, index) => index === 0 ? { ...goal, title: 'Изменено на телефоне', updatedAt: fresh } : goal);
+const localGoals = initialGoals.map((goal, index) => index === 0 ? { ...goal, title: 'Старая версия на компьютере', updatedAt: old } : goal);
+const mergedAcrossDevices = mergeStoredKodaState(
+  { goals: remoteGoals, habits: initialHabits, kodaDays: [day('active', fresh)], pomodoro: defaultPomodoroSettings, profile: defaultProfile, projects: [] },
+  { goals: localGoals, habits: initialHabits, kodaDays: [day('not_started', old)], pomodoro: defaultPomodoroSettings, profile: defaultProfile, projects: [] },
+);
+assert.equal(mergedAcrossDevices.goals[0].title, 'Изменено на телефоне');
+assert.equal(mergedAcrossDevices.kodaDays[0].status, 'active');
 
 const cutoff = getKodaDayAutoCloseAt(offlineLocal.localDate);
 const justBeforeCutoff = new Date(cutoff.getTime() - 1);

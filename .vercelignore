@@ -4,3 +4,8 @@
 node_modules
 .expo
 .expo-check-dist
+
+dist-audit
+*-check*.png
+*-preview.png
+audit-*.png

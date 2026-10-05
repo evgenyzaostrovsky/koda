@@ -1,7 +1,8 @@
 import { isRoutineDueToday, routineLogValue } from './goalLogic';
 import type { Goal, GoalAction, GoalRoutine, KodaDayClassification, PlannerItem } from './types';
 
-export const KODA_SCORE_VERSION = 1;
+export const KODA_SCORE_VERSION = 2;
+export const KODA_FAILED_TASK_PENALTY = 2;
 export const KODA_SCORE_WEIGHTS = {
   goals: 90,
   planner: 10,
@@ -59,6 +60,8 @@ export type KodaScoreResult = {
   pointsToNextThreshold: number | null;
   goals: GoalScoreBreakdown[];
   planner: {
+    failed: number;
+    penalty: number;
     completed: number;
     total: number;
     completionRatio: number;
@@ -78,7 +81,7 @@ export function calculateKodaScore(goals: Goal[], plannerItems: PlannerItem[], d
   const goalBreakdowns = calculateGoalBreakdowns(goals, date);
   const planner = calculatePlannerScore(plannerItems, date);
   const goalScore = goalBreakdowns.length ? calculateGoalScore(goalBreakdowns) : null;
-  const totalScore = goalScore === null ? null : clampScore(goalScore + planner.score);
+  const totalScore = goalScore === null ? null : clampScore(goalScore + planner.score - planner.penalty);
   const classification = getKodaClassification(totalScore);
   const nextThreshold = getNextThreshold(totalScore);
   const pointsToNextThreshold = totalScore === null || nextThreshold === null ? null : Math.max(0, Math.ceil(nextThreshold - totalScore));
@@ -189,11 +192,14 @@ function calculateGoalScore(goalBreakdowns: GoalScoreBreakdown[]) {
 }
 
 function calculatePlannerScore(items: PlannerItem[], date: string) {
-  const todayItems = items.filter((item) => item.date === date);
+  const todayItems = items.filter((item) => item.date === date && !item.deletedAt);
   const total = todayItems.length;
-  const completed = todayItems.filter((item) => item.done).length;
+  const completed = todayItems.filter((item) => item.done && !item.failed).length;
+  const failed = todayItems.filter((item) => item.failed).length;
   const completionRatio = total ? completed / total : 1;
   return {
+    failed,
+    penalty: failed * KODA_FAILED_TASK_PENALTY,
     completed,
     total,
     completionRatio,

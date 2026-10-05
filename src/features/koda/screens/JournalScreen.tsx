@@ -1,3 +1,6 @@
+import { EmotionJournal } from './EmotionJournal';
+import type { EmotionEntry } from '../emotionJournal';
+import { RightPanel } from '../components/RightPanel';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
@@ -69,7 +72,11 @@ export function JournalScreen({
   onDeleteEntry,
   onSelectEntry,
   onUpdate,
+  emotionEntries,
+  onSaveEmotion,
 }: {
+  emotionEntries: EmotionEntry[];
+  onSaveEmotion: (entry: EmotionEntry) => void;
   activeEntryId: string;
   canAddEntry: boolean;
   entries: JournalEntry[];
@@ -80,6 +87,7 @@ export function JournalScreen({
   onSelectEntry: (id: string) => void;
   onUpdate: (patch: Partial<JournalEntry>) => void;
 }) {
+  const [emotionalMode, setEmotionalMode] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteEntryId, setDeleteEntryId] = useState<string | null>(null);
   const [hoveredDeleteEntryId, setHoveredDeleteEntryId] = useState<string | null>(null);
@@ -118,8 +126,10 @@ export function JournalScreen({
     setDeleteEntryId(null);
   }
 
+  if (emotionalMode) return <EmotionJournal isDesktop={isDesktop} entries={emotionEntries} onSave={onSaveEmotion} onBack={() => setEmotionalMode(false)} />;
   return (
     <ScrollView contentContainerStyle={[styles.scrollContent, isDesktop && styles.desktopPageScroll]} showsVerticalScrollIndicator={false}>
+      <Pressable accessibilityRole="button" onPress={() => setEmotionalMode(true)} style={styles.journalHistoryButton}><Text style={styles.journalHistoryText}>Эмоциональный дневник →</Text></Pressable>
       {!isDesktop ? <View style={styles.journalHeader}>
         <SectionTitle title="Дневник" subtitle="Сон, настроение, мысли" />
         <View style={styles.journalHeaderActions}>
@@ -385,7 +395,7 @@ export function JournalScreen({
       ) : null}
         </View>
         {isDesktop ? (
-          <View style={styles.journalDesktopAside} testID="desktop-right-column">
+          <RightPanel enabled={isDesktop}><View style={styles.journalDesktopAside} testID="desktop-right-column">
             <View style={styles.desktopAsideHeader}>
               <Text style={styles.desktopAsideTitle}>История</Text>
               <Text style={styles.rowMeta}>{historyEntries.length}</Text>
@@ -399,7 +409,7 @@ export function JournalScreen({
                 </Pressable>
               ))}
             </ScrollView>
-          </View>
+          </View></RightPanel>
         ) : null}
       </View>
     </ScrollView>

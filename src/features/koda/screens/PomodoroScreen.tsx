@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { usePomodoroController } from '../usePomodoroTimer';
+import { RightPanel } from '../components/RightPanel';
+import { useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { ChevronDown, Pause, Play, RotateCcw, Volume2 } from 'lucide-react-native';
 import { ProgressLine, SectionTitle } from '../components';
@@ -35,86 +37,15 @@ export function PomodoroScreen({
   onSettingsChange: (patch: Partial<PomodoroSettings>) => void;
   settings: PomodoroSettings;
 }) {
-  const [mode, setMode] = useState<PomodoroMode>('work');
-  const [status, setStatus] = useState<TimerStatus>('idle');
-  const [remainingSeconds, setRemainingSeconds] = useState(settings.workMinutes * 60);
-  const [completedWorkSessions, setCompletedWorkSessions] = useState(0);
+  const timer = usePomodoroController();
+  const { mode, status, remainingSeconds, completedWorkSessions, pause: pauseTimer, reset: resetTimer } = timer;
   const [soundReady, setSoundReady] = useState(false);
   const [soundMenuOpen, setSoundMenuOpen] = useState(false);
-  const statusRef = useRef(status);
-  const modeRef = useRef(mode);
-
   const totalSeconds = getModeMinutes(mode, settings) * 60;
-  const elapsedSeconds = Math.max(0, totalSeconds - remainingSeconds);
-  const progress = totalSeconds ? Math.min(100, Math.round((elapsedSeconds / totalSeconds) * 100)) : 0;
+  const progress = Math.min(100, Math.max(0, Math.round((totalSeconds - remainingSeconds) / totalSeconds * 100)));
   const nextModeLabel = mode === 'work' ? nextBreakLabel(completedWorkSessions + 1, settings) : 'Работа';
-  const selectedSound = soundOptions.find((option) => option.id === settings.soundId) ?? soundOptions[0];
-
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
-
-  useEffect(() => {
-    modeRef.current = mode;
-  }, [mode]);
-
-  useEffect(() => {
-    if (status === 'running') return;
-    setRemainingSeconds(getModeMinutes(mode, settings) * 60);
-  }, [mode, settings, status]);
-
-  useEffect(() => {
-    if (status !== 'running' || typeof window === 'undefined') return undefined;
-
-    const interval = window.setInterval(() => {
-      setRemainingSeconds((current) => {
-        if (current > 1) return current - 1;
-        window.setTimeout(() => completePhase(), 0);
-        return 0;
-      });
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [status, mode, settings, completedWorkSessions]);
-
-  function startTimer() {
-    unlockSound();
-    if (remainingSeconds <= 0) setRemainingSeconds(getModeMinutes(mode, settings) * 60);
-    setStatus('running');
-    playPomodoroSound(settings.soundId, 'start');
-  }
-
-  function pauseTimer() {
-    setStatus('paused');
-  }
-
-  function resetTimer(nextMode: PomodoroMode = mode) {
-    setMode(nextMode);
-    setStatus('idle');
-    setRemainingSeconds(getModeMinutes(nextMode, settings) * 60);
-  }
-
-  function completePhase() {
-    if (statusRef.current !== 'running') return;
-    const currentMode = modeRef.current;
-    playPomodoroSound(settings.soundId, 'end');
-
-    if (currentMode === 'work') {
-      const nextCompletedSessions = completedWorkSessions + 1;
-      const nextMode: PomodoroMode = shouldUseLongBreak(nextCompletedSessions, settings) ? 'longBreak' : 'break';
-      setCompletedWorkSessions(nextCompletedSessions);
-      setMode(nextMode);
-      setRemainingSeconds(getModeMinutes(nextMode, settings) * 60);
-      setStatus('running');
-      scheduleSoundStart(settings.soundId);
-      return;
-    }
-
-    setMode('work');
-    setRemainingSeconds(settings.workMinutes * 60);
-    setStatus('running');
-    scheduleSoundStart(settings.soundId);
-  }
+  const selectedSound = soundOptions.find(option => option.id === settings.soundId) ?? soundOptions[0];
+  function startTimer() { unlockSound(); timer.start(); playPomodoroSound(settings.soundId, 'start'); }
 
   function unlockSound() {
     setSoundReady(true);
@@ -149,13 +80,13 @@ export function PomodoroScreen({
     <View style={local.panel}>
       <View style={local.panelHeaderRow}>
         <Text style={local.panelTitle}>Звук</Text>
-        <Pressable onPress={() => previewSound()} style={local.textButton}>
+        <Pressable accessibilityRole="button" onPress={() => previewSound()} style={local.textButton}>
           <Volume2 color={accent} size={15} />
           <Text style={local.textButtonText}>Прослушать</Text>
         </Pressable>
       </View>
       <View style={local.dropdown}>
-        <Pressable onPress={() => setSoundMenuOpen((value) => !value)} style={local.dropdownButton}>
+        <Pressable accessibilityRole="button" onPress={() => setSoundMenuOpen((value) => !value)} style={local.dropdownButton}>
           <View style={local.soundText}>
             <Text style={local.soundTitle}>{selectedSound.label}</Text>
             <Text style={local.soundMeta}>{selectedSound.description}</Text>
@@ -168,7 +99,7 @@ export function PomodoroScreen({
               {soundOptions.map((option) => {
                 const active = settings.soundId === option.id;
                 return (
-                  <Pressable
+                  <Pressable accessibilityRole="button"
                     key={option.id}
                     onPress={() => {
                       onSettingsChange({ soundId: option.id });
@@ -194,10 +125,11 @@ export function PomodoroScreen({
   );
 
   return (
+    <>
     <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll]} showsVerticalScrollIndicator={false}>
       <View style={isDesktop ? local.desktopLayout : undefined}>
         <View style={isDesktop ? local.mainColumn : undefined}>
-          <SectionTitle title="Таймер" subtitle="Помодорро без лишнего шума" />
+          <SectionTitle title="Таймер" subtitle="Помодоро без лишнего шума" />
           <View style={local.hero}>
             <View style={local.heroTop}>
               <View>
@@ -216,17 +148,17 @@ export function PomodoroScreen({
 
             <View style={local.controls}>
               {status === 'running' ? (
-                <Pressable onPress={pauseTimer} style={local.primaryControl}>
+                <Pressable accessibilityRole="button" onPress={pauseTimer} style={local.primaryControl}>
                   <Pause color={panel} size={20} fill={panel} />
                   <Text style={local.primaryControlText}>Пауза</Text>
                 </Pressable>
               ) : (
-                <Pressable onPress={startTimer} style={local.primaryControl}>
+                <Pressable accessibilityRole="button" onPress={startTimer} style={local.primaryControl}>
                   <Play color={panel} size={20} fill={panel} />
                   <Text style={local.primaryControlText}>{status === 'paused' ? 'Продолжить' : 'Начать'}</Text>
                 </Pressable>
               )}
-              <Pressable onPress={() => resetTimer()} style={local.secondaryControl}>
+              <Pressable accessibilityRole="button" onPress={() => resetTimer()} style={local.secondaryControl}>
                 <RotateCcw color={muted} size={18} />
                 <Text style={local.secondaryControlText}>Сброс</Text>
               </Pressable>
@@ -234,7 +166,7 @@ export function PomodoroScreen({
 
             <View style={local.modeSwitch}>
               {(['work', 'break', 'longBreak'] as PomodoroMode[]).map((item) => (
-                <Pressable key={item} onPress={() => resetTimer(item)} style={[local.modeButton, mode === item && local.modeButtonActive]}>
+                <Pressable accessibilityRole="button" key={item} onPress={() => resetTimer(item)} style={[local.modeButton, mode === item && local.modeButtonActive]}>
                   <Text style={[local.modeButtonText, mode === item && local.modeButtonTextActive]}>{modeLabel(item)}</Text>
                 </Pressable>
               ))}
@@ -242,16 +174,17 @@ export function PomodoroScreen({
           </View>
         </View>
 
-        <View style={isDesktop ? local.sideColumn : undefined}>
+        <RightPanel enabled={isDesktop}><View style={isDesktop ? local.sideColumn : undefined}>
           {settingsPanel}
           {soundsPanel}
           <View style={local.panel}>
             <Text style={local.panelTitle}>Как работает</Text>
             <Text style={local.hint}>Таймер автоматически переключает работу и отдых. Длинный отдых включается после заданного числа фокус-сессий.</Text>
           </View>
-        </View>
+        </View></RightPanel>
       </View>
     </ScrollView>
+    </>
   );
 }
 
@@ -316,7 +249,7 @@ function getAudioContext(): AudioContext | null {
   return kodaWindow.__kodaPomodoroAudio;
 }
 
-function playPomodoroSound(soundId: PomodoroSoundId, event: 'end' | 'start') {
+export function playPomodoroSound(soundId: PomodoroSoundId, event: 'end' | 'start') {
   const context = getAudioContext();
   if (!context) return;
 
@@ -467,8 +400,8 @@ function playNoiseSweep(context: AudioContext, event: 'end' | 'start', kind: 'so
 }
 
 const local: Record<string, any> = {
-  controls: { flexDirection: 'row', gap: 10 },
-  desktopLayout: { alignSelf: 'center', flexDirection: 'row', gap: 24, maxWidth: 1120, width: '100%' },
+  controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  desktopLayout: { alignSelf: 'center', flexDirection: 'row', gap: 0, width: '100%' },
   desktopScroll: { paddingBottom: 72, paddingTop: 8 },
   dropdown: { gap: 8 },
   dropdownButton: {
@@ -524,10 +457,10 @@ const local: Record<string, any> = {
     gap: 18,
     padding: 18,
   },
-  heroTop: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
+  heroTop: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' },
   hint: { color: muted, fontSize: 12, lineHeight: 18 },
   kicker: { color: accent, fontSize: 12, fontWeight: '800', letterSpacing: 2, lineHeight: 16, textTransform: 'uppercase' },
-  mainColumn: { flex: 1, gap: 18, minWidth: 0 },
+  mainColumn: { flex: 1, gap: 18, minWidth: 0, maxWidth: 760, marginRight: 'auto' },
   modeButton: {
     alignItems: 'center',
     borderColor: line,
@@ -541,7 +474,7 @@ const local: Record<string, any> = {
   modeButtonActive: { backgroundColor: accentFaint, borderColor: accentBorder },
   modeButtonText: { color: muted, fontSize: 12, fontWeight: '700' },
   modeButtonTextActive: { color: accent },
-  modeSwitch: { flexDirection: 'row', gap: 8 },
+  modeSwitch: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   nextText: { color: muted, fontSize: 13, lineHeight: 18, marginTop: 4 },
   panel: {
     backgroundColor: panel,
@@ -605,5 +538,8 @@ const local: Record<string, any> = {
     paddingVertical: 9,
   },
   timerMeta: { color: muted, fontSize: 13, lineHeight: 18, marginTop: 6 },
+  timerOverlay: { alignItems: 'center', backgroundColor: 'rgba(5, 7, 10, 0.92)', flex: 1, justifyContent: 'center', padding: 20 },
+  timerOverlayCard: { backgroundColor: panel, borderColor: line, borderRadius: 14, borderWidth: 1, gap: 14, maxWidth: 420, padding: 24, width: '100%' },
+  overlayTimerText: { color: text, fontSize: 64, fontWeight: '300', lineHeight: 76, textAlign: 'center' },
   timerText: { color: text, fontSize: 72, fontWeight: '300', letterSpacing: 0, lineHeight: 82 },
 };

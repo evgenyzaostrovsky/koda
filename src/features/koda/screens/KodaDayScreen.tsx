@@ -1,8 +1,9 @@
+import { RightPanel } from '../components/RightPanel';
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Check, Plus, Trash2, X } from 'lucide-react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Check, Pencil, Plus, Trash2, X } from 'lucide-react-native';
 import { upsertRoutineLog } from '../goalLogic';
-import { calculateKodaScore, classificationLabel, getGoalDayEntries, KODA_SCORE_VERSION } from '../kodaScore';
+import { calculateKodaScore, classificationLabel, getGoalDayEntries, getKodaClassification, KODA_SCORE_VERSION } from '../kodaScore';
 import { finalizeKodaDay } from '../kodaDaySync';
 import type { Goal, KodaDay, PlannerItem } from '../types';
 import { todayDateKey, uid } from '../utils';
@@ -29,6 +30,7 @@ export function KodaDayScreen({
 }) {
   const date = todayDateKey();
   const [finishOpen, setFinishOpen] = useState(false);
+  const [editingDay, setEditingDay] = useState<KodaDay | null>(null);
   const [deleteDayId, setDeleteDayId] = useState<string | null>(null);
   const [hoveredHistoryDeleteId, setHoveredHistoryDeleteId] = useState<string | null>(null);
   const [routineEditor, setRoutineEditor] = useState<RoutineValueEditor | null>(null);
@@ -39,6 +41,7 @@ export function KodaDayScreen({
   const history = kodaDays.filter((day) => day.status === 'completed').sort((a, b) => b.localDate.localeCompare(a.localDate)).slice(0, 7);
   const dayStatus = todayDay?.status ?? 'not_started';
   const completedScore = todayDay?.status === 'completed' ? todayDay : null;
+  const completedPenalty = completedScore && Array.isArray(completedScore.plannerSnapshot) ? completedScore.plannerSnapshot.filter((item: PlannerItem) => item.failed && !item.deletedAt).length * 2 : 0;
   const todayPlannerItems = plannerItems.filter((item) => item.date === date);
   const openPlannerItems = todayPlannerItems.filter((item) => !item.done);
 
@@ -146,8 +149,9 @@ export function KodaDayScreen({
   }
 
   function setRoutineValue(goalId: string, routineId: string, value: number) {
+    const now = new Date().toISOString();
     onGoalsChange((items) =>
-      items.map((goal) => (goal.id === goalId ? { ...goal, routineLogs: upsertRoutineLog(goal.routineLogs, routineId, date, value) } : goal)),
+      items.map((goal) => (goal.id === goalId ? { ...goal, routineLogs: upsertRoutineLog(goal.routineLogs, routineId, date, value), updatedAt: now } : goal)),
     );
   }
 
@@ -167,6 +171,7 @@ export function KodaDayScreen({
   }
 
   function toggleGoalAction(goalId: string, actionId: string) {
+    const now = new Date().toISOString();
     onGoalsChange((items) =>
       items.map((goal) => (
         goal.id === goalId
@@ -174,9 +179,10 @@ export function KodaDayScreen({
               ...goal,
               actions: goal.actions.map((action) =>
                 action.id === actionId
-                  ? { ...action, status: action.status === 'completed' ? 'pending' : 'completed', completedAt: action.status === 'completed' ? null : new Date().toISOString() }
+                  ? { ...action, status: action.status === 'completed' ? 'pending' : 'completed', completedAt: action.status === 'completed' ? null : now }
                   : action,
               ),
+              updatedAt: now,
             }
           : goal
       )),
@@ -209,6 +215,7 @@ export function KodaDayScreen({
             <Text style={local.score}>{completedScore.totalScore === null ? '--' : Math.round(completedScore.totalScore)}</Text>
             <Text style={local.level}>{classificationLabel(completedScore.classification)}</Text>
             <Text style={local.meta}>{completedScore.summary}</Text>
+            <MiniAction label="Редактировать итог" onPress={() => setEditingDay(completedScore)} />
             <Pressable onPress={reopenDay} style={local.reopenDayButton}>
               <Text style={local.reopenDayText}>Вернуть день</Text>
             </Pressable>
@@ -268,6 +275,7 @@ export function KodaDayScreen({
             <Text style={local.sectionTitle}>Итог</Text>
             <MetricLine label="Движение по целям" value={completedScore.goalScore === null ? 'нет данных' : `${Math.round(completedScore.goalScore)} / 90`} />
             <MetricLine label="Текущие дела" value={`${Math.round(completedScore.plannerScore)} / 10`} />
+            {completedPenalty > 0 ? <MetricLine label="Не выполнено: штраф" value={`−${completedPenalty}`} /> : null}
             <Text style={local.meta}>{completedScore.focusLoss}</Text>
             <Text style={local.meta}>{completedScore.nextRecommendation}</Text>
           </View>
@@ -292,6 +300,7 @@ export function KodaDayScreen({
                 <View style={local.section}>
                   <Text style={local.sectionTitle}>Текущие дела</Text>
                   <MetricLine label="Планнер" value={`${currentScore.planner.completed} из ${currentScore.planner.total || 0} выполнено`} />
+                  {currentScore.planner.penalty > 0 ? <MetricLine label="Не выполнено: штраф" value={`−${currentScore.planner.penalty}`} /> : null}
                   <ProgressLine value={currentScore.planner.completionRatio * 100} />
                 </View>
               </>
@@ -300,13 +309,16 @@ export function KodaDayScreen({
         )}
 
           </View>
-          <View style={isDesktop ? local.desktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
+          <RightPanel enabled={isDesktop}><View style={isDesktop ? local.desktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
         <View style={local.section}>
           <Text style={local.sectionTitle}>История</Text>
           {history.length ? history.map((day) => (
             <View key={day.id} style={local.historyRow}>
               <Text style={local.historyDate}>{formatHistoryDate(day.localDate)}</Text>
               <Text style={local.historyScore}>{day.totalScore === null ? 'без оценки' : `KODA ${Math.round(day.totalScore)} · ${classificationLabel(day.classification)}`}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Редактировать итог за ${formatHistoryDate(day.localDate)}`} onPress={() => setEditingDay(day)} style={local.historyDeleteButton}>
+                <Pencil color={accent} size={14} />
+              </Pressable>
               <Pressable
                 onHoverIn={() => setHoveredHistoryDeleteId(day.id)}
                 onHoverOut={() => setHoveredHistoryDeleteId((current) => (current === day.id ? null : current))}
@@ -318,7 +330,7 @@ export function KodaDayScreen({
             </View>
           )) : <Text style={local.meta}>Завершённых дней пока нет.</Text>}
         </View>
-          </View>
+          </View></RightPanel>
         </View>
       </ScrollView>
 
@@ -328,6 +340,10 @@ export function KodaDayScreen({
         onCancel={() => setFinishOpen(false)}
         onConfirm={finishDay}
       />
+      {editingDay ? <EditDaySheet key={editingDay.id} day={editingDay} onClose={() => setEditingDay(null)} onSave={(patch) => {
+        onKodaDaysChange((days) => days.map((day) => day.id === editingDay.id ? { ...day, ...patch, updatedAt: new Date().toISOString() } : day));
+        setEditingDay(null);
+      }} /> : null}
       <Modal animationType="fade" transparent visible={Boolean(deleteDayId)} onRequestClose={() => setDeleteDayId(null)}>
         <View style={local.overlay}>
           <View style={local.sheet}>
@@ -352,6 +368,55 @@ export function KodaDayScreen({
         onSetDraft={(value) => setRoutineDraft(String(value))}
       />
     </View>
+  );
+}
+
+function EditDaySheet({ day, onClose, onSave }: { day: KodaDay; onClose: () => void; onSave: (patch: Partial<KodaDay>) => void }) {
+  const [goalDraft, setGoalDraft] = useState(day.goalScore === null ? '' : String(day.goalScore));
+  const [plannerDraft, setPlannerDraft] = useState(String(day.plannerScore));
+  const [summary, setSummary] = useState(day.summary);
+  const [focusLoss, setFocusLoss] = useState(day.focusLoss);
+  const [nextRecommendation, setNextRecommendation] = useState(day.nextRecommendation);
+  const goalScore = goalDraft.trim() === '' ? null : Number(goalDraft.replace(',', '.'));
+  const plannerScore = Number(plannerDraft.replace(',', '.'));
+  const valid = (goalScore === null || (Number.isFinite(goalScore) && goalScore >= 0 && goalScore <= 90))
+    && plannerDraft.trim() !== '' && Number.isFinite(plannerScore) && plannerScore >= 0 && plannerScore <= 10;
+  const penalty = Array.isArray(day.plannerSnapshot) ? day.plannerSnapshot.filter((item: PlannerItem) => item.failed && !item.deletedAt).length * 2 : 0;
+  const totalScore = goalScore === null ? null : Math.max(0, goalScore + plannerScore - penalty);
+  const classification = getKodaClassification(totalScore);
+
+  return (
+    <Modal animationType="fade" transparent visible onRequestClose={onClose}>
+      <View style={local.overlay}>
+        <View style={[local.sheet, { maxHeight: '90%' }]}>
+          <View style={local.headerRow}>
+            <Text style={local.sheetTitle}>Итог за {formatHistoryDate(day.localDate)}</Text>
+            <Pressable accessibilityLabel="Закрыть редактор" onPress={onClose} style={local.iconButton}><X color={text} size={18} /></Pressable>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 10 }}>
+            <Text style={local.meta}>Цели: от 0 до 90. Оставь поле пустым, если нет данных.</Text>
+            <TextInput accessibilityLabel="Баллы по целям" keyboardType="decimal-pad" value={goalDraft} onChangeText={setGoalDraft} style={local.editInput} />
+            <Text style={local.meta}>Текущие дела: от 0 до 10</Text>
+            {penalty > 0 ? <Text style={local.meta}>Штраф за невыполненные задачи: −{penalty}</Text> : null}
+            <TextInput accessibilityLabel="Баллы за текущие дела" keyboardType="decimal-pad" value={plannerDraft} onChangeText={setPlannerDraft} style={local.editInput} />
+            <Text style={local.meta}>{valid ? totalScore === null ? 'Без оценки' : `KODA ${Math.round(totalScore)} · ${classificationLabel(classification)}` : 'Введи баллы в указанных пределах.'}</Text>
+            <Text style={local.meta}>Итог дня</Text>
+            <TextInput accessibilityLabel="Итог дня" multiline value={summary} onChangeText={setSummary} style={[local.editInput, local.editTextArea]} />
+            <Text style={local.meta}>Что мешало фокусу</Text>
+            <TextInput accessibilityLabel="Что мешало фокусу" multiline value={focusLoss} onChangeText={setFocusLoss} style={[local.editInput, local.editTextArea]} />
+            <Text style={local.meta}>Рекомендация на завтра</Text>
+            <TextInput accessibilityLabel="Рекомендация на завтра" multiline value={nextRecommendation} onChangeText={setNextRecommendation} style={[local.editInput, local.editTextArea]} />
+          </ScrollView>
+          <View style={local.sheetActions}>
+            <Pressable onPress={onClose} style={local.secondaryButton}><Text style={local.secondaryText}>Отмена</Text></Pressable>
+            <Pressable disabled={!valid} accessibilityRole="button" accessibilityState={{ disabled: !valid }} onPress={() => {
+              if (!valid) return;
+              onSave({ goalScore, plannerScore, totalScore, classification, summary: summary.trim(), focusLoss: focusLoss.trim(), nextRecommendation: nextRecommendation.trim(), calculationSnapshot: goalScore === day.goalScore && plannerScore === day.plannerScore ? day.calculationSnapshot : null });
+            }} style={[local.primaryButton, !valid && { opacity: 0.4 }]}><Text style={local.primaryText}>Сохранить</Text></Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -411,6 +476,7 @@ function FinishDaySheet({ result, visible, onCancel, onConfirm }: { result: Retu
           <Text style={local.meta}>Результат будет зафиксирован. Поздние правки задач и целей не изменят итог дня.</Text>
           <MetricLine label="Цели" value={result.goalScore === null ? 'нет данных' : `${Math.round(result.goalScore)} / 90`} />
           <MetricLine label="Планнер" value={`${Math.round(result.plannerScore)} / 10`} />
+          {result.planner.penalty > 0 ? <MetricLine label="Не выполнено: штраф" value={`−${result.planner.penalty}`} /> : null}
           <View style={local.sheetActions}>
             <Pressable onPress={onCancel} style={local.secondaryButton}><Text style={local.secondaryText}>Вернуться</Text></Pressable>
             <Pressable onPress={onConfirm} style={local.primaryButton}><Text style={local.primaryText}>Закончить день</Text></Pressable>
@@ -452,9 +518,11 @@ function formatHistoryDate(date: string) {
 
 const local = StyleSheet.create({
   screen: { flex: 1, minHeight: 0 },
+  editInput: { color: text, borderColor: line, borderWidth: 1, borderRadius: 7, padding: 10, fontSize: 14, minHeight: 42 },
+  editTextArea: { minHeight: 72, textAlignVertical: 'top' },
   scroll: { gap: 12, paddingBottom: 94 },
   desktopScroll: { paddingBottom: 36, width: '100%' },
-  desktopLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 24, width: '100%' },
+  desktopLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 0, width: '100%' },
   desktopMain: { flex: 1, gap: 12, minWidth: 0 },
   desktopAside: { borderLeftColor: line, borderLeftWidth: 1, flexShrink: 0, gap: 12, paddingLeft: 20, width: 330 },
   pageHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between', width: '100%' },

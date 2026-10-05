@@ -1,12 +1,13 @@
+import { RightPanel } from './RightPanel';
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
 import { styles } from '../styles';
 
 export const desktopLayout = {
-  globalNavWidth: 210,
+  globalNavWidth: 330,
   globalNavCollapsedWidth: 72,
-  pageMaxWidth: 1360,
-  pagePadding: 28,
+  pageMaxWidth: '100%',
+  pagePadding: 16,
   columnGap: 24,
   rightColumnWidth: 330,
   compactRightColumnWidth: 300,
@@ -25,7 +26,7 @@ export function DesktopPageLayout({ main, right }: { main: ReactNode; right: Rea
   return (
     <View style={styles.desktopThreeColumnPage} testID="desktop-page-columns">
       <View style={styles.desktopMainColumn} testID="desktop-main-column">{main}</View>
-      <View style={styles.desktopRightColumn} testID="desktop-right-column">{right}</View>
+      <RightPanel><View style={styles.desktopRightColumn} testID="desktop-right-column">{right}</View></RightPanel>
     </View>
   );
 }

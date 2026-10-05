@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import { mergeEmotionEntries, parseEmotionEntries, type EmotionEntry } from '../src/features/koda/emotionJournal';
+import { defaultProfile, mergeStoredKodaState, normalizeStoredKodaState, parseStoredKodaState } from '../src/features/koda/persistence';
+
+const first: EmotionEntry = { id: 'one', occurredAt: '2026-09-28T10:00:00Z', event: 'Событие', group: 'Радость', emotion: 'Интерес', action: 'Действие', updatedAt: '2026-09-28T10:00:00Z' };
+const second = { ...first, id: 'two', occurredAt: '2026-09-28T11:00:00Z' };
+const edited = { ...first, action: 'Другое действие', updatedAt: '2026-09-28T12:00:00Z' };
+const deleted = { ...edited, deletedAt: '2026-09-28T13:00:00Z', updatedAt: '2026-09-28T13:00:00Z' };
+assert.equal(mergeEmotionEntries([first], [second]).length, 2);
+assert.equal(mergeEmotionEntries([edited], [first])[0].action, edited.action);
+assert.equal(mergeEmotionEntries([first], [deleted])[0].deletedAt, deleted.deletedAt);
+assert.equal(mergeEmotionEntries([deleted], [first])[0].deletedAt, deleted.deletedAt);
+assert.deepEqual(parseEmotionEntries([null, {}, { ...first, occurredAt: 'invalid' }]), []);
+const local = normalizeStoredKodaState({ profile: { ...defaultProfile, emotionEntries: [edited] } })!;
+const remote = normalizeStoredKodaState({ profile: { ...defaultProfile, emotionEntries: [first, second] } })!;
+const merged = mergeStoredKodaState(remote, local);
+const restored = parseStoredKodaState(JSON.stringify(merged))!;
+assert.equal(restored.profile.emotionEntries?.length, 2);
+assert.equal(restored.profile.emotionEntries?.find(e => e.id === 'one')?.action, edited.action);
+assert.deepEqual(parseStoredKodaState(JSON.stringify({ ...local, profile: defaultProfile }))?.profile.emotionEntries, []);
+console.log('Emotion journal: history, edits, deletions, validation, persistence and account merge PASS');

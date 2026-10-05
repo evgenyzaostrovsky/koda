@@ -1,3 +1,4 @@
+import { mergeEmotionEntries, parseEmotionEntries } from './emotionJournal';
 import { defaultJournalEntry, initialGoals, initialHabits } from './constants';
 import { normalizeGoal } from './goalLogic';
 import type { Goal, Habit, JournalEntry, KodaDay, Note, NoteBlock, NoteDocument, PlannerItem, PomodoroSettings, ProfileState, Project, ThemeId } from './types';
@@ -46,6 +47,7 @@ export function isPlannerItemList(value: unknown): value is PlannerItem[] {
     typeof (item as PlannerItem).time === 'string' &&
     typeof (item as PlannerItem).title === 'string' &&
     typeof (item as PlannerItem).done === 'boolean' &&
+    ((item as PlannerItem).failed === undefined || typeof (item as PlannerItem).failed === 'boolean') &&
     ((item as PlannerItem).subtasks === undefined || isPlannerSubtaskList((item as PlannerItem).subtasks)) &&
     ((item as PlannerItem).sourceType === undefined || isPlannerSourceType((item as PlannerItem).sourceType)) &&
     ((item as PlannerItem).sourceId === undefined || (item as PlannerItem).sourceId === null || typeof (item as PlannerItem).sourceId === 'string') &&
@@ -112,7 +114,7 @@ export function mergeStoredKodaState(remoteState: StoredKodaState, localState: S
     habits: localState.habits.length ? localState.habits : remoteState.habits,
     kodaDays: mergeKodaDays(remoteState.kodaDays, localState.kodaDays),
     pomodoro: isDefaultPomodoroSettings(localState.pomodoro) ? remoteState.pomodoro : localState.pomodoro,
-    profile: isProfileEmpty(localState.profile) ? remoteState.profile : localState.profile,
+    profile: { ...(isProfileEmpty(localState.profile) ? remoteState.profile : localState.profile), emotionEntries: mergeEmotionEntries(remoteState.profile.emotionEntries, localState.profile.emotionEntries) },
     projects: mergeProjects(remoteState.projects, localState.projects),
   };
 }
@@ -303,7 +305,7 @@ function clampPomodoroMinutes(value: unknown, fallback: number, min: number, max
 
 function normalizeProfileState(value: unknown): ProfileState {
   if (!isProfileState(value)) return defaultProfile;
-  return { ...defaultProfile, ...value, themeId: normalizeThemeId((value as Partial<ProfileState>).themeId) };
+  return { ...defaultProfile, ...value, themeId: normalizeThemeId((value as Partial<ProfileState>).themeId), emotionEntries: parseEmotionEntries(value.emotionEntries) };
 }
 
 function normalizeThemeId(value: unknown): ThemeId {

@@ -1,4 +1,5 @@
-import { Check, Pencil, Plus, Trash2, X } from 'lucide-react-native';
+import { RightPanel, useRightPanel } from '../components/RightPanel';
+import { Archive, Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SectionTitle } from '../components';
@@ -35,6 +36,10 @@ export function ProjectsScreen({
 }) {
   const visibleProjects = projects.filter((project) => project.status !== 'archived');
   const sortedProjects = [...visibleProjects].sort((first, second) => second.updatedAt.localeCompare(first.updatedAt));
+  const archivedProjects = projects.filter(project => project.status === 'archived')
+    .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt));
+  const { setOpen: setRightPanelOpen } = useRightPanel();
+  const [projectListMode, setProjectListMode] = useState<'active' | 'archived'>('active');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(sortedProjects[0]?.id ?? null);
   const selectedProject = sortedProjects.find((project) => project.id === selectedProjectId) ?? sortedProjects[0] ?? null;
   const [projectDraft, setProjectDraft] = useState<ProjectDraft>(emptyProjectDraft);
@@ -164,30 +169,73 @@ export function ProjectsScreen({
     const now = new Date().toISOString();
     onProjectsChange((items) => items.map((project) => (project.id === projectId ? { ...project, status: 'archived', updatedAt: now } : project)));
     setSelectedProjectId((current) => (current === projectId ? null : current));
+    setProjectListMode('archived');
+    if (isDesktop) setRightPanelOpen(true);
+  }
+
+  function showArchive() {
+    setProjectListMode('archived');
+    if (isDesktop) setRightPanelOpen(true);
+  }
+
+  function restoreProject(projectId: string) {
+    const now = new Date().toISOString();
+    onProjectsChange(items => items.map(project => project.id === projectId && project.status === 'archived'
+      ? { ...project, status: 'active', completedAt: null, updatedAt: now }
+      : project));
+    setSelectedProjectId(projectId);
+    setProjectListMode('active');
   }
 
   return (
     <View style={local.screen}>
       <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll]} showsVerticalScrollIndicator={false}>
-        {!isDesktop ? <View style={local.header}>
+        <View style={local.header}>
           <SectionTitle title="Проекты" subtitle="Вещи, которые состоят из нескольких дел" />
-          <Pressable onPress={openProjectModal} style={local.addButton}>
+          <View style={local.headerActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Открыть архив проектов (${archivedProjects.length})`} onPress={showArchive} style={local.archiveButton}>
+            <Archive color={accent} size={17} />
+            <Text style={local.ghostText}>Архив · {archivedProjects.length}</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Создать проект" onPress={openProjectModal} style={local.addButton}>
             <Plus color={panel} size={19} strokeWidth={3} />
           </Pressable>
-        </View> : null}
+          </View>
+        </View>
 
         <View style={isDesktop ? local.desktopLayout : local.mobileLayout} testID={isDesktop ? 'desktop-page-columns' : undefined}>
-          <View style={isDesktop ? local.projectColumn : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
+          <RightPanel enabled={isDesktop}><View style={isDesktop ? local.projectColumn : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
             {isDesktop ? (
               <View style={local.rightHeader}>
                 <View>
                   <Text style={local.rightTitle}>Проекты</Text>
-                  <Text style={local.meta}>Активные</Text>
                 </View>
                 <Pressable onPress={openProjectModal} style={local.rightAddButton}><Plus color={accent} size={18} strokeWidth={3} /></Pressable>
               </View>
             ) : null}
-            {sortedProjects.length ? (
+            <View style={local.listTabs}>
+              <Pressable accessibilityRole="button" accessibilityState={{ selected: projectListMode === 'active' }} onPress={() => setProjectListMode('active')} style={[local.listTab, projectListMode === 'active' && local.projectCardActive]}>
+                <Text style={local.ghostText}>Активные · {sortedProjects.length}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityState={{ selected: projectListMode === 'archived' }} onPress={() => setProjectListMode('archived')} style={[local.listTab, projectListMode === 'archived' && local.projectCardActive]}>
+                <Text style={local.ghostText}>Архив · {archivedProjects.length}</Text>
+              </Pressable>
+            </View>
+            {projectListMode === 'archived' ? (
+              <View style={local.archiveList}>
+                {archivedProjects.length ? archivedProjects.map(project => (
+                  <View key={project.id} style={local.projectCard}>
+                    <Text style={local.projectTitle}>{project.title}</Text>
+                    {project.description ? <Text numberOfLines={2} style={local.meta}>{project.description}</Text> : null}
+                    <Text style={local.meta}>Задач: {project.tasks.filter(task => !task.deletedAt).length}</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Вернуть проект «${project.title}»`} onPress={() => restoreProject(project.id)} style={local.archiveButton}>
+                      <RotateCcw color={accent} size={16} />
+                      <Text style={local.ghostText}>Вернуть в активные</Text>
+                    </Pressable>
+                  </View>
+                )) : <Text style={local.meta}>Архивных проектов пока нет.</Text>}
+              </View>
+            ) : sortedProjects.length ? (
               sortedProjects.map((project) => {
                 const active = selectedProject?.id === project.id;
                 const visibleTasks = project.tasks.filter((task) => !task.deletedAt);
@@ -217,7 +265,7 @@ export function ProjectsScreen({
             ) : (
               <Text style={local.meta}>Активных проектов пока нет.</Text>
             )}
-          </View>
+          </View></RightPanel>
 
           <View style={isDesktop ? local.taskColumn : undefined} testID={isDesktop ? 'desktop-main-column' : undefined}>
             {selectedProject ? (
@@ -227,7 +275,7 @@ export function ProjectsScreen({
                     <Text style={local.detailTitle}>{selectedProject.title}</Text>
                     {selectedProject.description ? <Text style={local.meta}>{selectedProject.description}</Text> : null}
                   </View>
-                  <Pressable onPress={() => archiveProject(selectedProject.id)} style={local.ghostButton}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Архивировать проект «${selectedProject.title}»`} onPress={() => archiveProject(selectedProject.id)} style={local.ghostButton}>
                     <Text style={local.ghostText}>Архив</Text>
                   </Pressable>
                 </View>
@@ -279,8 +327,11 @@ export function ProjectsScreen({
               </>
             ) : (
               <View style={local.mainEmptyState}>
-                <Text style={local.emptyTitle}>Выбери проект справа</Text>
-                <Text style={local.meta}>Или создай новый проект кнопкой в правой колонке.</Text>
+                <Text style={local.emptyTitle}>Пока нет активных проектов</Text>
+                <Text style={local.meta}>Создайте проект и соберите связанные задачи в одном месте.</Text>
+                <Pressable accessibilityRole="button" onPress={openProjectModal} style={local.primaryButton}>
+                  <Text style={local.primaryText}>Новый проект</Text>
+                </Pressable>
               </View>
             )}
           </View>
@@ -443,9 +494,14 @@ const local = StyleSheet.create({
   screen: { flex: 1, minHeight: 0 },
   scroll: { gap: 16, paddingBottom: 96 },
   desktopScroll: { paddingBottom: 36, width: '100%' },
-  header: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between', width: '100%' },
+  header: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', width: '100%' },
+  headerActions: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+  archiveButton: { alignItems: 'center', flexDirection: 'row', gap: 7, borderColor: line, borderWidth: 1, borderRadius: 8, minHeight: 44, paddingHorizontal: 12 },
+  listTabs: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  listTab: { flex: 1, alignItems: 'center', justifyContent: 'center', borderColor: line, borderWidth: 1, borderRadius: 8, minHeight: 44, paddingHorizontal: 6 },
+  archiveList: { gap: 10 },
   addButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 999, height: 44, justifyContent: 'center', width: 44 },
-  desktopLayout: { alignItems: 'flex-start', flexDirection: 'row-reverse', gap: 24, width: '100%' },
+  desktopLayout: { alignItems: 'flex-start', flexDirection: 'row-reverse', gap: 0, width: '100%' },
   mobileLayout: { gap: 14 },
   projectColumn: { borderLeftColor: line, borderLeftWidth: 1, flexShrink: 0, gap: 10, paddingLeft: 20, width: 310 },
   taskColumn: { flex: 1, gap: 12, minWidth: 0 },

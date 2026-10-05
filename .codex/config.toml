@@ -1,0 +1,19 @@
+# KODA only. Keep the coordinator's model and global settings unchanged.
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 2
+default_subagent_model = "gpt-6-luna"
+default_subagent_reasoning_effort = "medium"
+
+# Explicit native role registration for clients using config_file roles.
+[agents.qa]
+description = "Independent read-only verification of affected user scenarios and recurring bugs."
+config_file = "agents/qa.toml"
+
+[agents.data_reliability]
+description = "Scoped persistence, history, offline and Supabase synchronization specialist."
+config_file = "agents/data_reliability.toml"
+
+[agents.ui_ux]
+description = "Scoped interface, usability and responsive layout specialist."
+config_file = "agents/ui_ux.toml"

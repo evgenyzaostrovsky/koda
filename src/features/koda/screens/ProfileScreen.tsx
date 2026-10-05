@@ -1,3 +1,4 @@
+import { RightPanel } from '../components/RightPanel';
 ﻿import { useEffect, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { ListChecks, LogOut, Palette, Plus, X } from 'lucide-react-native';
@@ -265,7 +266,7 @@ export function ProfileScreen({
       </View>
         </View>
 
-        <View style={isDesktop ? styles.profileDesktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
+        <RightPanel enabled={isDesktop}><View style={isDesktop ? styles.profileDesktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
       <Card>
         <View style={styles.rowBetween}>
           <Text style={styles.cardLabel}>ВИДЖЕТНАЯ ЛЕНТА</Text>
@@ -315,7 +316,7 @@ export function ProfileScreen({
           <EmptyProfilePlus minHeight={92} />
         )}
       </Card>
-        </View>
+        </View></RightPanel>
       </View>
     </ScrollView>
     <Modal animationType="fade" transparent visible={passwordSheetOpen} onRequestClose={() => setPasswordSheetOpen(false)}>

@@ -1,7 +1,8 @@
+import { useReducedMotion } from '../components/RightPanel';
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LayoutChangeEvent } from 'react-native';
-import { Animated, Easing, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Grid2X2, List, Pencil, Plus, Trash2, X } from 'lucide-react-native';
+import { Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Grid2X2, List, PanelRight, Pencil, Plus, Trash2, X } from 'lucide-react-native';
 import type { Goal, PlannerItem } from '../types';
 import { getGoalDayEntries } from '../kodaScore';
 import { upsertRoutineLog } from '../goalLogic';
@@ -55,6 +56,7 @@ export function PlannerScreen({
   onMoveProjectedItemDate,
   onToggleProjectedItem,
   onToggleItem,
+  onSetItemFailed,
   onToggleSubtask,
   onUpdateItem,
   projectItems = [],
@@ -68,12 +70,30 @@ export function PlannerScreen({
   onMoveProjectedItemDate?: (item: PlannerItem, date: string) => void;
   onToggleProjectedItem?: (item: PlannerItem) => void;
   onToggleItem: (id: string) => void;
+  onSetItemFailed: (id: string, failed: boolean) => void;
   onToggleSubtask: (itemId: string, subtaskId: string) => void;
   onUpdateItem: (id: string, item: Pick<PlannerItem, 'date' | 'time' | 'title'> & { subtasks?: PlannerItem['subtasks'] }) => void;
   projectItems?: PlannerItem[];
 }) {
   const [selectedDate, setSelectedDate] = useState(todayDateKey());
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const [taskMenu, setTaskMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [viewMode, setViewMode] = useState<PlannerViewMode>('day');
+  const reduceMotion = useReducedMotion();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsMounted, setDetailsMounted] = useState(false);
+  const detailsAnimation = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (detailsOpen) setDetailsMounted(true);
+    const animation = Animated.timing(detailsAnimation, {
+      toValue: detailsOpen ? 1 : 0,
+      duration: reduceMotion ? 0 : 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+    animation.start(({ finished }) => { if (finished && !detailsOpen) setDetailsMounted(false); });
+    return () => animation.stop();
+  }, [detailsOpen, detailsAnimation, reduceMotion]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTop, setPickerTop] = useState(138);
   const [visibleMonth, setVisibleMonth] = useState(() => dateFromKey(todayDateKey()));
@@ -100,14 +120,31 @@ export function PlannerScreen({
   const [goalRoutineDraft, setGoalRoutineDraft] = useState('');
   const newTaskInputRef = useRef<TextInput | null>(null);
   const displayItems = useMemo(() => [...items, ...projectItems], [items, projectItems]);
+  const menuItem = taskMenu ? displayItems.find((item) => item.id === taskMenu.id && !item.deletedAt) : undefined;
+  function openTaskMenu(item: PlannerItem, x = viewportWidth / 2, y = viewportHeight / 2) {
+    setTaskMenu({ id: item.id, x, y });
+  }
+  function taskMenuProps(item: PlannerItem) {
+    return {
+      delayLongPress: 450,
+      onLongPress: () => openTaskMenu(item),
+      ...(Platform.OS === 'web' ? {
+        onContextMenu: (event: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) => {
+          event.preventDefault(); event.stopPropagation();
+          openTaskMenu(item, event.clientX, event.clientY);
+        },
+      } : {}),
+    };
+  }
   const selectedItems = useMemo(
     () => displayItems.filter((item) => item.date === selectedDate && !item.deletedAt).sort(comparePlannerItems),
     [displayItems, selectedDate],
   );
   const selectedTimedItems = selectedItems.filter((item) => Boolean(item.time));
   const selectedAllDayItems = selectedItems.filter((item) => !item.time);
-  const selectedOpenCount = selectedItems.filter((item) => !item.done).length;
-  const selectedDoneCount = selectedItems.length - selectedOpenCount;
+  const selectedOpenCount = selectedItems.filter((item) => !item.done && !item.failed).length;
+  const selectedDoneCount = selectedItems.filter((item) => item.done && !item.failed).length;
+  const selectedFailedCount = selectedItems.filter((item) => item.failed).length;
   const selectedProgress = selectedItems.length ? Math.round((selectedDoneCount / selectedItems.length) * 100) : 0;
   const parsedNewItem = useMemo(() => parseQuickTaskInput(newTitle, newDate, newTime), [newDate, newTime, newTitle]);
   const canAddItem = Boolean(parsedNewItem);
@@ -314,7 +351,14 @@ export function PlannerScreen({
 
     if (!normalizedDate || normalizedTime === null || !title) return;
 
-    onUpdateItem(editingItem.id, { date: normalizedDate, time: normalizedTime, title, subtasks: editSubtasks });
+    const draftTitle = editSubtaskDraft.trim();
+    const subtasks = draftTitle
+      ? [...editSubtasks, { id: uid('subtask'), title: draftTitle, done: false }]
+      : editSubtasks;
+    onUpdateItem(editingItem.id, { date: normalizedDate, time: normalizedTime, title, subtasks });
+    if (subtasks.length) {
+      setExpandedSubtaskItemIds((ids) => ids.includes(editingItem.id) ? ids : [...ids, editingItem.id]);
+    }
     setSelectedDate(normalizedDate);
     setVisibleMonth(dateFromKey(normalizedDate));
     closeEditItem();
@@ -348,9 +392,6 @@ export function PlannerScreen({
 
     if (isProjectedPlannerItem(item)) {
       onMoveProjectedItemDate?.(item, date);
-      setSelectedDate(date);
-      setNewDate(date);
-      setVisibleMonth(dateFromKey(date));
       return;
     }
 
@@ -360,9 +401,6 @@ export function PlannerScreen({
       title: item.title,
       subtasks: item.subtasks ?? [],
     });
-    setSelectedDate(date);
-    setNewDate(date);
-    setVisibleMonth(dateFromKey(date));
   }
 
   function updatePickerPosition(event: LayoutChangeEvent) {
@@ -373,12 +411,6 @@ export function PlannerScreen({
   function updateNewPickerPosition(event: LayoutChangeEvent) {
     const { height, y } = event.nativeEvent.layout;
     setNewPickerTop(y + height + 6);
-  }
-
-  function focusNewTask() {
-    setViewMode('day');
-    setNewDate(selectedDate);
-    requestAnimationFrame(() => newTaskInputRef.current?.focus());
   }
 
   function renderPlannerItem(item: PlannerItem, index: number, sourceItems: PlannerItem[]) {
@@ -392,8 +424,9 @@ export function PlannerScreen({
     };
 
     return (
-      <View
+      <Pressable
         key={item.id}
+        {...taskMenuProps(item)}
         style={[
           styles.plannerTimelineItem,
           isDesktop && styles.plannerTimelineItemDesktop,
@@ -416,12 +449,13 @@ export function PlannerScreen({
             ) : (
               <View style={styles.plannerSubtaskArrowSpacer} />
             )}
-            <Pressable onPress={toggleItem} style={styles.plannerStatusMark}>
-              <Check color={item.done ? accent : muted} size={17} strokeWidth={2.4} />
+            <Pressable {...taskMenuProps(item)} onPress={toggleItem} style={styles.plannerStatusMark}>
+              {item.failed ? <X color="#ff6666" size={17} /> : <Check color={item.done ? accent : muted} size={17} strokeWidth={2.4} />}
             </Pressable>
           </View>
-          <Pressable onPress={toggleItem} style={styles.plannerTitleArea}>
+          <Pressable {...taskMenuProps(item)} onPress={toggleItem} style={styles.plannerTitleArea}>
             <Text style={[styles.plannerTitle, item.done && styles.doneText]}>{item.title}</Text>
+            {item.failed ? <Text style={{ color: '#ff6666', fontSize: 11 }}>Не выполнено · −2 KODA</Text> : null}
             {projected ? <Text style={styles.rowMeta}>Проект</Text> : null}
           </Pressable>
           {!projected ? (
@@ -448,12 +482,22 @@ export function PlannerScreen({
             ))}
           </View>
         ) : null}
-      </View>
+      </Pressable>
     );
   }
 
   const plannerDayAside = isDesktop ? (
+    <Animated.View pointerEvents={detailsOpen ? 'auto' : 'none'} style={{
+      flexShrink: 0, overflow: 'hidden',
+      width: detailsAnimation.interpolate({ inputRange: [0, 1], outputRange: [0, 354] }),
+      opacity: detailsAnimation,
+    }}>
+    {detailsMounted ? <Animated.View style={{ width: 330, marginLeft: 24, transform: [{ translateX: detailsAnimation.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }] }}>
     <View style={styles.desktopAside} testID="desktop-right-column">
+      <View style={styles.rowBetween}>
+        <Text style={styles.desktopAsideTitle}>Детали дня</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Закрыть правую панель" onPress={() => setDetailsOpen(false)} style={{ padding: 8 }}><X color={muted} size={18} /></Pressable>
+      </View>
       <View style={styles.desktopAsideCard}>
         <Text style={styles.desktopAsideTitle}>Быстрые действия</Text>
         <Pressable onPress={() => setNewTitle('Новая задача на сегодня')} style={styles.desktopAsideRow}>
@@ -478,7 +522,26 @@ export function PlannerScreen({
           <Text style={styles.desktopAsideMeta}>из {selectedItems.length} дел выполнено</Text>
         </View>
       </View>
-      <View style={styles.desktopAsideCard}>
+      {viewMode === 'month' ? (
+        <View style={styles.desktopAsideCard}>
+          <Text style={styles.plannerDayTitle}>{formatTimelineTitle(selectedDate)}</Text>
+          <Text style={styles.rowMeta}>{selectedItems.length ? `${selectedItems.length} дел` : 'пусто'}</Text>
+          {selectedItems.map((item) => (
+            <Pressable {...taskMenuProps(item)} key={`selected-day-${item.id}`} style={styles.plannerMonthEventRow} onPress={() => {
+              if (isProjectedPlannerItem(item)) onToggleProjectedItem?.(item);
+              else onToggleItem(item.id);
+            }}>
+              {item.failed ? <X color="#ff6666" size={17} /> : <Check color={item.done ? accent : muted} size={17} strokeWidth={2.4} />}
+              <Text style={[styles.plannerMonthEventTitle, item.done && styles.doneText]}>{item.title}</Text>
+              <Text style={[styles.rowMeta, item.failed && { color: '#ff6666' }]}>{item.failed ? 'Не выполнено · −2' : item.time || 'весь день'}</Text>
+            </Pressable>
+          ))}
+          {!selectedItems.length ? <Text style={styles.rowMeta}>На эту дату пока ничего не запланировано.</Text> : null}
+          <Pressable onPress={() => { setNewDate(selectedDate); setViewMode('day'); }} style={styles.notificationButton}>
+            <Text style={styles.notificationButtonText}>Добавить задачу</Text>
+          </Pressable>
+        </View>
+      ) : <View style={styles.desktopAsideCard}>
         <Text style={styles.desktopAsideTitle}>Ближайшие задачи</Text>
         {selectedItems.filter((item) => !item.done).slice(0, 4).map((item) => (
           <View key={`aside-${item.id}`} style={styles.desktopAsideRow}>
@@ -487,7 +550,7 @@ export function PlannerScreen({
           </View>
         ))}
         {selectedItems.every((item) => item.done) ? <Text style={styles.desktopAsideMeta}>На выбранную дату всё спокойно.</Text> : null}
-      </View>
+      </View>}
       <View style={styles.desktopAsideCard}>
         <Text style={styles.desktopAsideTitle}>Прогресс дня</Text>
         <View style={styles.desktopProgressRow}>
@@ -499,7 +562,13 @@ export function PlannerScreen({
         <Text style={styles.desktopAsideMeta}>{selectedDoneCount} из {selectedItems.length} дел завершено</Text>
       </View>
     </View>
+    </Animated.View> : null}
+    </Animated.View>
   ) : null;
+
+  const detailsToggle = <Pressable accessibilityRole="button" accessibilityLabel={detailsOpen ? 'Скрыть детали дня' : 'Показать детали дня'} accessibilityState={{ expanded: detailsOpen }} onPress={() => setDetailsOpen((open) => !open)} style={{ padding: 10 }}>
+    <PanelRight color={detailsOpen ? accent : muted} size={22} />
+  </Pressable>;
 
   const plannerDateSelector = (
     <View style={[styles.plannerDateBlock, isDesktop && styles.plannerDesktopDateBlock]}>
@@ -522,6 +591,7 @@ export function PlannerScreen({
         <Text style={styles.rowMeta}>
           {selectedOpenCount ? `${selectedOpenCount} впереди` : 'Все спокойно'}
           {selectedDoneCount ? ` - ${selectedDoneCount} готово` : ''}
+          {selectedFailedCount ? ` · ${selectedFailedCount} не выполнено · −${selectedFailedCount * 2} KODA` : ''}
         </Text>
       </View>
     </View>
@@ -529,15 +599,15 @@ export function PlannerScreen({
 
   const plannerModeControl = (
     <View style={styles.plannerModeToggle}>
-      <Pressable onPress={() => setViewMode('day')} style={[styles.plannerModeButton, viewMode === 'day' && styles.plannerModeButtonActive]}>
+      <Pressable accessibilityRole="button" accessibilityState={{ selected: viewMode === 'day' }} onPress={() => setViewMode('day')} style={[styles.plannerModeButton, viewMode === 'day' && styles.plannerModeButtonActive]}>
         <List color={viewMode === 'day' ? panel : muted} size={15} />
         <Text style={[styles.plannerModeText, viewMode === 'day' && styles.plannerModeTextActive]}>День</Text>
       </Pressable>
-      <Pressable onPress={() => setViewMode('month')} style={[styles.plannerModeButton, viewMode === 'month' && styles.plannerModeButtonActive]}>
+      <Pressable accessibilityRole="button" accessibilityState={{ selected: viewMode === 'month' }} onPress={() => setViewMode('month')} style={[styles.plannerModeButton, viewMode === 'month' && styles.plannerModeButtonActive]}>
         <Grid2X2 color={viewMode === 'month' ? panel : muted} size={15} />
         <Text style={[styles.plannerModeText, viewMode === 'month' && styles.plannerModeTextActive]}>Месяц</Text>
       </Pressable>
-      <Pressable onPress={() => setViewMode('goals')} style={[styles.plannerModeButton, viewMode === 'goals' && styles.plannerModeButtonActive]}>
+      <Pressable accessibilityRole="button" accessibilityState={{ selected: viewMode === 'goals' }} onPress={() => setViewMode('goals')} style={[styles.plannerModeButton, viewMode === 'goals' && styles.plannerModeButtonActive]}>
         <Grid2X2 color={viewMode === 'goals' ? panel : muted} size={15} />
         <Text style={[styles.plannerModeText, viewMode === 'goals' && styles.plannerModeTextActive]}>Цели</Text>
       </Pressable>
@@ -554,11 +624,13 @@ export function PlannerScreen({
     />
   ) : (
     <PlannerMonthView
+      taskMenuProps={taskMenuProps}
       isDesktop={isDesktop}
       items={displayItems}
       moveMonth={moveVisibleMonth}
       onBack={() => setViewMode('day')}
       onSelectDate={(dateKeyValue) => {
+        if (isDesktop) setDetailsOpen(true);
         setSelectedDate(dateKeyValue);
         setNewDate(dateKeyValue);
         setVisibleMonth(dateFromKey(dateKeyValue));
@@ -583,13 +655,11 @@ export function PlannerScreen({
         style={isDesktop ? styles.desktopScreenScroll : undefined}
       >
       {viewMode !== 'day' && isDesktop ? (
-        <View style={styles.plannerDesktopDayLayout} testID="desktop-page-columns">
+        <View style={[styles.plannerDesktopDayLayout, { gap: 0 }]} testID="desktop-page-columns">
           <View style={styles.plannerDesktopMainColumn} testID="desktop-main-column">
         <View style={styles.plannerDesktopHeader}>
           <SectionTitle title="Планнер" subtitle="День по времени, без лишнего шума" />
-          <Pressable onPress={focusNewTask} style={styles.plannerDesktopHeaderAddButton}>
-            <Plus color={panel} size={20} strokeWidth={2.8} />
-          </Pressable>
+          {detailsToggle}
         </View>
             {plannerModeControl}
             {plannerDateSelector}
@@ -598,14 +668,12 @@ export function PlannerScreen({
           {plannerDayAside}
         </View>
       ) : viewMode !== 'day' ? plannerAlternateContent : (
-      <View style={isDesktop ? styles.plannerDesktopDayLayout : undefined} testID={isDesktop ? 'desktop-page-columns' : undefined}>
+      <View style={isDesktop ? [styles.plannerDesktopDayLayout, { gap: 0 }] : undefined} testID={isDesktop ? 'desktop-page-columns' : undefined}>
       <View style={isDesktop ? styles.plannerDesktopMainColumn : undefined} testID={isDesktop ? 'desktop-main-column' : undefined}>
       {isDesktop ? (
         <View style={styles.plannerDesktopHeader}>
           <SectionTitle title="Планнер" subtitle="День по времени, без лишнего шума" />
-          <Pressable onPress={focusNewTask} style={styles.plannerDesktopHeaderAddButton}>
-            <Plus color={panel} size={20} strokeWidth={2.8} />
-          </Pressable>
+          {detailsToggle}
         </View>
       ) : null}
       {isDesktop ? plannerModeControl : null}
@@ -766,10 +834,11 @@ export function PlannerScreen({
       ) : null}
 
       {editingItem ? (
-        <>
-          <Pressable onPress={closeEditItem} style={styles.plannerCalendarScrim} />
-          <View style={styles.plannerEditPopover}>
-            <View style={styles.plannerEditCard}>
+        <Modal transparent animationType="fade" visible onRequestClose={closeEditItem}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16, backgroundColor: 'rgba(0,0,0,0.65)' }}>
+          <Pressable accessibilityLabel="Закрыть редактор задачи" onPress={closeEditItem} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />
+          <View style={{ width: '100%', maxWidth: 520, maxHeight: '90%' }}>
+            <ScrollView keyboardShouldPersistTaps="handled" style={{ borderRadius: 12 }} contentContainerStyle={styles.plannerEditCard}>
               <View style={styles.rowBetween}>
               <Text style={styles.cardLabel}>РЕДАКТИРОВАТЬ</Text>
                 <Pressable onPress={closeEditItem} style={styles.plannerEditCloseButton}>
@@ -833,7 +902,7 @@ export function PlannerScreen({
                     style={styles.plannerTaskInput}
                     value={editSubtaskDraft}
                   />
-                  <Pressable disabled={!editSubtaskDraft.trim()} onPress={addEditSubtask} style={[styles.plannerQuickAddButton, !editSubtaskDraft.trim() && styles.plannerQuickAddButtonDisabled]}>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Добавить подзадачу" disabled={!editSubtaskDraft.trim()} onPress={addEditSubtask} style={[styles.plannerQuickAddButton, !editSubtaskDraft.trim() && styles.plannerQuickAddButtonDisabled]}>
                     <Plus color={panel} size={15} strokeWidth={3} />
                   </Pressable>
                 </View>
@@ -841,10 +910,36 @@ export function PlannerScreen({
               <Pressable disabled={!canSaveEdit} onPress={saveEditItem} style={[styles.notificationButton, !canSaveEdit && styles.notificationButtonDisabled]}>
           <Text style={styles.notificationButtonText}>Сохранить</Text>
               </Pressable>
-            </View>
+            </ScrollView>
           </View>
-        </>
+          </KeyboardAvoidingView>
+        </Modal>
       ) : null}
+
+      <Modal transparent animationType="fade" visible={Boolean(menuItem)} onRequestClose={() => setTaskMenu(null)}>
+        <View style={{ flex: 1, backgroundColor: isDesktop ? 'transparent' : 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', padding: isDesktop ? 0 : 16 }}>
+          <Pressable accessibilityLabel="Закрыть меню задачи" onPress={() => setTaskMenu(null)} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />
+          {menuItem && taskMenu ? <View style={[styles.plannerEditCard, { borderRadius: 12, gap: 4 }, isDesktop ? { position: 'absolute', width: Math.min(280, viewportWidth - 24), left: Math.max(12, Math.min(taskMenu.x, viewportWidth - 292)), top: Math.max(12, Math.min(taskMenu.y, viewportHeight - 320)), maxHeight: viewportHeight - 24 } : { width: '100%', maxHeight: '80%' }]}>
+            <Text numberOfLines={2} style={[styles.plannerTitle, { marginBottom: 8 }]}>{menuItem.title}</Text>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              <Pressable accessibilityRole="button" style={styles.taskContextAction} onPress={() => { setTaskMenu(null); if (isProjectedPlannerItem(menuItem)) onToggleProjectedItem?.(menuItem); else onToggleItem(menuItem.id); }}>
+                <Check color={accent} size={18} /><Text style={styles.plannerTitle}>{menuItem.done ? 'Снять выполнение' : 'Пометить выполненной'}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" style={styles.taskContextAction} onPress={() => { const tomorrow = dateFromKey(todayDateKey()); tomorrow.setDate(tomorrow.getDate() + 1); setTaskMenu(null); movePlannerItemToDate(menuItem.id, toDateKey(tomorrow)); }}>
+                <Calendar color={accent} size={18} /><Text style={styles.plannerTitle}>Перенести на завтра</Text>
+              </Pressable>
+              {!isProjectedPlannerItem(menuItem) ? <>
+                <Pressable accessibilityRole="button" style={styles.taskContextAction} onPress={() => { setTaskMenu(null); onSetItemFailed(menuItem.id, !menuItem.failed); }}>
+                  <X color="#ff6666" size={18} /><Text style={styles.plannerTitle}>{menuItem.failed ? 'Вернуть в работу' : 'Не выполнено · −2 KODA'}</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" style={styles.taskContextAction} onPress={() => { setTaskMenu(null); openEditItem(menuItem); }}><Pencil color={muted} size={18} /><Text style={styles.plannerTitle}>Редактировать</Text></Pressable>
+                <Pressable accessibilityRole="button" style={styles.taskContextAction} onPress={() => { setTaskMenu(null); setDeleteCandidate(menuItem); }}><Trash2 color="#ff6666" size={18} /><Text style={[styles.plannerTitle, { color: '#ff6666' }]}>Удалить</Text></Pressable>
+              </> : null}
+            </ScrollView>
+            {!isDesktop ? <Pressable accessibilityRole="button" onPress={() => setTaskMenu(null)} style={styles.taskContextAction}><Text style={styles.rowMeta}>Отмена</Text></Pressable> : null}
+          </View> : null}
+        </View>
+      </Modal>
 
       {deleteCandidate ? (
         <>
@@ -954,6 +1049,7 @@ function PlannerGoalsView({
 }
 
 function PlannerMonthView({
+  taskMenuProps,
   isDesktop,
   items,
   moveMonth,
@@ -964,6 +1060,7 @@ function PlannerMonthView({
   selectedItems,
   visibleMonth,
 }: {
+  taskMenuProps: (item: PlannerItem) => { onLongPress: () => void; delayLongPress: number };
   isDesktop: boolean;
   items: PlannerItem[];
   moveMonth: (delta: number) => void;
@@ -1315,11 +1412,14 @@ function PlannerMonthView({
                       <Text style={[styles.plannerMonthDayNumber, !isDesktop && styles.plannerMobileMonthDayNumber, selected && styles.plannerMonthDayNumberSelectedText]}>{day.getDate()}</Text>
                     </View>
                     <View style={[styles.plannerMonthTasks, !isDesktop && styles.plannerMobileMonthTasks]}>
-                      {dayItems.slice(0, isDesktop ? 4 : 3).map((item, itemIndex) => (
+                      {dayItems.slice(0, isDesktop ? 6 : 3).map((item, itemIndex) => (
                         <Pressable
                           key={`${item.id}-month-task`}
+                          {...taskMenuProps(item)}
+                          onLongPress={() => { setDragState(null); setHoverDate(null); removeDragGhost(); taskMenuProps(item).onLongPress(); }}
                           style={[
                             styles.plannerMonthTaskChip,
+                            item.failed && { borderLeftColor: '#ff6666', backgroundColor: 'rgba(255,102,102,0.12)' },
                             !isDesktop && (itemIndex === 0 ? styles.plannerMobileMonthTaskBar : styles.plannerMobileMonthTaskDot),
                             item.done && styles.plannerMonthTaskChipDone,
                             dragState?.itemId === item.id && styles.plannerMonthTaskChipMoving,
@@ -1330,11 +1430,11 @@ function PlannerMonthView({
                           } as Record<string, unknown>)}
                         >
                           {isDesktop ? <Text numberOfLines={1} style={[styles.plannerMonthTaskText, item.done && styles.doneText]}>
-                            {item.time ? `${item.time} ` : ''}{item.title}
+                            {item.failed ? '× ' : ''}{item.time ? `${item.time} ` : ''}{item.title}
                           </Text> : null}
                         </Pressable>
                       ))}
-                      {dayItems.length > (isDesktop ? 4 : 3) ? <Text style={[styles.plannerMonthMoreText, !isDesktop && styles.plannerMobileMonthMoreText]}>+{dayItems.length - (isDesktop ? 4 : 3)}</Text> : null}
+                      {dayItems.length > (isDesktop ? 6 : 3) ? <Text style={[styles.plannerMonthMoreText, !isDesktop && styles.plannerMobileMonthMoreText]}>+{dayItems.length - (isDesktop ? 6 : 3)}</Text> : null}
                     </View>
                   </Pressable>
                 );
@@ -1405,7 +1505,7 @@ function PlannerMonthView({
       )}
       </View>
 
-      <View style={[styles.plannerMonthSelectedList, !isDesktop && styles.plannerMobileMonthSelectedList, isDesktop && styles.plannerDesktopMonthSelectedList]}>
+      {!isDesktop ? <View style={[styles.plannerMonthSelectedList, styles.plannerMobileMonthSelectedList]}>
         <View style={[styles.rowBetween, !isDesktop && styles.plannerMobileMonthSelectedHeader]}>
           <Text style={[styles.plannerDayTitle, !isDesktop && styles.plannerMobileMonthSelectedTitle]}>{formatTimelineTitle(selectedDate)}</Text>
           <Text style={styles.rowMeta}>{selectedItems.length ? `${selectedItems.length} дел` : 'пусто'}</Text>
@@ -1414,6 +1514,8 @@ function PlannerMonthView({
           selectedItems.map((item) => (
             <Pressable
               key={`month-selected-${item.id}`}
+              {...taskMenuProps(item)}
+              onLongPress={() => { setDragState(null); setHoverDate(null); removeDragGhost(); taskMenuProps(item).onLongPress(); }}
               style={[styles.plannerMonthEventRow, !isDesktop && styles.plannerMobileMonthEventRow, dragState?.itemId === item.id && styles.plannerMonthEventRowMoving]}
               {...({
                 onPointerDown: (event: MonthPointerEvent) => startTaskDrag(item, event),
@@ -1441,7 +1543,7 @@ function PlannerMonthView({
           <Text style={styles.notificationButtonText}>Добавить задачу</Text>
           </Pressable>
         ) : null}
-      </View>
+      </View> : null}
     </View>
   );
 }

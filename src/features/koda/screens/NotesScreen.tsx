@@ -179,7 +179,7 @@ export function NotesScreen({
           <View style={[local.emptyState, isDesktop && local.desktopEmptyState]}>
             <Text style={local.emptyTitle}>Заметок пока нет</Text>
             <Text style={local.meta}>Сохраняй здесь любую информацию, которую не хочешь потерять.</Text>
-            {!isDesktop ? <Pressable onPress={createNote} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать заметку</Text></Pressable> : null}
+            <Pressable accessibilityRole="button" onPress={createNote} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать заметку</Text></Pressable>
           </View>
         ) : (
           <>
@@ -256,7 +256,7 @@ export function NotesScreen({
     <View style={[local.editorPanel, local.editorEmpty, isDesktop && local.desktopEditorPanel]}>
       <Text style={local.emptyTitle}>Выбери заметку</Text>
       <Text style={local.meta}>Или создай новую, чтобы сразу начать писать.</Text>
-      {!isDesktop ? <Pressable onPress={createNote} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать заметку</Text></Pressable> : null}
+      <Pressable accessibilityRole="button" onPress={createNote} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать заметку</Text></Pressable>
     </View>
   );
 
@@ -599,7 +599,7 @@ function formatNoteTime(value: string): string {
 
 function saveStateLabel(value: SaveState): string {
   if (value === 'saving') return 'Сохраняется...';
-  if (value === 'saved') return 'Сохранено';
+  if (value === 'saved') return 'Сохранено на устройстве';
   return '';
 }
 

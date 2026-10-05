@@ -105,6 +105,7 @@ export type PlannerItem = {
   time: string;
   title: string;
   done: boolean;
+  failed?: boolean;
   subtasks?: PlannerSubtask[];
   sourceType?: PlannerSourceType;
   sourceId?: string | null;
@@ -200,6 +201,7 @@ export type PomodoroSettings = {
   soundId: PomodoroSoundId;
 };
 export type ProfileState = {
+  emotionEntries?: import('./emotionJournal').EmotionEntry[];
   themeId: ThemeId;
   version: string;
   daysLeft: string;

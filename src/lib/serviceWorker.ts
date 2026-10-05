@@ -8,21 +8,6 @@ export function registerServiceWorker() {
   }
 
   if (!registrationPromise) {
-    let reloadedForUpdate = false;
-
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (reloadedForUpdate) return;
-      reloadedForUpdate = true;
-      window.location.reload();
-    });
-
-    navigator.serviceWorker.addEventListener('message', (event) => {
-      if (event.data?.type === 'KODA_SW_UPDATED' && !reloadedForUpdate) {
-        reloadedForUpdate = true;
-        window.location.reload();
-      }
-    });
-
     registrationPromise = navigator.serviceWorker.register('/sw.js').then((registration) => {
       void registration.update();
       return registration;

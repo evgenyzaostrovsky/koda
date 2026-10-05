@@ -1,3 +1,4 @@
+import { RightPanel } from '../components/RightPanel';
 import { ArrowLeft, Check, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
@@ -134,7 +135,7 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline 
             )}
           </View>
           {isDesktop ? (
-            <View style={local.desktopAside}>
+            <RightPanel enabled={isDesktop}><View style={local.desktopAside}>
               <View style={local.desktopInfoCard}>
                 <Text style={local.blockTitle}>Сводка</Text>
                 <Text style={local.progressNumber}>{averageProgress}%</Text>
@@ -154,7 +155,7 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline 
                   <Text key={goal.id} style={local.previewLine}>{goal.title}</Text>
                 ))}
               </View>
-            </View>
+            </View></RightPanel>
           ) : null}
         </View>
       </ScrollView>
@@ -276,7 +277,7 @@ function GoalDetails({ goal, goals, isDesktop = false, isOnline, onBack, onCreat
               ))}
             </SectionBlock>
           </View>
-          <View style={isDesktop ? local.desktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
+          <RightPanel enabled={isDesktop}><View style={isDesktop ? local.desktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
             {isDesktop ? (
               <View style={local.goalNavigation}>
                 <View style={local.navigationHeader}>
@@ -312,7 +313,7 @@ function GoalDetails({ goal, goals, isDesktop = false, isOnline, onBack, onCreat
               <ChoiceButton label="Разовое" onPress={() => setAddKind('action')} />
               <ChoiceButton label="Регулярное" onPress={() => setAddKind('routine')} />
             </View>
-          </View>
+          </View></RightPanel>
         </View>
       </ScrollView>
 
@@ -1054,9 +1055,9 @@ const local = StyleSheet.create({
   screen: { flex: 1, minHeight: 0 },
   scrollContent: { gap: 10, paddingBottom: 90 },
   desktopScrollContent: { paddingBottom: 36, width: '100%' },
-  desktopLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 24, width: '100%' },
-  desktopDetailsLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 24, width: '100%' },
-  desktopMainColumn: { flex: 1, gap: 12, minWidth: 0 },
+  desktopLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 0, width: '100%' },
+  desktopDetailsLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 0, width: '100%' },
+  desktopMainColumn: { flex: 1, gap: 12, minWidth: 0, maxWidth: 1080, marginRight: 'auto' },
   desktopAside: { borderLeftColor: line, borderLeftWidth: 1, flexShrink: 0, gap: 12, paddingLeft: 20, width: 330 },
   goalNavigation: { borderBottomColor: line, borderBottomWidth: 1, gap: 4, paddingBottom: 12 },
   navigationHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 34 },

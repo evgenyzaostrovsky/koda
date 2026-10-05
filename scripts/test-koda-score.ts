@@ -54,4 +54,15 @@ assert.equal(unclassified.goalScore, null);
 assert.equal(unclassified.totalScore, null);
 assert.equal(unclassified.classification, 'unclassified');
 
+const failedItems = planner.map((item) => item.done ? item : { ...item, failed: true });
+const failedResult = calculateKodaScore(goals, failedItems, date);
+assert.equal(failedResult.planner.penalty, 2);
+assert.equal(failedResult.totalScore, (result.totalScore ?? 0) - 2);
+assert.equal(calculateKodaScore(goals, failedItems.map((item) => ({ ...item, failed: false })), date).totalScore, result.totalScore);
+const restored = calculateKodaScore(goals, failedItems.map((item) => ({ ...item, failed: false, done: true })), date);
+assert.equal(restored.planner.penalty, 0);
+assert.equal(restored.plannerScore, 10);
+const manyFailures = Array.from({ length: 60 }, (_, i) => ({ id: `failed-${i}`, date, time: '', title: 'Не выполнено', done: false, failed: true }));
+assert.equal(calculateKodaScore(goals, manyFailures, date).totalScore, 0);
+assert.equal(calculateKodaScore(goals, [...planner, { ...manyFailures[0], deletedAt: '2026-08-01T12:00:00Z' }, { ...manyFailures[1], date: '2026-08-02' }], date).totalScore, result.totalScore);
 console.log('koda score tests passed');
