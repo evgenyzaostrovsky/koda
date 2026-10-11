@@ -367,8 +367,6 @@ export function PlannerScreen({
     if (subtasks.length) {
       setExpandedSubtaskItemIds((ids) => ids.includes(editingItem.id) ? ids : [...ids, editingItem.id]);
     }
-    setSelectedDate(normalizedDate);
-    setVisibleMonth(dateFromKey(normalizedDate));
     closeEditItem();
   }
 

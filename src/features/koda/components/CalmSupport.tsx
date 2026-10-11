@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Check, Heart, Leaf, Moon, Palette, Sun, Waves } from 'lucide-react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import type { PlannerItem, TabKey, ThemeId } from '../types';
-import { accent, accentSoft, activeText, line, muted, panel, panelSoft, text } from '../theme';
+import { accent, accentSoft, activeText, getKodaTheme, line, muted, panel, panelSoft, text } from '../theme';
 
 type SupportAction = { label: string; icon: typeof Waves };
 const supportActions: SupportAction[] = [
@@ -32,9 +32,8 @@ export function CalmSupport({
   const dayItems = useMemo(() => items.filter((item) => item.date === date && !item.deletedAt), [date, items]);
   const accentChoice = themeId?.includes('sky') ? 'sky' : themeId?.includes('lavender') ? 'lavender' : 'sage';
   const isDark = themeId?.endsWith('dark') ?? false;
-  const gradientColors = isDark
-    ? accentChoice === 'sky' ? ['#2c3942', '#202722'] : accentChoice === 'lavender' ? ['#383342', '#202722'] : ['#2b3e31', '#202722']
-    : accentChoice === 'sky' ? ['#e8eff4', '#f8f9f6'] : accentChoice === 'lavender' ? ['#efecf5', '#f8f9f6'] : ['#e8f0e9', '#f8f9f6'];
+  const colors = getKodaTheme(themeId).colors;
+  const gradientColors = [colors['--koda-accent-soft'], colors['--koda-surface-2']];
   const themes: { id: ThemeId; label: string; color: string }[] = [
     { id: isDark ? 'calm-dark' : 'calm-light', label: 'Шалфей', color: '#638b73' },
     { id: isDark ? 'calm-sky-dark' : 'calm-sky-light', label: 'Небо', color: '#6488a4' },
