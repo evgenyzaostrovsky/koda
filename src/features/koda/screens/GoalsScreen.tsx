@@ -1,8 +1,10 @@
+import { currentGoalMilestone, nextAvailableGoalAction, nextRoadmapAction } from '../components/goalPresentation';
 import { RightPanel } from '../components/RightPanel';
+import { BentoCard, BentoGrid, BentoPage, FloatingCardAction, EmptyStateCard, MetricCard, SectionHeader } from '../components/Bento';
 import { ArrowLeft, Check, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-react-native';
 import type { ReactNode } from 'react';
-import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import {
   calculateGoalProgress,
   calculateMilestoneProgress,
@@ -21,8 +23,13 @@ import {
 } from '../goalLogic';
 import type { Goal, GoalAction, GoalMilestone, GoalPriority, GoalRoutine, GoalRoutineFrequencyType, GoalRoutineMetricType } from '../types';
 import { todayDateKey } from '../utils';
-import { ProgressLine, SectionTitle } from '../components';
-import { accent, accentBorder, accentFaint, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
+import { ProgressLine } from '../components';
+import { GoalMatrix } from '../components/GoalMatrix';
+import { GoalRoadmap } from '../components/GoalRoadmap';
+import { GoalStructureAssistant } from '../components/GoalStructureAssistant';
+import { GoalWizard, removeGoalWizardDraft } from '../components/GoalWizard';
+import { accent, accentBorder, accentFaint, activeBg, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
+import { getActiveRoadmapClarifications, updateRoadmapAnswer } from '../goalRoadmapClarifications';
 
 type GoalsChange = (updater: (goals: Goal[]) => Goal[]) => void;
 type AddKind = 'milestone' | 'action' | 'routine';
@@ -57,12 +64,16 @@ const weekDays = [
 const workDays = [1, 2, 3, 4, 5];
 const weekendDays = [6, 7];
 
-export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline }: { goals: Goal[]; onGoalsChange: GoalsChange; isDesktop?: boolean; isOnline: boolean }) {
+export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline, userId, hasCloudSync = Boolean(userId), initialGoalId }: { goals: Goal[]; onGoalsChange: GoalsChange; isDesktop?: boolean; isOnline: boolean; hasCloudSync?: boolean; userId?: string | null; initialGoalId?: string | null }) {
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(() => goals.find((goal) => goal.status === 'active' || goal.status === 'paused')?.id ?? null);
+  const lastInitialGoalId = useRef<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [confirmMainGoal, setConfirmMainGoal] = useState<GoalDraft | null>(null);
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [legacyCreateOpen, setLegacyCreateOpen] = useState(false);
+  const [confirmMainGoal, setConfirmMainGoal] = useState<Goal | null>(null);
+  const pendingWizardDraftKey=useRef<string|null>(null);
 
-  const visibleGoals = goals.filter((goal) => goal.status === 'active' || goal.status === 'paused');
+  const visibleGoals = goals.filter((goal) => showCompleted ? goal.status==='completed' : goal.status === 'active' || goal.status === 'paused');
   const sortedGoals = [...visibleGoals].sort((first, second) => {
     if (first.priority !== second.priority) return first.priority === 'main' ? -1 : second.priority === 'main' ? 1 : 0;
     return second.updatedAt.localeCompare(first.updatedAt);
@@ -78,21 +89,42 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline 
     ];
   });
 
-  function saveGoal(draft: GoalDraft) {
-    const nextGoal = createGoal(draft);
-    if (draft.priority === 'main' && goals.some((goal) => goal.priority === 'main' && goal.status === 'active')) {
-      setConfirmMainGoal(draft);
-      return;
+  useEffect(() => {
+    if (!initialGoalId) { lastInitialGoalId.current = null; return; }
+    if (lastInitialGoalId.current === initialGoalId || !goals.some((goal) => goal.id === initialGoalId)) return;
+    lastInitialGoalId.current = initialGoalId;
+    setSelectedGoalId(initialGoalId);
+  }, [goals, initialGoalId]);
+
+  function saveGoalRecord(nextGoal: Goal) {
+    if (nextGoal.priority === 'main' && goals.some((goal) => goal.priority === 'main' && goal.status === 'active')) {
+      setConfirmMainGoal(nextGoal);
+      return false;
     }
 
     onGoalsChange((items) => [nextGoal, ...items]);
     setSelectedGoalId(nextGoal.id);
+    return true;
+  }
+
+  function saveWizardGoal(nextGoal:Goal){
+    pendingWizardDraftKey.current=`koda:goal-wizard:v1:${userId||'guest'}`;
+    const saved=saveGoalRecord(nextGoal);
+    if(saved)pendingWizardDraftKey.current=null;
+    return saved;
+  }
+
+  function saveGoal(draft: GoalDraft) {
+    pendingWizardDraftKey.current=null;
+    saveGoalRecord(createGoal(draft));
   }
 
   function confirmMainGoalSave() {
     if (!confirmMainGoal) return;
-    const nextGoal = createGoal(confirmMainGoal);
+    const nextGoal = confirmMainGoal;
     onGoalsChange((items) => [nextGoal, ...nextGoalPriorityGoals(items, nextGoal)]);
+    if(pendingWizardDraftKey.current)void removeGoalWizardDraft(pendingWizardDraftKey.current).catch(()=>undefined);
+    pendingWizardDraftKey.current=null;
     setConfirmMainGoal(null);
     setSelectedGoalId(nextGoal.id);
   }
@@ -100,67 +132,76 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline 
   if (selectedGoal) {
     return (
       <>
-        <GoalDetails goal={selectedGoal} goals={sortedGoals} isDesktop={isDesktop} isOnline={isOnline} onBack={() => setSelectedGoalId(null)} onCreate={() => setCreateOpen(true)} onGoalsChange={onGoalsChange} onSelect={setSelectedGoalId} />
-        <CreateGoalFlow open={createOpen} onClose={() => setCreateOpen(false)} onSave={saveGoal} />
+        <GoalDetails goal={selectedGoal} goals={sortedGoals} hasCloudSync={hasCloudSync} isDesktop={isDesktop} isOnline={isOnline} onBack={() => setSelectedGoalId(null)} onCreate={() => setCreateOpen(true)} onGoalsChange={onGoalsChange} onSelect={setSelectedGoalId} />
+        <GoalWizard open={createOpen} userId={userId} onClose={() => setCreateOpen(false)} onSave={saveWizardGoal} />
+        <CreateGoalFlow open={legacyCreateOpen} onClose={() => setLegacyCreateOpen(false)} onSave={saveGoal} />
+        <ConfirmSheet title="Сделать цель главной?" text="Предыдущая главная цель станет важной. Одновременно активной главной может быть только одна." visible={Boolean(confirmMainGoal)} onCancel={() => setConfirmMainGoal(null)} onConfirm={confirmMainGoalSave} />
       </>
     );
   }
 
   return (
-    <View style={local.screen}>
+    <BentoPage maxWidth={960} scroll={false} style={local.screen} contentStyle={local.pageContent}>
       <View style={local.topRow}>
-        <SectionTitle title="Цели" subtitle={isOnline ? 'Синхронизируется с аккаунтом' : 'Офлайн: изменения сохранятся локально'} />
-        <Pressable onPress={() => setCreateOpen(true)} style={local.roundAccentButton}>
+        <SectionHeader title="Цели" subtitle={!hasCloudSync ? 'Сохранено на устройстве' : isOnline ? 'Синхронизируется с аккаунтом' : 'Офлайн: изменения сохранятся локально'} action={<Pressable accessibilityRole="button" accessibilityLabel="Создать цель" onPress={() => setCreateOpen(true)} style={local.roundAccentButton}>
           <Plus color={activeText} size={20} strokeWidth={3} />
-        </Pressable>
+        </Pressable>} />
       </View>
+      <Pressable accessibilityRole="button" onPress={() => setLegacyCreateOpen(true)} style={local.legacyFormButton}>
+        <Text style={local.secondaryButtonText}>Классическая форма</Text>
+      </Pressable>
+      {goals.some(goal=>goal.status==='completed')&&<View style={local.detailTabs}><Pressable accessibilityRole="button" accessibilityState={{selected:!showCompleted}} onPress={()=>setShowCompleted(false)} style={[local.detailTab,!showCompleted&&local.detailTabActive]}><Text style={local.detailTabText}>В работе</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{selected:showCompleted}} onPress={()=>setShowCompleted(true)} style={[local.detailTab,showCompleted&&local.detailTabActive]}><Text style={local.detailTabText}>Завершённые</Text></Pressable></View>}
 
       <ScrollView contentContainerStyle={[local.scrollContent, isDesktop && local.desktopScrollContent]} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
         <View style={isDesktop ? local.desktopLayout : undefined}>
           <View style={isDesktop ? local.desktopMainColumn : undefined}>
             {!sortedGoals.length ? (
-              <View style={local.empty}>
-                <Text style={local.emptyTitle}>Куда ты хочешь прийти?</Text>
-                <Text style={local.emptyText}>Создай первую цель и добавь действия, которые будут двигать тебя к ней.</Text>
-                <Pressable onPress={() => setCreateOpen(true)} style={local.primaryButton}>
-                  <Text style={local.primaryButtonText}>Создать цель</Text>
+              <View style={local.emptyComposition}>
+              <EmptyStateCard title="Куда ты хочешь прийти?" description="Создай первую цель и добавь действия, которые будут двигать тебя к ней." action={<Pressable accessibilityRole="button" onPress={() => setCreateOpen(true)} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать цель</Text></Pressable>} />
+              <BentoCard tone="soft"><View accessibilityLabel="Пример последовательности, это не данные цели" style={local.exampleRoadmap}>
+                  <Text style={local.exampleRoadmapLabel}>Пример пути · это не данные цели</Text>
+                  <View style={local.exampleRoadmapStep}><Text style={local.exampleRoadmapNumber}>1</Text><Text style={local.exampleRoadmapText}>Определить желаемый результат</Text></View>
+                  <View style={local.exampleRoadmapStep}><Text style={local.exampleRoadmapNumber}>2</Text><Text style={local.exampleRoadmapText}>Выбрать одно направление</Text></View>
+                  <View style={local.exampleRoadmapStep}><Text style={local.exampleRoadmapNumber}>3</Text><Text style={local.exampleRoadmapText}>Записать первый посильный шаг</Text></View>
+                </View></BentoCard>
+                <Pressable accessibilityRole="button" onPress={() => setLegacyCreateOpen(true)} style={local.legacyFormButton}>
+                  <Text style={local.secondaryButtonText}>Классическая форма</Text>
                 </Pressable>
               </View>
             ) : (
-              <View style={isDesktop ? local.desktopGoalGrid : undefined}>
+              <BentoGrid columns={sortedGoals.length > 1 ? 2 : 1} style={local.goalGrid}>
                 {sortedGoals.map((goal, index) => (
                   <GoalCard key={goal.id} desktop={isDesktop} goal={goal} featured={index === 0 && goal.priority === 'main'} onPress={() => setSelectedGoalId(goal.id)} />
                 ))}
-              </View>
+              </BentoGrid>
             )}
           </View>
           {isDesktop ? (
             <RightPanel enabled={isDesktop}><View style={local.desktopAside}>
-              <View style={local.desktopInfoCard}>
-                <Text style={local.blockTitle}>Сводка</Text>
-                <Text style={local.progressNumber}>{averageProgress}%</Text>
-                <Text style={local.goalMeta}>Средний прогресс активных целей</Text>
+              <BentoCard tone="soft" style={local.desktopInfoCard}>
+                <Text style={local.blockTitle}>В работе</Text>
+                <MetricCard label="Средний прогресс" value={`${averageProgress}%`} detail={`${activeGoals.length} активных целей`} tone="soft" />
                 <View style={local.divider} />
-                <Text style={local.progressNumber}>{activeGoals.length}</Text>
-                <Text style={local.goalMeta}>активных целей</Text>
-              </View>
-              <View style={local.desktopInfoCard}>
+                <Text style={local.goalMeta}>{goals.filter((goal) => goal.status === 'paused').length} на паузе · {sortedGoals.length} видимых целей</Text>
+              </BentoCard>
+              <BentoCard tone="light" style={local.desktopInfoCard}>
                 <Text style={local.blockTitle}>Ближайшие действия</Text>
                 {todayCandidates.slice(0, 5).map((item) => <Text key={item} style={local.previewLine}>{item}</Text>)}
                 {!todayCandidates.length ? <Text style={local.goalMeta}>На сегодня действий по целям нет.</Text> : null}
-              </View>
-              <View style={local.desktopInfoCard}>
+              </BentoCard>
+              <BentoCard tone="light" style={local.desktopInfoCard}>
                 <Text style={local.blockTitle}>Без следующего шага</Text>
-                {activeGoals.filter((goal) => !goal.actions.some((action) => action.status !== 'completed')).slice(0, 4).map((goal) => (
+                {activeGoals.filter((goal) => !goal.actions.some((action) => action.status !== 'completed' && !action.archivedAt)).slice(0, 4).map((goal) => (
                   <Text key={goal.id} style={local.previewLine}>{goal.title}</Text>
                 ))}
-              </View>
+              </BentoCard>
             </View></RightPanel>
           ) : null}
         </View>
       </ScrollView>
 
-      <CreateGoalFlow open={createOpen} onClose={() => setCreateOpen(false)} onSave={saveGoal} />
+      <GoalWizard open={createOpen} userId={userId} onClose={() => setCreateOpen(false)} onSave={saveWizardGoal} />
+      <CreateGoalFlow open={legacyCreateOpen} onClose={() => setLegacyCreateOpen(false)} onSave={saveGoal} />
       <ConfirmSheet
         title="Сделать цель главной?"
         text="Предыдущая главная цель станет важной. Одновременно активной главной может быть только одна."
@@ -168,22 +209,24 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline 
         onCancel={() => setConfirmMainGoal(null)}
         onConfirm={confirmMainGoalSave}
       />
-    </View>
+    </BentoPage>
   );
 }
 
 function GoalCard({ desktop, goal, featured, onPress }: { desktop?: boolean; goal: Goal; featured: boolean; onPress: () => void }) {
   const progress = calculateGoalProgress(goal);
   const today = todayActionCandidates(goal);
-  const standaloneActions = goal.actions.filter((action) => !action.milestoneId).sort(sortGoalActions);
-  const nextAction = today.actions[0] ?? goal.actions.filter((action) => action.status !== 'completed').sort(sortGoalActions)[0];
+  const standaloneActions = goal.actions.filter((action) => !action.milestoneId && !action.archivedAt).sort(sortGoalActions);
+  const nextAction = nextAvailableGoalAction(goal);
 
   return (
-    <Pressable onPress={onPress} style={[local.goalCard, desktop && local.goalCardDesktop, featured && local.goalCardFeatured, desktop && featured && local.goalCardDesktopFeatured]}>
+    <BentoCard tone={featured ? 'lime' : 'light'} style={local.goalCardShell}>
+    <Pressable accessibilityRole="button" accessibilityLabel={goal.title} onPress={onPress} style={[local.goalCard, desktop && local.goalCardDesktop, featured && local.goalCardFeatured, desktop && featured && local.goalCardDesktopFeatured]}>
       <View style={local.cardHeader}>
         <View style={local.flexText}>
           <Text style={local.goalTitle}>{goal.title}</Text>
-          <Text style={local.goalMeta}>{goal.desiredResult || `Цель ${goalDeadlineLabel(goal.deadline)}`}</Text>
+          <Text style={local.goalMeta}>{goal.desiredResult || 'Результат пока не задан'}</Text>
+          <Text style={local.goalMeta}>{goal.deadline ? `Срок ${goalDeadlineLabel(goal.deadline)}` : 'Без срока'} · {goal.status === 'paused' ? 'на паузе' : priorityLabels[goal.priority]}</Text>
         </View>
         <Text style={local.progressNumber}>{progress}%</Text>
       </View>
@@ -207,20 +250,42 @@ function GoalCard({ desktop, goal, featured, onPress }: { desktop?: boolean; goa
         </View>
       )}
     </Pressable>
+    </BentoCard>
   );
 }
 
-function GoalDetails({ goal, goals, isDesktop = false, isOnline, onBack, onCreate, onGoalsChange, onSelect }: { goal: Goal; goals: Goal[]; isDesktop?: boolean; isOnline: boolean; onBack: () => void; onCreate: () => void; onGoalsChange: GoalsChange; onSelect: (id: string) => void }) {
+function GoalDetails({ goal, goals, isDesktop = false, isOnline, hasCloudSync = true, onBack, onCreate, onGoalsChange, onSelect }: { goal: Goal; goals: Goal[]; isDesktop?: boolean; isOnline: boolean; hasCloudSync?: boolean; onBack: () => void; onCreate: () => void; onGoalsChange: GoalsChange; onSelect: (id: string) => void }) {
+  const narrow = useWindowDimensions().width < 760;
+  const [structureOpen,setStructureOpen]=useState(false);
+  const [detailTab, setDetailTab] = useState<'roadmap' | 'actions' | 'matrix' | 'context'>('roadmap');
+  useEffect(()=>{setStructureOpen(false);},[goal.id]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [addKind, setAddKind] = useState<AddKind | null>(null);
+  const [manageStages, setManageStages] = useState(false);
+  const [focusRoadmapStageId, setFocusRoadmapStageId] = useState<string | null>(null);
+  const [focusDirectionId,setFocusDirectionId]=useState<string|null>(null);
+  const [stageDraftOpen, setStageDraftOpen] = useState(false);
+  const [stageDraft, setStageDraft] = useState('');
+  const [editingStageId, setEditingStageId] = useState<string | null>(null);
+  const [editingStageTitle, setEditingStageTitle] = useState('');
+  const [removingStageId, setRemovingStageId] = useState<string | null>(null);
   const [deleteGoalOpen, setDeleteGoalOpen] = useState(false);
   const progress = calculateGoalProgress(goal);
   const today = todayActionCandidates(goal);
-  const standaloneActions = goal.actions.filter((action) => !action.milestoneId).sort(sortGoalActions);
+  const standaloneActions = goal.actions.filter((action) => !action.milestoneId && !action.archivedAt).sort(sortGoalActions);
+  const roadmapNext = nextRoadmapAction(goal);
+  const nextAction = roadmapNext.action;
 
   function updateGoal(recipe: (goal: Goal) => Goal) {
     onGoalsChange((items) => items.map((item) => (item.id === goal.id ? { ...recipe(item), updatedAt: new Date().toISOString() } : item)));
   }
+
+  const roadmapDirections=[...(goal.openWindow?.directions??[])].filter(direction=>!direction.archivedAt&&direction.title.trim()).sort((a,b)=>a.position-b.position);
+  const currentMilestone = goal.status==='completed' ? undefined : currentGoalMilestone(goal);
+  const actionDirection = nextAction ? roadmapDirections.find((direction) => direction.actionIds.includes(nextAction.id)) : undefined;
+  const actionMilestone = nextAction?.milestoneId ? goal.milestones.find((milestone) => milestone.id === nextAction.milestoneId) : undefined;
+  const currentStage = currentMilestone?.title;
+  const nextActionLocation = actionMilestone ? `этапа «${actionMilestone.title}»` : actionDirection ? `направления «${actionDirection.title}»` : 'действий вне этапа';
 
   function deleteGoal() {
     onGoalsChange((items) => items.filter((item) => item.id !== goal.id));
@@ -228,14 +293,54 @@ function GoalDetails({ goal, goals, isDesktop = false, isOnline, onBack, onCreat
     onBack();
   }
 
+  function addRoadmapStage() {
+    const title = stageDraft.trim();
+    if (!title) return;
+    updateGoal((item) => ({ ...item, milestones: [...item.milestones, createMilestone(title, '', '', item.milestones.length)] }));
+    setStageDraft('');
+    setStageDraftOpen(false);
+  }
+
+  function saveRoadmapStageTitle() {
+    const title = editingStageTitle.trim();
+    if (!editingStageId || !title) return;
+    updateGoal((item) => ({ ...item, milestones: item.milestones.map((stage) => stage.id === editingStageId ? { ...stage, title } : stage) }));
+    setEditingStageId(null);
+    setEditingStageTitle('');
+  }
+
+  function moveRoadmapStage(stageId: string, offset: -1 | 1) {
+    updateGoal((item) => {
+      const ordered = [...item.milestones].sort((a, b) => a.position - b.position);
+      const index = ordered.findIndex((stage) => stage.id === stageId);
+      const target = index + offset;
+      if (index < 0 || target < 0 || target >= ordered.length) return item;
+      [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+      return { ...item, milestones: ordered.map((stage, position) => ({ ...stage, position })) };
+    });
+  }
+
+  function setRoadmapStageStatus(stageId: string, status: GoalMilestone['status']) {
+    updateGoal((item) => ({ ...item, milestones: item.milestones.map((stage) => stage.id === stageId ? { ...stage, status, completedAt: status === 'completed' ? stage.completedAt ?? new Date().toISOString() : null } : stage) }));
+  }
+
+  function removeRoadmapStage(stageId: string) {
+    updateGoal((item) => ({
+      ...item,
+      milestones: item.milestones.filter((stage) => stage.id !== stageId).map((stage, position) => ({ ...stage, position })),
+      actions: item.actions.map((action) => action.milestoneId === stageId ? { ...action, milestoneId: null } : action),
+    }));
+    setRemovingStageId(null);
+  }
+
   return (
-    <View style={local.screen}>
+    <BentoPage maxWidth={960} scroll={false} style={local.screen} contentStyle={local.detailPage}>
       <View style={local.detailsHeader}>
-        <Pressable onPress={onBack} style={local.iconButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel="К списку целей" onPress={onBack} style={local.iconButton}>
           <ArrowLeft color={text} size={19} />
         </Pressable>
-        <Text numberOfLines={2} style={local.detailsTitle}>{goal.title}</Text>
-        <Pressable onPress={() => setMenuOpen((value) => !value)} style={local.iconButton}>
+        <Text style={local.detailsTitle}>Все цели</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Действия с целью" accessibilityState={{ expanded: menuOpen }} aria-expanded={menuOpen} onPress={() => setMenuOpen((value) => !value)} style={local.iconButton}>
           <MoreHorizontal color={text} size={19} />
         </Pressable>
       </View>
@@ -251,75 +356,125 @@ function GoalDetails({ goal, goals, isDesktop = false, isOnline, onBack, onCreat
       <ScrollView contentContainerStyle={[local.scrollContent, isDesktop && local.desktopScrollContent]} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
         <View style={isDesktop ? local.desktopDetailsLayout : undefined} testID={isDesktop ? 'desktop-page-columns' : undefined}>
           <View style={isDesktop ? local.desktopMainColumn : undefined} testID={isDesktop ? 'desktop-main-column' : undefined}>
-            <View style={local.summary}>
-              <View style={local.summaryText}>
-                <Text style={local.goalMeta}>{goal.desiredResult || 'Результат пока не задан'}</Text>
-                <Text style={local.goalMeta}>{goal.deadline ? `Срок: ${formatDateLong(goal.deadline)}` : 'Без срока'} · {priorityLabels[goal.priority]} · {isOnline ? 'онлайн' : 'офлайн'}</Text>
+            <BentoGrid columns={3} style={[local.goalHeroGrid,narrow&&local.goalHeroGridMobile]}>
+              <BentoCard testID="goal-hero" tone="lime" variant="top-right" action={<FloatingCardAction label="Открыть контекст цели" onPress={()=>setDetailTab('context')}/>} style={[{gridColumn:'span 2'} as any,narrow&&local.goalHeroMobile]}>
+                <Text style={{fontSize:isDesktop?34:28,lineHeight:isDesktop?40:34,fontWeight:'500',letterSpacing:-0.8,color:'#263c19',paddingRight:narrow?0:88}}>{goal.title}</Text>
+                <Text style={{fontSize:14,lineHeight:21,color:'#435b31',paddingRight:narrow?0:88}}>{goal.desiredResult || 'Результат пока не задан'}</Text>
+                {goal.status==='completed'&&<Text style={{fontSize:15,lineHeight:22,color:'#263c19'}}>Цель завершена</Text>}
+                <View style={{flexDirection:'row',alignItems:'center',gap:14}}><View accessibilityRole="progressbar" accessibilityValue={{min:0,max:100,now:progress}} style={{flex:1,height:8,borderRadius:8,backgroundColor:'#f5ffd0',overflow:'hidden'}}><View style={{height:8,width:`${progress}%`,backgroundColor:'#263c19',borderRadius:8}}/></View><Text style={{fontSize:30,lineHeight:38,color:'#263c19'}}>{progress}%</Text></View>
+                {currentStage&&<Text style={{fontSize:15,lineHeight:22,color:'#263c19'}}>Сейчас: {currentStage}</Text>}
+                {nextAction&&<Pressable accessibilityRole="button" accessibilityLabel={`Открыть следующий шаг: ${nextAction.title}`} onPress={()=>{if(actionMilestone){setFocusRoadmapStageId(actionMilestone.id);setDetailTab('roadmap')}else if(actionDirection){setFocusDirectionId(actionDirection.id);setDetailTab('matrix')}else setDetailTab('actions')}} style={{minHeight:48,paddingVertical:10,justifyContent:'center',borderTopWidth:1,borderTopColor:'#adca43',gap:4}}><Text style={{color:'#435b31',fontSize:12}}>{roadmapNext.fromOtherStage?`Шаг из ${nextActionLocation}`:'Следующий шаг'}</Text><Text style={{color:'#263c19',fontSize:16,lineHeight:23}}>{nextAction.title}</Text></Pressable>}
+                {!nextAction&&currentMilestone?<Pressable accessibilityRole="button" onPress={()=>{setDetailTab('actions');setAddKind('action')}} style={{minHeight:48,paddingVertical:10,justifyContent:'center',borderTopWidth:1,borderTopColor:'#adca43'}}><Text style={{color:'#263c19',fontSize:15}}>Добавить действие к этапу «{currentMilestone.title}»</Text></Pressable>:null}
+              </BentoCard>
+              <BentoCard tone="soft" style={[local.factPanel,narrow&&local.factPanelMobile]}>
+                <View style={local.factGrid}>
+                  <View style={local.factCell}><Text style={local.factLabel}>Срок</Text><Text numberOfLines={2} style={local.factValue}>{goal.deadline?formatDateLong(goal.deadline):'Без срока'}</Text></View>
+                  <View style={local.factCell}><Text style={local.factLabel}>Приоритет</Text><Text numberOfLines={1} style={local.factValue}>{priorityLabels[goal.priority]}</Text></View>
+                  <View style={local.factCell}><Text style={local.factLabel}>Статус</Text><Text numberOfLines={1} style={local.factValue}>{goal.status==='completed'?'Завершена':goal.status==='paused'?'Пауза':'Активна'}</Text></View>
+                  <View style={local.factCell}><Text style={local.factLabel}>Этапы</Text><Text numberOfLines={1} style={local.factValue}>{goal.milestones.filter(stage=>calculateMilestoneProgress(stage,goal.actions)===100).length} из {goal.milestones.length}</Text></View>
+                </View>
+              </BentoCard>
+            </BentoGrid>
+
+            <View style={local.detailTabs} accessibilityRole="tablist">
+              {([
+                ['roadmap', 'Путь'], ['actions', 'Действия'], ['matrix', '8 направлений'], ['context', 'Контекст'],
+              ] as const).map(([key, label]) => (
+                <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: detailTab === key }} onPress={() => setDetailTab(key)} style={[local.detailTab, detailTab === key && local.detailTabActive]}>
+                  <Text style={[local.detailTabText, detailTab === key && local.detailTabTextActive]}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <GoalStructureAssistant key={goal.id} open={structureOpen} goal={goal} onClose={()=>setStructureOpen(false)} onUpdateGoal={updateGoal}/>
+
+            {detailTab === 'roadmap' ? (
+              <View style={local.tabContent}>
+                <View style={local.blockHeadingRow}>
+                  <View style={local.flexText}><Text style={local.blockTitle}>Этапы пути</Text><Text style={local.goalMeta}>Продвигайся по одному понятному этапу за раз.</Text></View>
+                  <View style={local.roadmapActions}>{goal.milestones.length>0&&<Pressable accessibilityRole="button" aria-expanded={manageStages} onPress={()=>setManageStages(value=>!value)} style={local.roadmapOutlineButton}><Text style={local.roadmapOutlineText}>{manageStages?'Готово':'Настроить этапы'}</Text></Pressable>}<Pressable accessibilityRole="button" onPress={() => setStageDraftOpen((value) => !value)} style={local.roadmapButton}><Text style={local.roadmapButtonText}>{stageDraftOpen ? 'Скрыть форму' : 'Добавить этап'}</Text></Pressable><Pressable accessibilityRole="button" onPress={() => setStructureOpen(true)} style={local.roadmapOutlineButton}><Text style={local.roadmapOutlineText}>Собрать с помощником</Text></Pressable></View>
+                </View>
+                {stageDraftOpen ? <View style={local.stageEditor}><TextInput accessibilityLabel="Название нового этапа" value={stageDraft} onChangeText={setStageDraft} placeholder="Например, подготовить портфолио" placeholderTextColor={faint} style={local.stageInput} onSubmitEditing={addRoadmapStage}/><Pressable accessibilityRole="button" disabled={!stageDraft.trim()} onPress={addRoadmapStage} style={[local.stageSave, !stageDraft.trim() && local.stageDisabled]}><Text style={local.stageSaveText}>Добавить</Text></Pressable></View> : null}
+                {roadmapDirections.length>0&&<BentoCard tone="soft"><View style={local.blockHeadingRow}><View style={local.flexText}><Text style={local.blockTitle}>ОТАНИ · направления цели</Text><Text style={local.goalMeta}>{roadmapDirections.length} направлений · отдельное представление вариантов и действий</Text></View><Pressable accessibilityRole="button" onPress={()=>setDetailTab('matrix')} style={local.roadmapOutlineButton}><Text style={local.roadmapOutlineText}>Открыть ОТАНИ</Text></Pressable></View></BentoCard>}
+                {goal.milestones.length ? <>
+                  <GoalRoadmap milestones={goal.milestones} actions={goal.actions} currentMilestoneId={currentMilestone?.id} focusMilestoneId={focusRoadmapStageId} manage={manageStages}
+                    onAddAction={()=>{setDetailTab('actions');setAddKind('action');}}
+                    onToggleAction={(actionId)=>toggleAction(goal,actionId,updateGoal)}
+                    onUpdateMilestone={(id,patch)=>updateGoal(item=>({...item,milestones:item.milestones.map(stage=>stage.id===id?{...stage,...patch}:stage)}))}
+                    renderManageActions={(milestone,index,ordered)=>{
+                      const attachedCount=goal.actions.filter(action=>action.milestoneId===milestone.id).length;
+                      return <>
+                        {editingStageId===milestone.id?<View style={local.stageEditor}><TextInput accessibilityLabel="Название этапа" value={editingStageTitle} onChangeText={setEditingStageTitle} style={local.stageInput} autoFocus/><Pressable accessibilityRole="button" disabled={!editingStageTitle.trim()} onPress={saveRoadmapStageTitle} style={[local.stageSave,!editingStageTitle.trim()&&local.stageDisabled]}><Text style={local.stageSaveText}>Сохранить</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>setEditingStageId(null)} style={local.stageCancel}><Text style={local.stageCancelText}>Отмена</Text></Pressable></View>:null}
+                        <View style={local.stageTools}><Text style={local.stageToolsLabel}>Порядок и статус</Text><View style={local.stageToolButtons}>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Переместить этап ${index+1} вверх`} disabled={index===0} onPress={()=>moveRoadmapStage(milestone.id,-1)} style={[local.stageToolButton,index===0&&local.stageDisabled]}><Text style={local.stageToolText}>↑</Text></Pressable>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Переместить этап ${index+1} вниз`} disabled={index===ordered.length-1} onPress={()=>moveRoadmapStage(milestone.id,1)} style={[local.stageToolButton,index===ordered.length-1&&local.stageDisabled]}><Text style={local.stageToolText}>↓</Text></Pressable>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Переименовать этап ${milestone.title}`} onPress={()=>{setEditingStageId(milestone.id);setEditingStageTitle(milestone.title)}} style={local.stageToolButton}><Pencil color={accent} size={16}/></Pressable>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Удалить этап ${milestone.title}`} onPress={()=>setRemovingStageId(removingStageId===milestone.id?null:milestone.id)} style={local.stageToolButton}><Trash2 color={muted} size={16}/></Pressable>
+                        </View></View>
+                        {removingStageId===milestone.id?<View style={local.removeStageNote}><Text style={local.stageCancelText}>{attachedCount?`${attachedCount} действий будут сняты с этого этапа и останутся в списке действий.`:'Этап будет удалён.'}</Text><View style={local.stageToolButtons}><Pressable accessibilityRole="button" onPress={()=>setRemovingStageId(null)} style={local.stageCancel}><Text style={local.stageCancelText}>Оставить</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>removeRoadmapStage(milestone.id)} style={local.removeStageButton}><Text style={local.removeStageText}>Удалить этап</Text></Pressable></View></View>:null}
+                        <View style={local.stageStatusRow}><Text style={local.stageToolsLabel}>Статус</Text><View style={local.stageToolButtons}>{([['not_started','Впереди'],['in_progress','В процессе'],['completed','Готово']] as const).map(([status,label])=><Pressable key={status} accessibilityRole="button" accessibilityState={{selected:milestone.status===status}} aria-pressed={milestone.status===status} onPress={()=>setRoadmapStageStatus(milestone.id,status)} style={[local.statusChoice,milestone.status===status&&local.statusChoiceActive]}><Text style={[local.statusChoiceText,milestone.status===status&&local.statusChoiceTextActive]}>{label}</Text></Pressable>)}</View></View>
+                      </>;
+                    }}/>
+                </> : (
+                  <View accessibilityLabel="Пример этапов пути, не сохранённый в цели" style={local.exampleRoadmap}>
+                    <Text style={local.roadmapEmptyTitle}>Путь пока не собран</Text>
+                    <Text style={local.exampleRoadmapLabel}>Пример для ориентира · это не данные цели</Text>
+                    <View style={local.exampleRoadmapStep}><Text style={local.exampleRoadmapNumber}>1</Text><Text style={local.exampleRoadmapText}>Уточнить желаемый результат</Text></View>
+                    <View style={local.exampleRoadmapStep}><Text style={local.exampleRoadmapNumber}>2</Text><Text style={local.exampleRoadmapText}>Разбить путь на этапы</Text></View>
+                    <View style={local.exampleRoadmapStep}><Text style={local.exampleRoadmapNumber}>3</Text><Text style={local.exampleRoadmapText}>Выбрать ближайшее действие</Text></View>
+                    <Text style={local.roadmapEmptyHint}>Добавь этап или собери маршрут с помощником.</Text>
+                  </View>
+                )}
               </View>
-              <Text style={local.progressNumber}>{progress}%</Text>
-            </View>
-            <ProgressLine value={progress} />
+            ) : null}
 
-            <Text style={local.blockTitle}>Сегодня</Text>
-            <View style={local.compactList}>
-              {!today.routines.length && !today.actions.length ? <EmptyLine text="На сегодня нет обязательных действий." /> : null}
-              {today.routines.map((routine) => (
-                <RoutineTodayRow key={routine.id} goal={goal} routine={routine} onUpdateGoal={updateGoal} />
-              ))}
-              {today.actions.map((action) => (
-                <ActionRow key={action.id} action={action} onToggle={() => toggleAction(goal, action.id, updateGoal)} />
-              ))}
-            </View>
+            {detailTab === 'actions' ? (
+              <View style={local.tabContent}>
+                <Text style={local.blockTitle}>Что можно сделать сейчас</Text>
+                <View style={local.compactList}>
+                  {!today.routines.length && !today.actions.length ? <EmptyLine text="На сегодня нет обязательных действий." /> : null}
+                  {today.routines.map((routine) => <RoutineTodayRow key={routine.id} goal={goal} routine={routine} onUpdateGoal={updateGoal} />)}
+                  {today.actions.map((action) => <ActionRow key={action.id} action={action} onToggle={() => toggleAction(goal, action.id, updateGoal)} />)}
+                </View>
+                <SectionBlock title="Регулярные действия" empty={!goal.routines.length ? 'Регулярные действия пока не добавлены.' : ''}>{goal.routines.map((routine) => <RoutineRow key={routine.id} goal={goal} routine={routine} onUpdateGoal={updateGoal} />)}</SectionBlock>
+                <SectionBlock title="Разовые действия" empty={!standaloneActions.length ? 'Разовые действия пока не добавлены.' : ''}>{standaloneActions.map((action) => <ActionRow key={action.id} action={action} onToggle={() => toggleAction(goal, action.id, updateGoal)} />)}</SectionBlock>
+                <View style={local.addChoices}><ChoiceButton label="Добавить этап" onPress={() => setAddKind('milestone')} /><ChoiceButton label="Разовое действие" onPress={() => setAddKind('action')} /><ChoiceButton label="Регулярное действие" onPress={() => setAddKind('routine')} /></View>
+              </View>
+            ) : null}
 
-            <SectionBlock title="Этапы" empty={!goal.milestones.length ? 'Этапы пока не добавлены.' : ''}>
-              {goal.milestones.sort((a, b) => a.position - b.position).map((milestone) => (
-                <MilestoneItem key={milestone.id} milestone={milestone} actions={goal.actions} onUpdateGoal={updateGoal} />
-              ))}
-            </SectionBlock>
+            {detailTab === 'matrix' ? <View style={local.tabContent}><Text style={local.blockTitle}>Возможные пути к цели</Text><Text style={local.goalMeta}>Сохраняй варианты на будущее и выбирай следующий шаг, когда будешь готов.</Text><GoalMatrix initialDirectionId={focusDirectionId} goal={goal} isDesktop={isDesktop} onUpdateGoal={updateGoal} onRequestAI={() => setStructureOpen(true)} /></View> : null}
+
+            {detailTab === 'context' ? (
+              <View style={local.tabContent}>
+                <View style={local.block}><Text style={local.blockTitle}>Точка старта</Text><Text style={local.goalMeta}>Сохрани то, что уже известно о ситуации. Это можно обновлять по мере продвижения.</Text><TextInput accessibilityLabel="Текущая ситуация и отправная точка" multiline value={goal.planningContext ?? ''} onChangeText={(value) => updateGoal((item) => ({ ...item, planningContext: value.slice(0, 2000) }))} placeholder="Что уже сделано? Что у тебя есть сейчас?" placeholderTextColor={faint} style={local.contextInput} /></View>
+                <View style={local.block}><View style={local.blockHeadingRow}><View style={local.flexText}><Text style={local.blockTitle}>Уточнения к плану</Text><Text style={local.goalMeta}>Ответы сохраняются вместе с целью и доступны для редактирования.</Text></View><Pressable accessibilityRole="button" onPress={() => setStructureOpen(true)} style={local.roadmapButton}><Text style={local.roadmapButtonText}>Открыть помощник</Text></Pressable></View>
+                  {getActiveRoadmapClarifications(goal).map((item, index) => <View key={item.id} style={local.contextAnswer}><Text style={local.contextQuestion}>{index + 1}. {item.question}</Text><TextInput accessibilityLabel={`Ответ ${index + 1} к плану`} multiline value={item.answer} onChangeText={(value) => updateGoal((current) => updateRoadmapAnswer(current, item.id, value, new Date().toISOString()))} placeholder="Добавь ответ или оставь пустым" placeholderTextColor={faint} style={local.contextAnswerInput} /></View>)}
+                  {!getActiveRoadmapClarifications(goal).length ? <EmptyLine text="Сохранённых вопросов пока нет. Помощник уточнит детали при сборке пути." /> : null}
+                </View>
+              </View>
+            ) : null}
           </View>
           <RightPanel enabled={isDesktop}><View style={isDesktop ? local.desktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
             {isDesktop ? (
               <View style={local.goalNavigation}>
                 <View style={local.navigationHeader}>
                   <Text style={local.blockTitle}>Цели</Text>
-                  <Pressable onPress={onCreate} style={local.navigationAdd}><Plus color={accent} size={16} /></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Создать цель" onPress={onCreate} style={local.navigationAdd}><Plus color={accent} size={16} /></Pressable>
                 </View>
                 {goals.map((item) => (
-                  <Pressable key={item.id} onPress={() => onSelect(item.id)} style={[local.navigationRow, item.id === goal.id && local.navigationRowActive]}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={item.title} accessibilityState={{ selected: item.id === goal.id }} aria-current={item.id === goal.id ? 'page' : undefined} key={item.id} onPress={() => onSelect(item.id)} style={[local.navigationRow, item.id === goal.id && local.navigationRowActive]}>
                     <Text numberOfLines={1} style={[local.navigationText, item.id === goal.id && local.navigationTextActive]}>{item.title}</Text>
                     <Text style={local.goalMeta}>{calculateGoalProgress(item)}%</Text>
                   </Pressable>
                 ))}
               </View>
             ) : null}
-            <SectionBlock title="Регулярные действия" empty={!goal.routines.length ? 'Регулярные действия пока не добавлены.' : ''}>
-              {goal.routines.map((routine) => (
-                <RoutineRow key={routine.id} goal={goal} routine={routine} onUpdateGoal={updateGoal} />
-              ))}
-            </SectionBlock>
-
-            <SectionBlock title="Разовые действия" empty={!standaloneActions.length ? 'Разовые действия пока не добавлены.' : ''}>
-              {standaloneActions.map((action) => (
-                <ActionRow key={action.id} action={action} onToggle={() => toggleAction(goal, action.id, updateGoal)} />
-              ))}
-            </SectionBlock>
-
-            <Pressable onPress={() => setAddKind(null)} style={local.addSelector}>
-              <Plus color={accent} size={18} />
-              <Text style={local.addSelectorText}>Добавить</Text>
-            </Pressable>
-            <View style={local.addChoices}>
-              <ChoiceButton label="Этап" onPress={() => setAddKind('milestone')} />
-              <ChoiceButton label="Разовое" onPress={() => setAddKind('action')} />
-              <ChoiceButton label="Регулярное" onPress={() => setAddKind('routine')} />
-            </View>
           </View></RightPanel>
         </View>
       </ScrollView>
 
-      <AddGoalItemSheet goal={goal} kind={addKind} onClose={() => setAddKind(null)} onUpdateGoal={updateGoal} />
+      <AddGoalItemSheet goal={goal} kind={addKind} defaultMilestoneId={currentMilestone?.id} onClose={() => setAddKind(null)} onUpdateGoal={updateGoal} />
       <ConfirmSheet title="Удалить цель?" text="Все этапы, действия и история выполнения этой цели исчезнут." visible={deleteGoalOpen} onCancel={() => setDeleteGoalOpen(false)} onConfirm={deleteGoal} destructive />
-    </View>
+    </BentoPage>
   );
 }
 
@@ -389,7 +544,7 @@ function MilestoneItem({ milestone, actions, onUpdateGoal }: { milestone: GoalMi
   const [open, setOpen] = useState(false);
   const [newActionTitle, setNewActionTitle] = useState('');
   const progress = calculateMilestoneProgress(milestone, actions);
-  const ownActions = actions.filter((action) => action.milestoneId === milestone.id).sort(sortGoalActions);
+  const ownActions = actions.filter((action) => action.milestoneId === milestone.id && !action.archivedAt).sort(sortGoalActions);
   const completedActions = ownActions.filter((action) => action.status === 'completed').length;
   const milestoneMeta = ownActions.length
     ? `${completedActions} из ${ownActions.length} действий`
@@ -434,7 +589,7 @@ function MilestoneItem({ milestone, actions, onUpdateGoal }: { milestone: GoalMi
 
   return (
     <View style={local.sectionItem}>
-      <Pressable onPress={() => setOpen((value) => !value)} style={local.cardHeader}>
+        <Pressable accessibilityRole="button" accessibilityLabel={milestone.title} accessibilityState={{ expanded: open }} aria-expanded={open} onPress={() => setOpen((value) => !value)} style={local.cardHeader}>
         <View style={local.flexText}>
           <Text style={local.actionTitle}>{milestone.title}</Text>
           <Text style={local.goalMeta}>{progress}% · {milestoneMeta}</Text>
@@ -560,7 +715,7 @@ function RoutineRow({ goal, routine, onUpdateGoal }: { goal: Goal; routine: Goal
 function ActionRow({ action, onToggle }: { action: GoalAction; onToggle: () => void }) {
   const done = action.status === 'completed';
   return (
-    <Pressable onPress={onToggle} style={[local.actionRow, done && local.actionRowDone]}>
+    <Pressable accessibilityRole="checkbox" accessibilityLabel={action.title} accessibilityState={{checked:done}} aria-checked={done} onPress={onToggle} style={[local.actionRow, done && local.actionRowDone]}>
       <View style={[local.checkCircle, done && local.checkCircleDone]}>{done ? <Check color={activeText} size={13} strokeWidth={3} /> : null}</View>
       <View style={local.flexText}>
         <Text style={[local.actionTitle, done && local.doneText]}>{action.title}</Text>
@@ -606,12 +761,13 @@ function CreateGoalFlow({ open, onClose, onSave }: { open: boolean; onClose: () 
         <View style={local.sheet}>
           <View style={local.cardHeader}>
             <Text style={local.sheetTitle}>Новая цель</Text>
-            <Pressable onPress={close} style={local.iconButton}><X color={text} size={18} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Закрыть создание цели" onPress={close} style={local.iconButton}><X color={text} size={18} /></Pressable>
           </View>
           {step < 3 && current ? (
             <>
               <Text style={local.prompt}>{current.title}</Text>
               <TextInput
+                accessibilityLabel={current.title}
                 autoFocus
                 inputMode={current.key === 'deadline' ? 'numeric' : 'text'}
                 onChangeText={(value) => setDraft((item) => ({ ...item, [current.key]: value }))}
@@ -627,7 +783,7 @@ function CreateGoalFlow({ open, onClose, onSave }: { open: boolean; onClose: () 
               <Text style={local.prompt}>Насколько эта цель сейчас важна?</Text>
               <View style={local.segmentRow}>
                 {(['main', 'important', 'supporting'] as GoalPriority[]).map((priority) => (
-                  <Pressable key={priority} onPress={() => setDraft((item) => ({ ...item, priority }))} style={[local.segment, draft.priority === priority && local.segmentActive]}>
+                  <Pressable accessibilityRole="button" accessibilityState={{selected:draft.priority===priority}} key={priority} onPress={() => setDraft((item) => ({ ...item, priority }))} style={[local.segment, draft.priority === priority && local.segmentActive]}>
                     <Text style={[local.segmentText, draft.priority === priority && local.segmentTextActive]}>{priorityLabels[priority]}</Text>
                   </Pressable>
                 ))}
@@ -637,11 +793,11 @@ function CreateGoalFlow({ open, onClose, onSave }: { open: boolean; onClose: () 
           )}
           <View style={local.formActions}>
             {step > 0 ? (
-              <Pressable onPress={back} style={local.secondaryButton}>
+              <Pressable accessibilityRole="button" onPress={back} style={local.secondaryButton}>
                 <Text style={local.secondaryButtonText}>Назад</Text>
               </Pressable>
             ) : null}
-            <Pressable disabled={step === 0 && !draft.title.trim()} onPress={next} style={[local.primaryButton, local.formPrimaryButton, step === 0 && !draft.title.trim() && local.disabledButton]}>
+            <Pressable accessibilityRole="button" accessibilityState={{disabled:step===0&&!draft.title.trim()}} disabled={step === 0 && !draft.title.trim()} onPress={next} style={[local.primaryButton, local.formPrimaryButton, step === 0 && !draft.title.trim() && local.disabledButton]}>
               <Text style={local.primaryButtonText}>{step < 3 ? 'Дальше' : 'Создать цель'}</Text>
             </Pressable>
           </View>
@@ -651,7 +807,7 @@ function CreateGoalFlow({ open, onClose, onSave }: { open: boolean; onClose: () 
   );
 }
 
-function AddGoalItemSheet({ goal, kind, onClose, onUpdateGoal }: { goal: Goal; kind: AddKind | null; onClose: () => void; onUpdateGoal: (recipe: (goal: Goal) => Goal) => void }) {
+function AddGoalItemSheet({ goal, kind, defaultMilestoneId, onClose, onUpdateGoal }: { goal: Goal; kind: AddKind | null; defaultMilestoneId?: string; onClose: () => void; onUpdateGoal: (recipe: (goal: Goal) => Goal) => void }) {
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [metricType, setMetricType] = useState<GoalRoutineMetricType>('minutes');
@@ -660,6 +816,7 @@ function AddGoalItemSheet({ goal, kind, onClose, onUpdateGoal }: { goal: Goal; k
   const [targetValue, setTargetValue] = useState('60');
   const milestoneOptions = useMemo(() => goal.milestones, [goal.milestones]);
   const [milestoneId, setMilestoneId] = useState<string | null>(null);
+  useEffect(()=>{ if(kind==='action')setMilestoneId(defaultMilestoneId??null); },[kind,defaultMilestoneId]);
 
   function reset() {
     setTitle('');
@@ -724,15 +881,15 @@ function AddGoalItemSheet({ goal, kind, onClose, onUpdateGoal }: { goal: Goal; k
         <View style={local.sheet}>
           <View style={local.cardHeader}>
             <Text style={local.sheetTitle}>{kind === 'milestone' ? 'Новый этап' : kind === 'routine' ? 'Регулярное действие' : 'Разовое действие'}</Text>
-            <Pressable onPress={reset} style={local.iconButton}><X color={text} size={18} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Закрыть добавление элемента" onPress={reset} style={local.iconButton}><X color={text} size={18} /></Pressable>
           </View>
           <TextInput autoFocus onChangeText={setTitle} onSubmitEditing={save} placeholder="Название" placeholderTextColor={faint} style={local.input} value={title} />
           <TextInput onChangeText={setDate} placeholder={kind === 'routine' ? 'Дата старта: 2026-07-30' : 'Срок: 2026-07-30'} placeholderTextColor={faint} style={local.input} value={date} />
           {kind === 'action' && milestoneOptions.length ? (
-            <View style={local.segmentRow}>
-              <Pressable onPress={() => setMilestoneId(null)} style={[local.segment, !milestoneId && local.segmentActive]}><Text style={[local.segmentText, !milestoneId && local.segmentTextActive]}>без этапа</Text></Pressable>
-              {milestoneOptions.slice(0, 2).map((milestone) => (
-                <Pressable key={milestone.id} onPress={() => setMilestoneId(milestone.id)} style={[local.segment, milestoneId === milestone.id && local.segmentActive]}>
+            <View style={[local.segmentRow,{flexWrap:'wrap'}]}>
+              <Pressable accessibilityRole="button" accessibilityState={{selected:!milestoneId}} onPress={() => setMilestoneId(null)} style={[local.segment,{flexBasis:110}, !milestoneId && local.segmentActive]}><Text style={[local.segmentText, !milestoneId && local.segmentTextActive]}>без этапа</Text></Pressable>
+              {milestoneOptions.map((milestone) => (
+                <Pressable key={milestone.id} accessibilityRole="button" accessibilityLabel={`Этап действия: ${milestone.title}`} accessibilityState={{selected:milestoneId===milestone.id}} onPress={() => setMilestoneId(milestone.id)} style={[local.segment,{flexBasis:110}, milestoneId === milestone.id && local.segmentActive]}>
                   <Text numberOfLines={1} style={[local.segmentText, milestoneId === milestone.id && local.segmentTextActive]}>{milestone.title}</Text>
                 </Pressable>
               ))}
@@ -826,7 +983,7 @@ function EditRoutineSheet({
         <View style={local.confirmCard}>
           <View style={local.cardHeader}>
             <Text style={local.sheetTitle}>Редактировать</Text>
-            <Pressable onPress={onClose} style={local.iconButton}><X color={text} size={18} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактирование" onPress={onClose} style={local.iconButton}><X color={text} size={18} /></Pressable>
           </View>
           <TextInput autoFocus onChangeText={setTitle} onSubmitEditing={save} placeholder="Название" placeholderTextColor={faint} style={local.input} value={title} />
           <View style={local.segmentRow}>
@@ -924,7 +1081,7 @@ function RoutineValueSheet({
         <View style={local.confirmCard}>
           <View style={local.cardHeader}>
             <Text style={local.sheetTitle}>Значение сегодня</Text>
-            <Pressable onPress={onClose} style={local.iconButton}><X color={text} size={18} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Закрыть ввод значения" onPress={onClose} style={local.iconButton}><X color={text} size={18} /></Pressable>
           </View>
           <Text style={local.goalMeta}>Можно поставить 0 или любое текущее значение. Цель: {targetValue} {metricType === 'minutes' ? 'минут' : metricType === 'count' ? 'шт' : 'раз'}.</Text>
           <TextInput autoFocus inputMode="numeric" keyboardType="number-pad" onChangeText={updateDraft} onSubmitEditing={save} placeholder="0" placeholderTextColor={faint} style={local.input} value={draft} />
@@ -978,7 +1135,7 @@ function routineFrequencyLabel(routine: GoalRoutine) {
 function SectionBlock({ title, empty, children }: { title: string; empty: string; children: ReactNode }) {
   return (
     <View style={local.block}>
-      <Text style={local.blockTitle}>{title}</Text>
+      {title ? <Text style={local.blockTitle}>{title}</Text> : null}
       {empty ? <EmptyLine text={empty} /> : children}
     </View>
   );
@@ -992,8 +1149,8 @@ function ConfirmSheet({ title, text: body, visible, onCancel, onConfirm, destruc
           <Text style={local.sheetTitle}>{title}</Text>
           <Text style={local.goalMeta}>{body}</Text>
           <View style={local.confirmActions}>
-            <Pressable onPress={onCancel} style={local.secondaryButton}><Text style={local.secondaryButtonText}>Отмена</Text></Pressable>
-            <Pressable onPress={onConfirm} style={[local.primaryButton, destructive && local.dangerButton]}><Text style={local.primaryButtonText}>Подтвердить</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Отмена" onPress={onCancel} style={local.secondaryButton}><Text style={local.secondaryButtonText}>Отмена</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={destructive ? 'Удалить цель' : 'Подтвердить'} onPress={onConfirm} style={[local.primaryButton, destructive && local.dangerButton]}><Text style={local.primaryButtonText}>Подтвердить</Text></Pressable>
           </View>
         </View>
       </View>
@@ -1015,7 +1172,7 @@ function toggleAction(goal: Goal, actionId: string, updateGoal: (recipe: (goal: 
           ? { ...action, status: action.status === 'completed' ? 'pending' : 'completed' }
           : action,
       );
-      const own = actions.filter((action) => action.milestoneId === milestone.id);
+      const own = actions.filter((action) => action.milestoneId === milestone.id && !action.archivedAt);
       if (!own.length || milestone.status === 'completed') return milestone;
       return { ...milestone, status: own.some((action) => action.status === 'completed') ? 'in_progress' : 'not_started' };
     }),
@@ -1027,16 +1184,16 @@ function EmptyLine({ text: value }: { text: string }) {
 }
 
 function ChoiceButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return <Pressable onPress={onPress} style={local.choiceButton}><Text style={local.choiceText}>{label}</Text></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={local.choiceButton}><Text style={local.choiceText}>{label}</Text></Pressable>;
 }
 
 function TinyButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return <Pressable onPress={onPress} style={local.tinyButton}><Text style={local.tinyButtonText}>{label}</Text></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={local.tinyButton}><Text style={local.tinyButtonText}>{label}</Text></Pressable>;
 }
 
 function InlineAction({ active, label, onPress }: { active?: boolean; label: string; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={local.inlineAction}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: active }} onPress={onPress} style={local.inlineAction}>
       <Text style={[local.inlineActionText, active && local.inlineActionTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -1044,7 +1201,7 @@ function InlineAction({ active, label, onPress }: { active?: boolean; label: str
 
 function MenuButton({ label, onPress, danger }: { label: string; onPress: () => void; danger?: boolean }) {
   return (
-    <Pressable onPress={onPress} style={local.menuButton}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={local.menuButton}>
       {danger ? <Trash2 color="#ff4d4d" size={14} /> : null}
       <Text style={[local.menuButtonText, danger && local.dangerText]}>{label}</Text>
     </Pressable>
@@ -1053,6 +1210,18 @@ function MenuButton({ label, onPress, danger }: { label: string; onPress: () => 
 
 const local = StyleSheet.create({
   screen: { flex: 1, minHeight: 0 },
+  detailPage: { alignSelf: 'center', gap: 12, maxWidth: 960, padding: 20, paddingTop: 0, width: '100%' },
+  pageContent: { alignSelf: 'center', gap: 16, maxWidth: 960, padding: 20, width: '100%' },
+  goalSummary: { gap: 12 },
+  goalHeroGrid: { alignItems: 'flex-start' },
+  goalHeroGridMobile: { flexDirection: 'row', flexWrap: 'wrap' },
+  goalHeroMobile: { minHeight: 0, width: '100%', maxWidth: '100%', flexBasis: '100%', flexShrink: 1 },
+  factPanel: { alignSelf: 'flex-start', minHeight: 120, padding: 14, width: '100%' },
+  factPanelMobile: { minHeight: 100, width: '100%' },
+  factGrid: { alignContent: 'center', alignItems: 'center', columnGap: 8, flexDirection: 'row', flexWrap: 'wrap', rowGap: 6 },
+  factCell: { flexBasis: '47%', flexGrow: 1, gap: 2, minWidth: 0 },
+  factLabel: { color: muted, fontSize: 12, lineHeight: 17 },
+  factValue: { color: text, fontSize: 15, fontWeight: '600', lineHeight: 20 },
   scrollContent: { gap: 10, paddingBottom: 90 },
   desktopScrollContent: { paddingBottom: 36, width: '100%' },
   desktopLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 0, width: '100%' },
@@ -1067,29 +1236,38 @@ const local = StyleSheet.create({
   navigationText: { color: text, flex: 1, fontSize: 13, lineHeight: 18 },
   navigationTextActive: { color: accent, fontWeight: '700' },
   desktopGoalGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, width: '100%' },
-  desktopInfoCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 9, padding: 14 },
+  goalGrid: { alignItems: 'stretch' },
+  emptyComposition: { gap: 12 },
+  goalCardShell: { minWidth: 0 },
+  desktopInfoCard: { gap: 10, padding: 4 },
   divider: { backgroundColor: line, height: 1, marginVertical: 2 },
   topRow: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
-  roundAccentButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 999, height: 42, justifyContent: 'center', width: 42 },
-  goalCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 9, padding: 12 },
-  goalCardDesktop: { flexBasis: 320, flexGrow: 1, minHeight: 128, padding: 16 },
+  roundAccentButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 999, height: 44, justifyContent: 'center', width: 44 },
+  goalCard: { gap: 12, padding: 16 },
+  goalCardDesktop: { flexBasis: 320, flexGrow: 1, minHeight: 148, padding: 20 },
   goalCardDesktopFeatured: { flexBasis: '100%' },
-  goalCardFeatured: { borderColor: accentBorder },
+  goalCardFeatured: {},
   cardHeader: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
   flexText: { flex: 1, minWidth: 0 },
   goalTitle: { color: text, fontSize: 16, lineHeight: 22 },
   detailsTitle: { color: text, flex: 1, fontSize: 18, lineHeight: 24 },
   goalMeta: { color: muted, fontSize: 12, lineHeight: 17 },
   progressNumber: { color: text, fontSize: 22, fontWeight: '300' },
-  todayPreview: { gap: 4 },
-  miniLabel: { color: accent, fontSize: 11, lineHeight: 15 },
+  todayPreview: { borderTopColor: 'rgba(23,32,24,0.16)', borderTopWidth: 1, gap: 5, paddingTop: 9 },
+  miniLabel: { color: text, fontSize: 12, fontWeight: '700', lineHeight: 15 },
   previewLine: { color: text, fontSize: 13, lineHeight: 18 },
   cardFooter: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
-  statusPill: { color: accent, fontSize: 11 },
+  statusPill: { color: accent, fontSize: 12 },
   empty: { alignItems: 'flex-start', borderColor: line, borderRadius: 12, borderWidth: 1, gap: 10, padding: 16 },
   emptyTitle: { color: text, fontSize: 20, lineHeight: 26 },
   emptyText: { color: muted, fontSize: 13, lineHeight: 19 },
-  primaryButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 12, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
+  exampleRoadmap: { alignSelf: 'stretch', backgroundColor: panelSoft, borderColor: line, borderRadius: 16, borderWidth: 1, gap: 8, padding: 12 },
+  exampleRoadmapLabel: { color: muted, fontSize: 12, fontWeight: '600', lineHeight: 17 },
+  exampleRoadmapStep: { alignItems: 'center', flexDirection: 'row', gap: 9, minHeight: 30 },
+  exampleRoadmapNumber: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 99, color: activeText, fontSize: 12, fontWeight: '700', height: 24, lineHeight: 24, textAlign: 'center', width: 24 },
+  exampleRoadmapText: { color: text, flex: 1, fontSize: 13, lineHeight: 18 },
+  primaryButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 16, justifyContent: 'center', minHeight: 48, paddingHorizontal: 16 },
+  legacyFormButton: { alignSelf: 'flex-start', borderColor: line, borderRadius: 10, borderWidth: 1, justifyContent: 'center', minHeight: 40, paddingHorizontal: 12 },
   primaryButtonText: { color: activeText, fontSize: 13, fontWeight: '700' },
   formActions: { flexDirection: 'row', gap: 8 },
   formPrimaryButton: { flex: 1 },
@@ -1102,8 +1280,55 @@ const local = StyleSheet.create({
   dangerText: { color: '#ff4d4d' },
   summary: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
   summaryText: { flex: 1, gap: 3 },
-  block: { gap: 8 },
-  blockTitle: { color: text, fontSize: 18, lineHeight: 24, marginTop: 8 },
+  block: { gap: 12 },
+  blockTitle: { color: text, fontSize: 19, fontWeight: '700', lineHeight: 25, marginTop: 4 },
+  detailTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginVertical: 6 },
+  detailTab: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 999, borderWidth: 1, justifyContent: 'center', minHeight: 42, paddingHorizontal: 14 },
+  detailTabActive: { backgroundColor: activeBg, borderColor: activeBg },
+  detailTabText: { color: muted, fontSize: 12, fontWeight: '600' },
+  detailTabTextActive: { color: activeText, fontWeight: '700' },
+  tabContent: { gap: 16 },
+  blockHeadingRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between' },
+  roadmapButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 999, justifyContent: 'center', minHeight: 42, paddingHorizontal: 14 },
+  roadmapButtonText: { color: activeText, fontSize: 12, fontWeight: '700' },
+  directionLink: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: 8 },
+  directionLinkText: { color: accent, fontSize: 12, fontWeight: '700' },
+  roadmapActions: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 7, maxWidth: '100%', minWidth: 0, flexShrink: 1 },
+  roadmapOutlineButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, justifyContent: 'center', minHeight: 42, paddingHorizontal: 13 },
+  roadmapOutlineText: { color: accent, fontSize: 12, fontWeight: '700' },
+  stageEditor: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 14, borderWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 8, padding: 10 },
+  stageInput: { backgroundColor: panel, borderColor: line, borderRadius: 10, borderWidth: 1, color: text, flex: 1, fontSize: 14, minHeight: 44, minWidth: 160, paddingHorizontal: 12 },
+  stageSave: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 999, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
+  stageSaveText: { color: activeText, fontSize: 12, fontWeight: '700' },
+  stageCancel: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: 10 },
+  stageCancelText: { color: muted, fontSize: 12, lineHeight: 17 },
+  stageDisabled: { opacity: 0.45 },
+  managedMilestone: { gap: 8 },
+  stageTools: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' },
+  stageStatusRow: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' },
+  stageToolsLabel: { color: muted, fontSize: 12, fontWeight: '600', lineHeight: 18, paddingVertical: 6 },
+  stageToolButtons: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  stageToolButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 },
+  stageToolText: { color: accent, fontSize: 18, fontWeight: '700' },
+  statusChoice: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 11 },
+  statusChoiceActive: { backgroundColor: accentFaint, borderColor: accent },
+  statusChoiceText: { color: muted, fontSize: 11, fontWeight: '600' },
+  statusChoiceTextActive: { color: accent },
+  removeStageNote: { alignItems: 'center', backgroundColor: panelSoft, borderRadius: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', padding: 10 },
+  removeStageButton: { alignItems: 'center', backgroundColor: '#f8e7e0', borderRadius: 999, justifyContent: 'center', minHeight: 44, paddingHorizontal: 12 },
+  removeStageText: { color: '#783d2c', fontSize: 12, fontWeight: '700' },
+  currentStep: { backgroundColor: panelSoft, borderColor: line, borderRadius: 16, borderWidth: 1, gap: 8, padding: 12 },
+  currentStepLine: { gap: 3 },
+  currentStepAction: { alignSelf: 'stretch', justifyContent: 'center', minHeight: 44 },
+  currentStepLabel: { color: muted, fontSize: 12, lineHeight: 16 },
+  currentStepValue: { color: text, fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  roadmapEmptyTitle: { color: text, fontSize: 17, fontWeight: '600', lineHeight: 23 },
+  roadmapEmptyHint: { color: muted, fontSize: 12, lineHeight: 17, paddingTop: 3 },
+  roadmapTrack:{backgroundColor:panel,borderRadius:24,padding:18,gap:12,borderWidth:1,borderColor:line},
+  contextInput: { backgroundColor: panel, borderColor: line, borderRadius: 18, borderWidth: 1, color: text, fontSize: 14, lineHeight: 21, minHeight: 120, padding: 14, textAlignVertical: 'top' },
+  contextAnswer: { backgroundColor: panel, borderColor: line, borderRadius: 18, borderWidth: 1, gap: 10, padding: 14 },
+  contextQuestion: { color: text, fontSize: 14, fontWeight: '700', lineHeight: 20 },
+  contextAnswerInput: { backgroundColor: panelSoft, borderColor: line, borderRadius: 14, borderWidth: 1, color: text, fontSize: 14, lineHeight: 20, minHeight: 72, padding: 12, textAlignVertical: 'top' },
   compactList: { gap: 7 },
   todayRow: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 8, minHeight: 50, paddingHorizontal: 10 },
   sectionItem: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 8, padding: 10 },
@@ -1111,11 +1336,11 @@ const local = StyleSheet.create({
   milestoneActionRow: { alignItems: 'center', flexDirection: 'row', gap: 8, minHeight: 28 },
   inlineInputRow: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 8, minHeight: 38, paddingHorizontal: 10 },
   inlineInput: { color: text, flex: 1, fontSize: 13, minHeight: 34, padding: 0 },
-  inlinePlusButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 999, height: 28, justifyContent: 'center', width: 28 },
+  inlinePlusButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 999, height: 32, justifyContent: 'center', width: 32 },
   actionRow: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 10, minHeight: 46, paddingHorizontal: 10 },
   actionRowDone: { opacity: 0.62 },
   checkCircle: { alignItems: 'center', borderColor: muted, borderRadius: 999, borderWidth: 1, height: 22, justifyContent: 'center', width: 22 },
-  checkCircleDone: { backgroundColor: accent, borderColor: accent },
+  checkCircleDone: { backgroundColor: activeBg, borderColor: activeBg },
   actionTitle: { color: text, fontSize: 14, lineHeight: 19 },
   doneText: { color: muted, textDecorationLine: 'line-through' },
   addSelector: { alignItems: 'center', flexDirection: 'row', gap: 7, minHeight: 34 },
@@ -1124,12 +1349,12 @@ const local = StyleSheet.create({
   choiceButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, minHeight: 40, justifyContent: 'center', paddingHorizontal: 13 },
   choiceText: { color: text, fontSize: 12 },
   tinyButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, minHeight: 34, justifyContent: 'center', paddingHorizontal: 9 },
-  tinyButtonText: { color: accent, fontSize: 11 },
+  tinyButtonText: { color: accent, fontSize: 12 },
   tinyIconButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, height: 32, justifyContent: 'center', width: 32 },
   todayEditButton: { alignItems: 'center', height: 30, justifyContent: 'center', width: 24 },
   routineControls: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'flex-end' },
   inlineAction: { borderBottomColor: accentBorder, borderBottomWidth: 1, justifyContent: 'center', minHeight: 30, paddingHorizontal: 2 },
-  inlineActionText: { color: accent, fontSize: 11, lineHeight: 15 },
+  inlineActionText: { color: accent, fontSize: 12, lineHeight: 15 },
   inlineActionTextActive: { color: text },
   emptyLine: { color: muted, fontSize: 13, lineHeight: 18, paddingVertical: 8 },
   modalOverlay: { alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.72)', flex: 1, justifyContent: 'center', padding: 18 },
@@ -1142,13 +1367,13 @@ const local = StyleSheet.create({
   segmentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   segment: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, flexGrow: 1, minHeight: 38, justifyContent: 'center', paddingHorizontal: 10 },
   scheduleSegment: { flexBasis: '30%' },
-  segmentActive: { backgroundColor: accent, borderColor: accent },
+  segmentActive: { backgroundColor: activeBg, borderColor: activeBg },
   segmentText: { color: muted, fontSize: 12 },
   segmentTextActive: { color: activeText, fontWeight: '700' },
   weekdayRow: { flexDirection: 'row', gap: 6, justifyContent: 'space-between' },
   weekdayButton: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, flex: 1, minHeight: 38, justifyContent: 'center' },
-  weekdayButtonActive: { backgroundColor: accent, borderColor: accent },
-  weekdayText: { color: muted, fontSize: 11 },
+  weekdayButtonActive: { backgroundColor: activeBg, borderColor: activeBg },
+  weekdayText: { color: muted, fontSize: 12 },
   weekdayTextActive: { color: activeText, fontWeight: '700' },
   secondaryButton: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
   secondaryButtonText: { color: text, fontSize: 13 },

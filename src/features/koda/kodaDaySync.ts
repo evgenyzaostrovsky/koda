@@ -1,7 +1,8 @@
 import type { KodaDay } from './types';
 import type { Goal, PlannerItem } from './types';
 import { mergeKodaDays } from './persistence';
-import { calculateKodaScore, KODA_SCORE_WEIGHTS } from './kodaScore';
+import { calculatePlanScore, DAY_PLAN_SCORE_VERSION } from './dayPlan';
+import { parseDayPlanState, syncDayPlanProgress } from './dayPlanSync';
 
 type KodaDayRow = Record<string, unknown>;
 
@@ -12,53 +13,48 @@ export function mergeKodaDaySources(remoteDays: KodaDay[], localDays: KodaDay[])
 export function autoFinalizeExpiredKodaDays(days: KodaDay[], goals: Goal[], plannerItems: PlannerItem[], now = new Date()) {
   let changed = false;
   const nextDays = days.map((day) => {
-    if (day.status !== 'active' || now.getTime() < getKodaDayAutoCloseAt(day.localDate).getTime()) return day;
+    if (day.status !== 'active' || now.getTime() < getKodaDayAutoCloseAt(day.localDate, day.timezone).getTime()) return day;
     changed = true;
-    return finalizeKodaDay(day, goals, plannerItems, getKodaDayAutoCloseAt(day.localDate).toISOString());
+    return finalizeKodaDay(day, goals, plannerItems, getKodaDayAutoCloseAt(day.localDate, day.timezone).toISOString());
   });
   return changed ? nextDays : days;
 }
 
 export function finalizeKodaDay(day: KodaDay, goals: Goal[], plannerItems: PlannerItem[], finishedAt = new Date().toISOString()) {
-  const result = calculateKodaScore(goals, plannerItems, day.localDate);
-  const weakest = [...result.goals].sort((a, b) => a.completionRatio - b.completionRatio)[0];
-  const summary = result.totalScore === null
-    ? 'Недостаточно данных для KODA Score, но день сохранён.'
-    : result.totalScore >= 75
-      ? 'День заметно приблизил тебя к выбранной версии себя.'
-      : result.totalScore >= 50
-        ? 'Движение было, но главный фокус можно усилить.'
-        : 'День был загруженным, но движение по целям оказалось слабым.';
-  const focusLoss = !weakest
-    ? 'Действий целей на день не было.'
-    : weakest.completionRatio >= 1
-      ? 'Потерь фокуса по целям не видно.'
-      : `Меньше всего закрыта цель: ${weakest.title}.`;
-  const nextRecommendation = result.suggestions[0]?.label
-    ? `Завтра начни с: ${result.suggestions[0].label}.`
-    : 'Завтра начни с главной цели.';
-
-  return {
-    ...day,
-    status: 'completed',
-    finishedAt,
-    goalScore: result.goalScore,
-    plannerScore: result.plannerScore,
-    totalScore: result.totalScore,
-    classification: result.classification,
-    scoreVersion: result.scoreVersion,
-    summary,
-    focusLoss,
-    nextRecommendation,
-    goalsSnapshot: result.goals,
-    plannerSnapshot: plannerItems.filter((item) => item.date === day.localDate),
-    calculationSnapshot: { ...result, weights: KODA_SCORE_WEIGHTS },
-    updatedAt: finishedAt,
-  } satisfies KodaDay;
+  if (day.status === 'completed') return day;
+  if (day.plan) {
+    const plan = syncDayPlanProgress(day.plan, goals, plannerItems, { at: finishedAt });
+    const result = calculatePlanScore(plan);
+    return { ...day, plan, status: 'completed' as const, finishedAt, goalScore: result.goalScore,
+      plannerScore: result.plannerScore, totalScore: result.totalScore,
+      classification: 'unclassified' as const, scoreVersion: DAY_PLAN_SCORE_VERSION,
+      summary: `Выполнено ${result.completedCount} из ${result.totalCount} действий исходного плана.`,
+      focusLoss: '', nextRecommendation: result.minimumCompleted ? 'Минимум дня выполнен. Завтра можно продолжить с посильного шага.' : 'На завтра можно выбрать один небольшой шаг.',
+      goalsSnapshot: result.items.filter(item => item.category === 'goal'), plannerSnapshot: result.items.filter(item => item.category === 'planner'),
+      calculationSnapshot: { ...result, __dayPlan: plan, __finishedDayPlan: plan }, updatedAt: finishedAt } satisfies KodaDay;
+  }
+  return { ...day, status: 'completed' as const, finishedAt, goalScore: null, plannerScore: 0, totalScore: null,
+    classification: 'unclassified' as const, summary: 'День сохранён без принятого плана.', focusLoss: '',
+    nextRecommendation: 'В следующий раз начните с посильного плана.', updatedAt: finishedAt } satisfies KodaDay;
 }
 
-export function getKodaDayAutoCloseAt(localDate: string) {
+export function getKodaDayAutoCloseAt(localDate: string, timezone?: string) {
   const [year, month, day] = localDate.split('-').map(Number);
+  if (timezone && timezone !== 'local') {
+    try {
+      const wallTime = Date.UTC(year, month - 1, day + 1, 3);
+      let instant = wallTime;
+      const formatter = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit',hourCycle:'h23' });
+      for (let pass=0;pass<3;pass++) {
+        const parts=Object.fromEntries(formatter.formatToParts(new Date(instant)).map(part=>[part.type,part.value]));
+        const observed=Date.UTC(Number(parts.year),Number(parts.month)-1,Number(parts.day),Number(parts.hour),Number(parts.minute),Number(parts.second));
+        const correction=wallTime-observed;
+        instant+=correction;
+        if (!correction) break;
+      }
+      return new Date(instant);
+    } catch { /* An old unsupported timezone falls back to the local calendar. */ }
+  }
   return new Date(year, month - 1, day + 1, 3, 0, 0, 0);
 }
 
@@ -94,7 +90,7 @@ export function toKodaDayRow(day: KodaDay, userId: string) {
     next_recommendation: day.nextRecommendation,
     goals_snapshot: day.goalsSnapshot,
     planner_snapshot: day.plannerSnapshot,
-    calculation_snapshot: day.calculationSnapshot,
+    calculation_snapshot: day.plan ? { ...(day.calculationSnapshot && typeof day.calculationSnapshot === 'object' ? day.calculationSnapshot : {}), __dayPlan: day.plan } : day.calculationSnapshot,
     created_at: day.createdAt,
     updated_at: day.updatedAt,
   };
@@ -121,6 +117,7 @@ export function fromKodaDayRow(value: KodaDayRow): KodaDay | null {
     goalsSnapshot: value.goals_snapshot ?? [],
     plannerSnapshot: value.planner_snapshot ?? [],
     calculationSnapshot: value.calculation_snapshot ?? null,
+    plan: parseDayPlanState((value.calculation_snapshot as Record<string, unknown> | null)?.__dayPlan) ?? undefined,
     createdAt: typeof value.created_at === 'string' ? value.created_at : new Date().toISOString(),
     updatedAt: typeof value.updated_at === 'string' ? value.updated_at : new Date().toISOString(),
   };

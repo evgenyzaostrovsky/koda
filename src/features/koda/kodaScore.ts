@@ -1,11 +1,13 @@
 import { isRoutineDueToday, routineLogValue } from './goalLogic';
 import type { Goal, GoalAction, GoalRoutine, KodaDayClassification, PlannerItem } from './types';
+import { acceptDayPlan, calculatePlanScore, suggestDayPlan } from './dayPlan';
+import { syncDayPlanProgress } from './dayPlanSync';
 
-export const KODA_SCORE_VERSION = 2;
-export const KODA_FAILED_TASK_PENALTY = 2;
+export const KODA_SCORE_VERSION = 3;
+export const KODA_FAILED_TASK_PENALTY = 0;
 export const KODA_SCORE_WEIGHTS = {
-  goals: 90,
-  planner: 10,
+  goals: 75,
+  planner: 25,
   regularity: 0,
 } as const;
 
@@ -72,30 +74,33 @@ export type KodaScoreResult = {
 };
 
 const priorityWeights: Record<Goal['priority'], number> = {
-  main: 6,
+  main: 3,
   important: 2,
   supporting: 1,
 };
 
 export function calculateKodaScore(goals: Goal[], plannerItems: PlannerItem[], date: string): KodaScoreResult {
+  // Compatibility preview only. Actual day scores always use the accepted immutable plan.
+  const proposal = suggestDayPlan(goals, plannerItems, date, { availableMinutes: 100000, maxItems: 1000, maxActionsPerGoal: 1000, maxRoutineMinutes: 100000 });
+  const score = calculatePlanScore(syncDayPlanProgress(acceptDayPlan(proposal), goals, plannerItems));
   const goalBreakdowns = calculateGoalBreakdowns(goals, date);
   const planner = calculatePlannerScore(plannerItems, date);
-  const goalScore = goalBreakdowns.length ? calculateGoalScore(goalBreakdowns) : null;
-  const totalScore = goalScore === null ? null : clampScore(goalScore + planner.score - planner.penalty);
+  const goalScore = score.goalScore;
+  const totalScore = score.totalScore;
   const classification = getKodaClassification(totalScore);
   const nextThreshold = getNextThreshold(totalScore);
   const pointsToNextThreshold = totalScore === null || nextThreshold === null ? null : Math.max(0, Math.ceil(nextThreshold - totalScore));
 
   return {
     goalScore,
-    plannerScore: planner.score,
+    plannerScore: score.plannerScore,
     totalScore,
     classification,
     nextThreshold,
     pointsToNextThreshold,
     goals: goalBreakdowns,
     planner,
-    suggestions: buildCatchUpSuggestions(goalBreakdowns, planner, totalScore),
+    suggestions: score.items.filter(item => item.completionRatio < 1).slice(0,3).map(item=>({id:item.sourceKey,goalId:item.goalId,label:item.title,points:Math.round(item.weight-item.points)})),
     scoreVersion: KODA_SCORE_VERSION,
   };
 }
@@ -119,7 +124,7 @@ export function getGoalDayEntries(goal: Goal, date: string): GoalDayEntry[] {
     });
 
   const actions: GoalDayEntry[] = goal.actions
-    .filter((action) => action.dueDate && action.dueDate <= date)
+    .filter((action) => action.dueDate && action.dueDate <= date && (action.status !== 'completed' || action.dueDate === date))
     .map((action) => ({
       action,
       goal,
@@ -152,7 +157,7 @@ export function classificationLabel(classification: KodaDayClassification) {
   if (classification === 'strike') return 'УДАР';
   if (classification === 'pace') return 'ТЕМП';
   if (classification === 'minimum') return 'МИНИМУМ';
-  if (classification === 'sabotage') return 'САБОТАЖ';
+  if (classification === 'sabotage') return 'ЕСТЬ СЛЕДУЮЩИЙ ШАГ';
   return 'БЕЗ ОЦЕНКИ';
 }
 
@@ -185,18 +190,12 @@ function calculateGoalBreakdowns(goals: Goal[], date: string): GoalScoreBreakdow
     .filter((item): item is GoalScoreBreakdown => Boolean(item));
 }
 
-function calculateGoalScore(goalBreakdowns: GoalScoreBreakdown[]) {
-  const weightSum = goalBreakdowns.reduce((sum, goal) => sum + goal.priorityWeight, 0);
-  if (!weightSum) return null;
-  return clampScore(KODA_SCORE_WEIGHTS.goals * goalBreakdowns.reduce((sum, goal) => sum + goal.weightedPoints, 0) / weightSum);
-}
-
 function calculatePlannerScore(items: PlannerItem[], date: string) {
   const todayItems = items.filter((item) => item.date === date && !item.deletedAt);
   const total = todayItems.length;
   const completed = todayItems.filter((item) => item.done && !item.failed).length;
   const failed = todayItems.filter((item) => item.failed).length;
-  const completionRatio = total ? completed / total : 1;
+  const completionRatio = total ? completed / total : 0;
   return {
     failed,
     penalty: failed * KODA_FAILED_TASK_PENALTY,
@@ -205,39 +204,6 @@ function calculatePlannerScore(items: PlannerItem[], date: string) {
     completionRatio,
     score: clampScore(KODA_SCORE_WEIGHTS.planner * completionRatio),
   };
-}
-
-function buildCatchUpSuggestions(goalBreakdowns: GoalScoreBreakdown[], planner: KodaScoreResult['planner'], totalScore: number | null): CatchUpSuggestion[] {
-  if (totalScore === null) return [];
-  const weightSum = goalBreakdowns.reduce((sum, goal) => sum + goal.priorityWeight, 0) || 1;
-  const suggestions = goalBreakdowns
-    .flatMap((goal) =>
-      goal.actions
-        .filter((action) => action.completionRatio < 1)
-        .map((action) => {
-          const remainingRatio = 1 - action.completionRatio;
-          const points = KODA_SCORE_WEIGHTS.goals * goal.priorityWeight / weightSum / goal.actions.length * remainingRatio;
-          const remainingValue = Math.ceil(action.targetValue - action.currentValue);
-          return {
-            id: `${goal.goalId}:${action.id}`,
-            goalId: goal.goalId,
-            label: action.targetValue > 1 ? `Ещё ${remainingValue} к "${action.title}"` : `Завершить "${action.title}"`,
-            points: Math.round(points),
-          };
-        }),
-    )
-    .sort((first, second) => second.points - first.points);
-
-  if (planner.total && planner.completed < planner.total && planner.score < 9) {
-    suggestions.push({
-      id: 'planner',
-      goalId: '',
-      label: `Закрыть ${planner.total - planner.completed} текущих дел`,
-      points: Math.round(KODA_SCORE_WEIGHTS.planner - planner.score),
-    });
-  }
-
-  return suggestions.slice(0, 3);
 }
 
 function clampRatio(value: number) {

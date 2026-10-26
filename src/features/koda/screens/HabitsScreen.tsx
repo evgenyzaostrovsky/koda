@@ -1,225 +1,132 @@
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { ChevronLeft, ChevronRight, Edit3, Trash2, X } from 'lucide-react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Check, Pause, Play, Plus, Flame, Archive, ArchiveRestore, CalendarDays, ChevronDown, ChevronUp, Search } from 'lucide-react-native';
 import type { Habit } from '../types';
-import { defaultHabitMonth, defaultHabitYear, monthNames } from '../constants';
-import { getCurrentWeekDates, getCurrentWeekHabitDays, getHabitMonthDays } from '../utils';
-import { Card, InlineAdd, SectionTitle } from '../components';
-import { accent, faint, muted, text } from '../theme';
-import { styles } from '../styles';
+import { createHabit, HABIT_ICONS, habitDoneOn, habitIsDue, habitStreak } from '../habitModel';
+import { todayDateKey } from '../utils';
+import { aggregateHabitStreak } from '../dashboardMetrics';
+import { activeBg, activeText, accent, accentFaint, accentSoft, faint, line, muted, panel, panelSoft, text } from '../theme';
+import { HabitIcon, habitIconChoices, habitIconGroups } from '../components/HabitIcon';
+import { BentoCard, BentoGrid, BentoPage, EmptyStateCard, SectionHeader } from '../components/Bento';
 
-export function HabitsScreen({
-  habits,
-  onAddHabit,
-  onDeleteHabit,
-  onToggleDay,
-  onToggleMonthDay,
-  onUpdateHabit,
-}: {
+type HabitIconName = typeof habitIconChoices[number]['name'];
+type HabitWithArchive = Habit & { archivedAt?: string | null; color?: string };
+const week = [{ label: 'Пн', day: 1 }, { label: 'Вт', day: 2 }, { label: 'Ср', day: 3 }, { label: 'Чт', day: 4 }, { label: 'Пт', day: 5 }, { label: 'Сб', day: 6 }, { label: 'Вс', day: 0 }];
+const habitColors = [{label:'Шалфей',value:'#3e501b'},{label:'Голубой',value:'#28748b'},{label:'Лиловый',value:'#74539a'},{label:'Терракота',value:'#a64e32'},{label:'Жёлтый',value:'#8a6500'}];
+export function HabitsScreen({ habits, onHabitsChange, onToggleToday }: {
   habits: Habit[];
-  onAddHabit: (title: string) => void;
-  onDeleteHabit: (id: string) => void;
-  onToggleDay: (id: string, dayIndex: number) => void;
-  onToggleMonthDay: (id: string, dayIndex: number, year: number, monthIndex: number) => void;
-  onUpdateHabit: (id: string, patch: Pick<Habit, 'title' | 'target'>) => void;
+  onHabitsChange: (updater: (items: Habit[]) => Habit[]) => void;
+  onToggleToday: (id: string) => void;
 }) {
-  const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
-  const selectedHabit = habits.find((habit) => habit.id === selectedHabitId) ?? null;
-
-  return (
-    <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
-      <SectionTitle title="Трекер привычек" subtitle="20 - 26 мая" />
-      <View style={styles.weekRow}>
-        {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day, index) => (
-          <View key={day} style={[styles.dayPill, index === 1 && styles.dayPillActive]}>
-            <Text style={[styles.dayText, index === 1 && styles.dayTextActive]}>{day}</Text>
-          </View>
-        ))}
-      </View>
-      <View style={styles.list}>
-        {habits.map((habit) => {
-          const weekDates = getCurrentWeekDates();
-          const weekDoneDays = getCurrentWeekHabitDays(habit);
-
-          return (
-            <Card key={habit.id}>
-              <View style={styles.habitHeader}>
-                <Pressable onPress={() => setSelectedHabitId(habit.id)} style={styles.habitInfo} testID={`open-habit-${habit.id}`}>
-                  <Text style={styles.rowTitle}>{habit.title}</Text>
-                  <Text style={styles.rowMeta}>{habit.target}</Text>
-                </Pressable>
-                <View style={styles.habitActions}>
-                  <Pressable onPress={() => setSelectedHabitId(habit.id)} style={styles.iconButton} testID={`edit-habit-${habit.id}`}>
-                    <Edit3 color={accent} size={15} />
-                  </Pressable>
-                  <Pressable onPress={() => onDeleteHabit(habit.id)} style={styles.iconButton} testID={`delete-habit-${habit.id}`}>
-                    <Trash2 color={muted} size={15} />
-                  </Pressable>
-                </View>
-              </View>
-              <View style={styles.habitWeekRow}>
-                {weekDates.map((date, index) => {
-                  const done = weekDoneDays[index];
-
-                  return (
-                    <Pressable key={`${habit.id}-${date.toISOString()}`} onPress={() => onToggleDay(habit.id, index)} style={styles.habitWeekCell}>
-                      <Text style={[styles.habitWeekDate, done && styles.habitWeekDateDone]}>{date.getDate()}</Text>
-                      <View style={[styles.habitDot, done && styles.habitDotDone]} />
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </Card>
-          );
-        })}
-      </View>
-      <InlineAdd buttonLabel="Привычка" onSubmit={onAddHabit} placeholder="Новая привычка" />
-      <HabitDetailsModal
-        habit={selectedHabit}
-        onClose={() => setSelectedHabitId(null)}
-        onDelete={(id) => {
-          onDeleteHabit(id);
-          setSelectedHabitId(null);
-        }}
-        onToggleMonthDay={onToggleMonthDay}
-        onUpdate={onUpdateHabit}
-      />
-    </ScrollView>
-  );
-}
-
-export function HabitDetailsModal({
-  habit,
-  onClose,
-  onDelete,
-  onToggleMonthDay,
-  onUpdate,
-}: {
-  habit: Habit | null;
-  onClose: () => void;
-  onDelete: (id: string) => void;
-  onToggleMonthDay: (id: string, dayIndex: number, year: number, monthIndex: number) => void;
-  onUpdate: (id: string, patch: Pick<Habit, 'title' | 'target'>) => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [target, setTarget] = useState('');
-  const [displayMonth, setDisplayMonth] = useState(defaultHabitMonth);
-  const [displayYear, setDisplayYear] = useState(defaultHabitYear);
-
+  const [today, setToday] = useState(todayDateKey);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [view, setView] = useState<'current' | 'archived'>('current');
+  const [historyOpen, setHistoryOpen] = useState<Record<string, boolean>>({});
+  const [settingsOpen, setSettingsOpen] = useState<Record<string, boolean>>({});
+  const [name, setName] = useState('');
+  const [icon, setIcon] = useState<HabitIconName | null>('leaf');
+  const [iconChanged, setIconChanged] = useState(false);
+  const [iconPaletteOpen, setIconPaletteOpen] = useState(false);
+  const [iconSearch, setIconSearch] = useState('');
+  const [color, setColor] = useState('');
+  const [frequency, setFrequency] = useState<'daily' | 'weekdays'>('daily');
+  const [weekdays, setWeekdays] = useState<number[]>([1, 2, 3, 4, 5]);
   useEffect(() => {
-    setTitle(habit?.title ?? '');
-    setTarget(habit?.target ?? '');
-  }, [habit?.id, habit?.target, habit?.title]);
+    const timer = setInterval(() => setToday(todayDateKey()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  const visibleHabits = habits.filter((habit) => !habit.deletedAt);
+  const archivedHabits = visibleHabits.filter((habit) => Boolean((habit as HabitWithArchive).archivedAt));
+  const currentHabits = visibleHabits.filter((habit) => !(habit as HabitWithArchive).archivedAt);
+  const activeHabits = currentHabits.filter((habit) => habit.isActive !== false);
+  const dueHabits = activeHabits.filter((habit) => habitIsDue(habit, today));
+  const doneCount = dueHabits.filter((habit) => habitDoneOn(habit, today)).length;
+  const completion = dueHabits.length ? Math.round(doneCount / dueHabits.length * 100) : 0;
+  const allHabitsStreak = aggregateHabitStreak(currentHabits, today);
+  const orderedHabits = (view === 'current' ? currentHabits : archivedHabits).slice().sort((a, b) => Number(a.isActive === false) - Number(b.isActive === false) || a.title.localeCompare(b.title));
 
-  if (!habit) return null;
-
-  const currentHabit = habit;
-  const visibleMonthDays = getHabitMonthDays(currentHabit, displayYear, displayMonth);
-  const completedDays = visibleMonthDays.filter(Boolean).length;
-  const canSave = Boolean(title.trim() && target.trim());
-
-  function save() {
-    if (!canSave) return;
-    onUpdate(currentHabit.id, { title: title.trim(), target: target.trim() });
-    onClose();
+  function startEdit(habit: Habit) {
+    setEditingId(habit.id);
+    setName(habit.title);
+    setIcon((habitIconChoices.some(choice => choice.name === habit.icon) ? habit.icon : HABIT_ICONS.find(choice => choice.emoji === habit.icon)?.key ?? null) as HabitIconName | null);
+    setIconChanged(false);
+    setColor(habit.color ?? '');
+    setFrequency(habit.frequency === 'weekdays' ? 'weekdays' : 'daily');
+    setWeekdays(habit.weekdays?.length ? habit.weekdays : [1, 2, 3, 4, 5]);
+    setIconSearch('');
+    setIconPaletteOpen(false);
   }
-
-  function shiftMonth(delta: number) {
-    const nextDate = new Date(displayYear, displayMonth + delta, 1);
-    setDisplayMonth(nextDate.getMonth());
-    setDisplayYear(nextDate.getFullYear());
+  function clearEditor() { setEditingId(null); setName(''); setColor(''); setIconSearch(''); setIconPaletteOpen(false); setIconChanged(false); }
+  function saveHabit() {
+    const title = name.trim();
+    if (!title) return;
+    if (editingId && editingId !== 'new') {
+      onHabitsChange((items) => items.map((item) => item.id === editingId ? { ...item, title, icon: iconChanged ? icon ?? item.icon : item.icon, color: color || undefined, frequency, weekdays: frequency === 'weekdays' ? weekdays : [], target: frequency === 'daily' ? 'каждый день' : 'по выбранным дням', metadataUpdatedAt: new Date().toISOString() } : item));
+    } else {
+      onHabitsChange((items) => [...items, createHabit(title, { icon: icon ?? 'leaf', color: color || undefined, frequency, weekdays: frequency === 'weekdays' ? weekdays : [], isActive: true, createdDate: today })]);
+    }
+    clearEditor();
   }
+  function toggleWeekday(day: number) { setWeekdays((items) => items.includes(day) ? items.filter((value) => value !== day) : [...items, day].sort()); }
+  const query = iconSearch.trim().toLocaleLowerCase('ru-RU');
+  const filteredIconGroups = habitIconGroups.map(group => ({
+    ...group,
+    icons: group.icons.filter(([, label, , aliases]) => !query || `${label} ${group.name} ${aliases}`.toLocaleLowerCase('ru-RU').includes(query)),
+  })).filter(group => group.icons.length > 0);
+  const selectedIcon = habitIconChoices.find(choice => choice.name === icon);
 
-  function shiftYear(delta: number) {
-    setDisplayYear((year) => year + delta);
-  }
-
-  return (
-    <Modal animationType="fade" transparent visible={Boolean(habit)} onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          <View style={styles.modalHeader}>
-            <View>
-              <Text style={styles.cardLabel}>ПРИВЫЧКА</Text>
-              <Text style={styles.modalTitle}>{title.trim() || habit.title}</Text>
-            </View>
-            <Pressable onPress={onClose} style={styles.iconButton}>
-              <X color={text} size={17} />
-            </Pressable>
+  return <BentoPage maxWidth={880} style={s.screen} contentStyle={s.content}>
+    <SectionHeader title="Привычки" subtitle="Маленькие действия, которые складываются в устойчивый ритм." />
+    <View style={s.overviewGrid}><BentoCard tone="lime" style={{gap:14,padding:20}}><View style={{flexDirection:'row',alignItems:'center',gap:6}}><Flame size={17} color="#98400d"/><Text style={{fontSize:13,color:'#713309'}}>Все привычки · {allHabitsStreak} {allHabitsStreak%10===1&&allHabitsStreak%100!==11?'день':allHabitsStreak%10>=2&&allHabitsStreak%10<=4&&(allHabitsStreak%100<12||allHabitsStreak%100>14)?'дня':'дней'} подряд</Text></View><View style={s.summary}>
+      <View style={s.summaryCopy}><Text style={s.summaryTitle}>{dueHabits.length ? `${doneCount} из ${dueHabits.length} сегодня` : 'День без обязательств'}</Text><Text style={s.summaryHint}>{dueHabits.length ? 'Нажми на значок, чтобы отметить.' : 'Добавь привычку, если сейчас хочется.'}</Text></View>
+      <View style={s.progressPill}><Text style={s.progressNumber}>{completion}%</Text><Text style={s.progressCaption}>сегодня</Text></View></View><View style={s.quickHabits}>{dueHabits.map(habit=><Pressable key={habit.id} accessibilityRole="checkbox" accessibilityLabel={`Сегодня: ${habit.title}`} accessibilityState={{checked:habitDoneOn(habit,today)}} aria-checked={habitDoneOn(habit,today)} onPress={()=>onToggleToday(habit.id)} style={s.quickHabit}><View style={[s.quickIcon,habitDoneOn(habit,today)&&s.quickIconDone]}><HabitIcon name={habit.icon} size={28} color={habit.color??accent}/>{habitDoneOn(habit,today)&&<View style={s.quickCheck}><Check size={13} color="#fff"/></View>}</View><Text style={s.quickLabel} numberOfLines={2}>{habit.title}</Text></Pressable>)}</View>
+    </BentoCard><BentoCard tone="soft" style={s.weekCard}><Text style={s.sectionTitle}>Эта неделя</Text><View style={s.weekStrip}>{week.map(({label, day}) => {
+      const key = (() => { const d = new Date(); const shift = (d.getDay() + 6) % 7; d.setDate(d.getDate() - shift + (day === 0 ? 6 : day - 1)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
+      const completed = activeHabits.filter((h) => habitIsDue(h, key) && habitDoneOn(h, key)).length;
+      return <View key={label} style={[s.weekDay, key === today && s.weekToday]}><Text style={s.weekLabel}>{label}</Text><Text style={s.weekCount}>{completed}</Text><Text style={s.weekUnit}>{completed%10===1&&completed%100!==11?'шаг':completed%10>=2&&completed%10<=4&&(completed%100<12||completed%100>14)?'шага':'шагов'}</Text></View>;
+    })}</View></BentoCard></View>
+    <View style={s.sectionHeader}><View><Text style={s.sectionTitle}>{view === 'current' ? 'Твой ритм' : 'Архив'}</Text><Text style={s.sectionHint}>{view === 'current' ? 'Нажми на привычку, чтобы отметить сегодня' : 'Архивированные привычки остаются в истории'}</Text></View><View style={s.headerActions}><Pressable accessibilityRole="button" accessibilityState={{selected:view==='current'}} aria-pressed={view==='current'} onPress={()=>setView('current')} style={[s.viewTab,view==='current'&&s.viewTabActive]}><Text style={[s.viewTabText,view==='current'&&s.viewTabTextActive]}>Текущие</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{selected:view==='archived'}} aria-pressed={view==='archived'} onPress={()=>setView('archived')} style={[s.viewTab,view==='archived'&&s.viewTabActive]}><Text style={[s.viewTabText,view==='archived'&&s.viewTabTextActive]}>Архив · {archivedHabits.length}</Text></Pressable>{view==='current'?<Pressable accessibilityRole="button" onPress={() => { clearEditor(); setEditingId('new'); }} style={s.addButton}><Plus color={activeText} size={19}/><Text style={s.addText}>Добавить</Text></Pressable>:null}</View></View>
+    {!orderedHabits.length ? <EmptyStateCard title={view==='archived'?'Здесь пока пусто':'Начни с чего-то простого'} description={view==='archived'?'Привычки, которые ты отправишь в архив, появятся здесь.':'Одна небольшая привычка — уже хороший старт. Выбери действие, которое легко повторить.'} action={view==='current'?<Pressable accessibilityRole="button" onPress={() => { setEditingId('new'); setName(''); }} style={s.emptyButton}><Text style={s.emptyButtonText}>Создать привычку</Text></Pressable>:undefined}/> : <BentoGrid columns={2} style={s.habitGrid}>{orderedHabits.map((habit) => {
+      const done = habitDoneOn(habit, today);
+      const archived=Boolean((habit as HabitWithArchive).archivedAt);
+      const due = !archived && habit.isActive !== false && habitIsDue(habit, today);
+      const streak = habitStreak(habit, today);
+      const historyDates=Array.from({length:30},(_,index)=>{const date=new Date(`${today}T12:00:00`);date.setDate(date.getDate()-(29-index));return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;});
+      const isSettingsOpen = Boolean(settingsOpen[habit.id]);
+      return <BentoCard key={habit.id} tone={habit.isActive === false ? 'soft' : 'light'} style={s.habitGroup}><View style={[s.habitRow, habit.isActive === false && s.pausedRow]}>
+        <Pressable accessibilityRole="checkbox" accessibilityLabel={habit.title} accessibilityState={{ checked: done, disabled: !due }} aria-checked={done} aria-disabled={!due} disabled={!due} onPress={() => onToggleToday(habit.id)} style={[s.iconBox, done && s.iconBoxDone, !due && s.iconBoxDisabled]}><HabitIcon name={habit.icon} color={done ? activeText : habit.color ?? accent} size={27}/>{done&&<View style={s.quickCheck}><Check size={13} color="#fff"/></View>}</Pressable>
+        <Pressable accessibilityRole="button" onPress={() => startEdit(habit)} style={s.habitCopy}><Text style={[s.habitTitle, habit.isActive === false && s.pausedTitle]}>{habit.title}</Text><Text style={s.habitMeta}>{archived?'В архиве':habit.isActive === false ? 'Приостановлена' : habit.frequency === 'weekdays' ? `Дни: ${(habit.weekdays ?? []).map((day) => week.find((item) => item.day === day)?.label).filter(Boolean).join(', ') || 'не выбраны'}` : 'Каждый день'}</Text></Pressable>
+        {!archived&&habit.isActive !== false ? <View style={s.streak}><Flame color={streak ? accent : muted} size={16}/><Text style={s.streakText}>{streak}</Text></View> : null}
+        </View><View style={{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between'}}><Pressable accessibilityRole="button" accessibilityState={{expanded:isSettingsOpen}} aria-expanded={isSettingsOpen} onPress={()=>setSettingsOpen(value=>({...value,[habit.id]:!value[habit.id]}))} style={s.settingsToggle}><Text style={s.settingsText}>Параметры</Text>{isSettingsOpen?<ChevronUp color={muted} size={16}/>:<ChevronDown color={muted} size={16}/>}</Pressable><Pressable accessibilityRole="button" accessibilityLabel={`История ${habit.title}`} accessibilityState={{expanded:Boolean(historyOpen[habit.id])}} onPress={()=>setHistoryOpen(value=>({...value,[habit.id]:!value[habit.id]}))} style={s.historyToggle}><CalendarDays color={muted} size={15}/><Text style={s.historyToggleText}>История</Text></Pressable></View>{isSettingsOpen?<View style={s.settingsPanel}>{archived?<Pressable accessibilityRole="button" accessibilityLabel={`Восстановить ${habit.title}`} onPress={() => onHabitsChange(items=>items.map(item => item.id===habit.id ? ({...item,archivedAt:null,metadataUpdatedAt:new Date().toISOString()} as Habit) : item))} style={s.archiveButton}><ArchiveRestore color={accent} size={17}/><Text style={s.editText}>Восстановить</Text></Pressable>:<><Pressable accessibilityRole="button" accessibilityLabel={habit.isActive === false ? `Возобновить ${habit.title}` : `Приостановить ${habit.title}`} aria-pressed={habit.isActive===false} onPress={() => onHabitsChange((items) => items.map((item) => item.id === habit.id ? { ...item, isActive: item.isActive === false, metadataUpdatedAt: new Date().toISOString() } : item))} style={s.pauseButton}>{habit.isActive === false ? <Play color={muted} size={17}/> : <Pause color={muted} size={17}/>}</Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Редактировать ${habit.title}`} onPress={() => startEdit(habit)} style={s.editTap}><Text style={s.editText}>Изменить</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`В архив ${habit.title}`} onPress={() => onHabitsChange(items=>items.map(item=>item.id===habit.id?({...item,archivedAt:new Date().toISOString(),metadataUpdatedAt:new Date().toISOString()} as Habit):item))} style={s.archiveButton}><Archive color={muted} size={17}/><Text style={s.archiveText}>В архив</Text></Pressable></>}</View>:null}{historyOpen[habit.id]?<View style={s.historyGrid} accessibilityLabel={`История отметок ${habit.title}, 30 дней`}>{historyDates.map(date=>{const isDue=habitIsDue({...habit,archivedAt:null,isActive:true},date);const isDone=habitDoneOn(habit,date);return <View key={date} accessibilityLabel={`${date}: ${isDone?'отмечено':isDue?'запланировано':'не запланировано'}`} style={[s.historyDay,isDone&&s.historyDone,!isDue&&s.historyUnscheduled]}><Text style={[s.historyDayText,isDone&&s.historyDayTextDone]}>{Number(date.slice(-2))}</Text></View>})}</View>:null}</BentoCard>;
+    })}</BentoGrid>}
+    {editingId ? <BentoCard tone="light" style={s.editor}>
+      <View style={s.editorHeading}><Text style={s.sectionTitle}>{editingId === 'new' ? 'Новая привычка' : 'Настроить привычку'}</Text><Pressable accessibilityRole="button" onPress={clearEditor} style={s.cancel}><Text style={s.cancelText}>Закрыть</Text></Pressable></View>
+      <Text style={s.label}>Название</Text><TextInput accessibilityLabel="Название привычки" value={name} onChangeText={setName} placeholder="Например, читать 5 минут" placeholderTextColor={faint} maxLength={80} style={s.input}/>
+      <Text style={s.label}>Значок</Text>
+      <View style={s.iconPicker}>
+        <View style={s.selectedIconRow}>
+          <View style={s.selectedIconInfo}>
+            <View style={s.selectedIconGlyph}><HabitIcon name={selectedIcon?.name ?? (editingId !== 'new' ? undefined : icon ?? undefined)} color={accent} size={20}/></View>
+            <View style={s.selectedIconCopy}><Text style={s.selectedIconLabel}>{selectedIcon?.label ?? (icon ? 'Текущий значок' : 'Значок не выбран')}</Text><Text style={s.selectedIconHint}>Можно изменить в любой момент</Text></View>
           </View>
-
-          <View style={styles.modalFields}>
-            <TextInput
-              onChangeText={setTitle}
-              placeholder="Название привычки"
-              placeholderTextColor={faint}
-              style={styles.modalInput}
-              value={title}
-            />
-            <TextInput
-              onChangeText={setTarget}
-              placeholder="Цель или частота"
-              placeholderTextColor={faint}
-              style={styles.modalInput}
-              value={target}
-            />
-          </View>
-
-          <View style={styles.calendarToolbar}>
-            <View style={styles.calendarStepper}>
-              <Pressable onPress={() => shiftMonth(-1)} style={styles.calendarArrowButton} testID="habit-prev-month">
-                <ChevronLeft color={muted} size={15} />
-              </Pressable>
-              <Text style={styles.calendarPickerText}>{monthNames[displayMonth]}</Text>
-              <Pressable onPress={() => shiftMonth(1)} style={styles.calendarArrowButton} testID="habit-next-month">
-                <ChevronRight color={muted} size={15} />
-              </Pressable>
-            </View>
-            <View style={styles.calendarStepper}>
-              <Pressable onPress={() => shiftYear(-1)} style={styles.calendarArrowButton} testID="habit-prev-year">
-                <ChevronLeft color={muted} size={15} />
-              </Pressable>
-              <Text style={styles.calendarPickerText}>{displayYear}</Text>
-              <Pressable onPress={() => shiftYear(1)} style={styles.calendarArrowButton} testID="habit-next-year">
-                <ChevronRight color={muted} size={15} />
-              </Pressable>
-            </View>
-          </View>
-
-          <View style={styles.rowBetween}>
-            <Text style={styles.cardLabel}>КАЛЕНДАРЬ</Text>
-            <Text style={styles.rowMeta}>{completedDays} / {visibleMonthDays.length} выполнено</Text>
-          </View>
-
-          <View style={styles.calendarWeekRow}>
-            {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day) => (
-              <Text key={day} style={styles.calendarWeekText}>{day}</Text>
-            ))}
-          </View>
-          <View style={styles.calendarGrid}>
-            {visibleMonthDays.map((done, index) => (
-              <Pressable
-                key={`${habit.id}-${displayYear}-${displayMonth}-${index}`}
-                onPress={() => onToggleMonthDay(habit.id, index, displayYear, displayMonth)}
-                style={[styles.calendarDay, done && styles.calendarDayDone]}
-              >
-                <Text style={[styles.calendarDayText, done && styles.calendarDayTextDone]}>{index + 1}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <View style={styles.modalActions}>
-            <Pressable onPress={() => onDelete(habit.id)} style={styles.deleteButton}>
-              <Trash2 color={muted} size={15} />
-              <Text style={styles.deleteButtonText}>Удалить</Text>
-            </Pressable>
-            <Pressable disabled={!canSave} onPress={save} style={[styles.saveButton, !canSave && styles.saveButtonDisabled]} testID="habit-save">
-              <Text style={styles.saveButtonText}>Сохранить</Text>
-            </Pressable>
-          </View>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: iconPaletteOpen }} aria-expanded={iconPaletteOpen} onPress={() => setIconPaletteOpen(open => !open)} style={s.paletteToggle}><Text style={s.paletteToggleText}>{iconPaletteOpen ? 'Свернуть' : 'Выбрать'}</Text>{iconPaletteOpen ? <ChevronUp size={16} color={accent}/> : <ChevronDown size={16} color={accent}/>}</Pressable>
         </View>
+        {iconPaletteOpen ? <View style={s.palettePanel}>
+          <View style={s.iconSearchWrap}><Search size={16} color={muted}/><TextInput accessibilityLabel="Поиск значка" value={iconSearch} onChangeText={setIconSearch} placeholder="Найти: книга, сон, зарядка…" placeholderTextColor={faint} style={s.iconSearch}/>{iconSearch ? <Pressable accessibilityRole="button" accessibilityLabel="Очистить поиск" onPress={() => setIconSearch('')} style={s.clearSearch}><Text style={s.clearSearchText}>Очистить</Text></Pressable> : null}</View>
+          <ScrollView style={s.iconScroll} contentContainerStyle={s.iconScrollContent} nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+            {filteredIconGroups.length ? filteredIconGroups.map(group => <View key={group.name} style={s.iconGroup}>
+              <Text style={s.iconGroupTitle}>{group.name}</Text>
+              <View style={s.iconChoices}>{group.icons.map(([choiceName, label, Icon]) => <Pressable key={`${group.name}:${choiceName}`} accessibilityRole="button" accessibilityLabel={`Значок: ${label}`} accessibilityState={{ selected: icon === choiceName }} aria-pressed={icon === choiceName} onPress={() => { setIcon(choiceName as HabitIconName); setIconChanged(true); }} style={[s.choice, icon === choiceName && s.choiceActive]}><Icon size={19} color={icon === choiceName ? activeText : accent}/><Text style={[s.choiceLabel, icon === choiceName && s.choiceLabelActive]} numberOfLines={2}>{label}</Text></Pressable>)}</View>
+            </View>) : <Text style={s.noIconResults}>Не нашлось. Попробуй другое слово.</Text>}
+          </ScrollView>
+        </View> : null}
       </View>
-    </Modal>
-  );
+      <Text style={s.label}>Цвет значка · можно пропустить</Text><View style={s.colorChoices}><Pressable accessibilityRole="button" accessibilityLabel="Цвет по умолчанию" accessibilityState={{selected:!color}} aria-pressed={!color} onPress={()=>setColor('')} style={[s.colorChoice,!color&&s.colorChoiceActive]}><View style={[s.colorDot,{backgroundColor:accent}]}/><Text style={s.choiceLabel}>По умолчанию</Text></Pressable>{habitColors.map(option=><Pressable key={option.value} accessibilityRole="button" accessibilityLabel={`Цвет: ${option.label}`} accessibilityState={{selected:color===option.value}} aria-pressed={color===option.value} onPress={()=>setColor(option.value)} style={[s.colorChoice,color===option.value&&s.colorChoiceActive]}><View style={[s.colorDot,{backgroundColor:option.value}]}/><Text style={s.choiceLabel}>{option.label}</Text></Pressable>)}</View>
+      <Text style={s.label}>Частота</Text><View style={s.frequencyChoices}><Pressable accessibilityRole="button" accessibilityState={{ selected: frequency === 'daily' }} aria-pressed={frequency === 'daily'} onPress={() => setFrequency('daily')} style={[s.frequencyChoice, frequency === 'daily' && s.frequencyActive]}><Text style={[s.frequencyText, frequency === 'daily' && s.frequencyTextActive]}>Каждый день</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ selected: frequency === 'weekdays' }} aria-pressed={frequency === 'weekdays'} onPress={() => setFrequency('weekdays')} style={[s.frequencyChoice, frequency === 'weekdays' && s.frequencyActive]}><Text style={[s.frequencyText, frequency === 'weekdays' && s.frequencyTextActive]}>Выбрать дни</Text></Pressable></View>
+      {frequency === 'weekdays' ? <View style={s.dayChoices}>{week.map(({label, day}) => <Pressable key={label} accessibilityRole="button" accessibilityState={{ checked: weekdays.includes(day) }} aria-pressed={weekdays.includes(day)} onPress={() => toggleWeekday(day)} style={[s.dayChoice, weekdays.includes(day) && s.dayChoiceActive]}><Text style={[s.dayChoiceText, weekdays.includes(day) && s.dayChoiceTextActive]}>{label}</Text></Pressable>)}</View> : null}
+      <View style={s.editorActions}><Pressable accessibilityRole="button" onPress={clearEditor} style={s.cancelButton}><Text style={s.cancelText}>Отмена</Text></Pressable><Pressable accessibilityRole="button" disabled={!name.trim() || (frequency === 'weekdays' && !weekdays.length)} onPress={saveHabit} style={[s.saveButton, (!name.trim() || (frequency === 'weekdays' && !weekdays.length)) && s.disabled]}><Check color={activeText} size={16}/><Text style={s.saveText}>Сохранить</Text></Pressable></View>
+    </BentoCard> : null}
+  </BentoPage>;
 }
 
+const s = StyleSheet.create({quickHabits:{flexDirection:'row',flexWrap:'wrap',gap:8},quickHabit:{flex:1,minWidth:48,maxWidth:96,alignItems:'center',gap:6},quickIcon:{width:48,height:48,borderRadius:20,backgroundColor:'rgba(255,255,255,.65)',alignItems:'center',justifyContent:'center'},quickIconDone:{borderColor:accent,borderWidth:2},quickCheck:{position:'absolute',right:-3,top:-3,backgroundColor:'#426528',width:20,height:20,borderRadius:12,alignItems:'center',justifyContent:'center'},quickLabel:{fontSize:12,lineHeight:17,color:activeText,textAlign:'center',maxWidth:'100%'}, screen:{backgroundColor:'transparent',flex:1},content:{alignSelf:'center',gap:16,maxWidth:880,padding:20,width:'100%'},heading:{gap:4,paddingBottom:4},title:{color:text,fontSize:30,fontWeight:'700',lineHeight:38},subtitle:{color:muted,fontSize:14,lineHeight:20,maxWidth:540},overviewGrid:{gap:12},summary:{alignItems:'center',backgroundColor:'transparent',borderRadius:26,flexDirection:'row',gap:16,justifyContent:'space-between',minHeight:0,padding:0},summaryCopy:{flex:1,gap:6},summaryTitle:{color:activeText,fontSize:22,fontWeight:'700',lineHeight:29},summaryHint:{color:activeText,fontSize:14,lineHeight:20,maxWidth:450},progressPill:{alignItems:'center',backgroundColor:'rgba(255,255,255,0.55)',borderRadius:20,minWidth:78,padding:11},progressNumber:{color:activeText,fontSize:22,fontWeight:'700'},progressCaption:{color:activeText,fontSize:11},sectionHeader:{alignItems:'flex-start',flexDirection:'row',flexWrap:'wrap',gap:12,justifyContent:'space-between',marginTop:4},headerActions:{alignItems:'center',flexDirection:'row',flexWrap:'wrap',gap:7},viewTab:{alignItems:'center',borderColor:line,borderRadius:999,borderWidth:1,justifyContent:'center',minHeight:44,paddingHorizontal:12},viewTabActive:{backgroundColor:activeBg,borderColor:activeBg},viewTabText:{color:muted,fontSize:12,fontWeight:'600'},viewTabTextActive:{color:activeText},sectionTitle:{color:text,fontSize:18,fontWeight:'700',lineHeight:24},sectionHint:{color:muted,fontSize:13,lineHeight:18,marginTop:2},addButton:{alignItems:'center',backgroundColor:accentFaint,borderRadius:999,flexDirection:'row',gap:7,justifyContent:'center',minHeight:44,paddingHorizontal:15},addText:{color:accent,fontSize:13,fontWeight:'700'},empty:{alignItems:'center',backgroundColor:panel,borderColor:line,borderRadius:24,borderWidth:1,gap:10,padding:24},emptyTitle:{color:text,fontSize:18,fontWeight:'700'},emptyText:{color:muted,fontSize:14,lineHeight:20,maxWidth:430,textAlign:'center'},emptyButton:{alignItems:'center',backgroundColor:activeBg,borderRadius:999,justifyContent:'center',marginTop:4,minHeight:46,paddingHorizontal:18},emptyButtonText:{color:activeText,fontWeight:'700'},habitGroup:{gap:4,padding:16},habitGrid:{alignItems:'stretch'},habitRow:{alignItems:'center',backgroundColor:panel,borderRadius:20,flexDirection:'row',gap:14,minHeight:64,paddingHorizontal:0,paddingVertical:4},pausedRow:{backgroundColor:panelSoft,opacity:0.8},iconBox:{alignItems:'center',backgroundColor:accentFaint,borderRadius:20,height:52,justifyContent:'center',width:52},iconBoxDone:{backgroundColor:activeBg},iconBoxDisabled:{opacity:0.62},habitCopy:{flex:1,gap:3,minWidth:0},habitTitle:{color:text,fontSize:15,fontWeight:'600',lineHeight:21},pausedTitle:{color:muted},habitMeta:{color:muted,fontSize:12,lineHeight:17},streak:{alignItems:'center',flexDirection:'row',gap:4,minWidth:35},streakText:{color:text,fontSize:13,fontWeight:'700'},settingsToggle:{alignItems:'center',alignSelf:'flex-start',flexDirection:'row',gap:7,minHeight:44,paddingHorizontal:8},settingsText:{color:muted,fontSize:12,fontWeight:'600'},settingsPanel:{alignItems:'center',backgroundColor:panelSoft,borderRadius:14,flexDirection:'row',flexWrap:'wrap',gap:10,padding:8},pauseButton:{alignItems:'center',borderColor:line,borderRadius:99,borderWidth:1,height:44,justifyContent:'center',width:44},editTap:{alignItems:'center',justifyContent:'center',minHeight:44,paddingHorizontal:4},editText:{color:accent,fontSize:12,fontWeight:'600'},archiveButton:{alignItems:'center',flexDirection:'row',gap:5,justifyContent:'center',minHeight:44,paddingHorizontal:5},archiveText:{color:muted,fontSize:12,fontWeight:'600'},historyToggle:{alignItems:'center',alignSelf:'flex-start',flexDirection:'row',gap:7,minHeight:44,paddingHorizontal:6},historyToggleText:{color:muted,fontSize:12,fontWeight:'600'},historyGrid:{flexDirection:'row',flexWrap:'wrap',gap:5,padding:6},historyDay:{alignItems:'center',backgroundColor:panelSoft,borderColor:line,borderRadius:9,borderWidth:1,height:34,justifyContent:'center',width:34},historyDone:{backgroundColor:activeBg,borderColor:activeBg},historyUnscheduled:{opacity:0.5},historyDayText:{color:muted,fontSize:11,fontWeight:'600'},historyDayTextDone:{color:activeText},weekCard:{gap:8,padding:18},weekStrip:{flexDirection:'row',gap:7,marginTop:0},weekDay:{alignItems:'center',backgroundColor:panelSoft,borderRadius:15,flex:1,gap:3,minHeight:48,justifyContent:'center',paddingVertical:7},weekToday:{backgroundColor:accentSoft},weekLabel:{color:muted,fontSize:11,fontWeight:'600'},weekCount:{color:text,fontSize:17,fontWeight:'700'},weekUnit:{color:muted,fontSize:9},editor:{gap:11,padding:20},editorHeading:{alignItems:'center',flexDirection:'row',justifyContent:'space-between'},cancel:{alignItems:'center',justifyContent:'center',minHeight:44,paddingHorizontal:8},cancelText:{color:muted,fontSize:13},label:{color:text,fontSize:13,fontWeight:'600',marginTop:2},input:{backgroundColor:panelSoft,borderColor:line,borderRadius:13,borderWidth:1,color:text,fontSize:15,minHeight:48,paddingHorizontal:13},iconPicker:{borderColor:line,borderRadius:16,borderWidth:1,overflow:'hidden'},selectedIconRow:{alignItems:'center',flexDirection:'row',gap:10,justifyContent:'space-between',minHeight:64,paddingHorizontal:10,paddingVertical:7},selectedIconInfo:{alignItems:'center',flexDirection:'row',flex:1,gap:10,minWidth:0},selectedIconGlyph:{alignItems:'center',backgroundColor:accentFaint,borderRadius:12,height:40,justifyContent:'center',width:40},selectedIconCopy:{flex:1,gap:2,minWidth:0},selectedIconLabel:{color:text,fontSize:13,fontWeight:'700'},selectedIconHint:{color:muted,fontSize:11},paletteToggle:{alignItems:'center',flexDirection:'row',gap:5,justifyContent:'center',minHeight:44,paddingHorizontal:8},paletteToggleText:{color:accent,fontSize:12,fontWeight:'700'},palettePanel:{borderTopColor:line,borderTopWidth:1,padding:9},iconSearchWrap:{alignItems:'center',backgroundColor:panelSoft,borderColor:line,borderRadius:12,borderWidth:1,flexDirection:'row',gap:8,minHeight:44,paddingHorizontal:11},iconSearch:{color:text,flex:1,fontSize:13,minHeight:42,paddingVertical:4},clearSearch:{justifyContent:'center',minHeight:40,paddingHorizontal:4},clearSearchText:{color:accent,fontSize:11,fontWeight:'600'},iconScroll:{maxHeight:280,marginTop:8},iconScrollContent:{gap:12,paddingBottom:4},iconGroup:{gap:7},iconGroupTitle:{color:muted,fontSize:11,fontWeight:'700',letterSpacing:0.3,marginTop:2},iconChoices:{flexDirection:'row',flexWrap:'wrap',gap:7},choice:{alignItems:'center',borderColor:line,borderRadius:12,borderWidth:1,gap:4,justifyContent:'center',minHeight:62,paddingHorizontal:6,width:76},choiceLabel:{color:muted,fontSize:10,fontWeight:'600',textAlign:'center'},choiceLabelActive:{color:activeText},choiceActive:{backgroundColor:activeBg,borderColor:activeBg},noIconResults:{color:muted,fontSize:13,lineHeight:19,paddingVertical:14,textAlign:'center'},colorChoices:{alignItems:'center',flexDirection:'row',flexWrap:'wrap',gap:7},colorChoice:{alignItems:'center',borderColor:line,borderRadius:12,borderWidth:1,gap:5,justifyContent:'center',minHeight:60,paddingHorizontal:8,width:80},colorChoiceActive:{backgroundColor:panelSoft,borderColor:accent},colorDot:{borderColor:line,borderRadius:99,borderWidth:1,height:22,width:22},frequencyChoices:{flexDirection:'row',flexWrap:'wrap',gap:8},frequencyChoice:{alignItems:'center',borderColor:line,borderRadius:999,borderWidth:1,justifyContent:'center',minHeight:44,paddingHorizontal:15},frequencyActive:{backgroundColor:activeBg,borderColor:activeBg},frequencyText:{color:muted,fontSize:13,fontWeight:'600'},frequencyTextActive:{color:activeText},dayChoices:{flexDirection:'row',flexWrap:'wrap',gap:7},dayChoice:{alignItems:'center',borderColor:line,borderRadius:999,borderWidth:1,height:44,justifyContent:'center',width:44},dayChoiceActive:{backgroundColor:accentFaint,borderColor:accent},dayChoiceText:{color:muted,fontSize:12,fontWeight:'700'},dayChoiceTextActive:{color:accent},editorActions:{flexDirection:'row',gap:9,justifyContent:'flex-end',marginTop:5},cancelButton:{alignItems:'center',justifyContent:'center',minHeight:44,paddingHorizontal:14},saveButton:{alignItems:'center',backgroundColor:activeBg,borderRadius:999,flexDirection:'row',gap:7,justifyContent:'center',minHeight:46,paddingHorizontal:17},saveText:{color:activeText,fontSize:13,fontWeight:'700'},disabled:{opacity:0.45}});

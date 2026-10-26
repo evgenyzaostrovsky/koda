@@ -1,3 +1,4 @@
+import { BentoCard, SectionHeader } from './Bento';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Modal, Pressable, Text, TextInput, View } from 'react-native';
@@ -20,7 +21,7 @@ export function Header({ isOnline, syncText, hasPendingSync, onMenuPress }: { ha
           <Text numberOfLines={1} style={[styles.syncStripText, { flexShrink: 1 }]}>{syncText}</Text>
         </View>
       </View>
-      <Text numberOfLines={1} style={styles.logo}>KODA</Text>
+      <Text numberOfLines={1} style={styles.logo}>koda life</Text>
     </View>
   );
 }
@@ -41,7 +42,7 @@ export function BottomNav({
         const featured = tab.key === 'habits';
 
         return (
-          <Pressable accessibilityRole="button" accessibilityLabel={tab.label} accessibilityState={{ selected: active }} key={tab.key} onPress={() => setActiveTab(tab.key)} style={[styles.navItem, active && { backgroundColor: accentSoft }, featured ? styles.navItemFeatured : undefined, featured && active ? styles.navItemFeaturedActive : undefined]} testID={`tab-${tab.key}`}>
+          <Pressable accessibilityRole="button" accessibilityLabel={tab.label} accessibilityState={{ selected: active }} aria-current={active ? 'page' : undefined} key={tab.key} onPress={() => setActiveTab(tab.key)} style={[styles.navItem, active && { backgroundColor: accentSoft }, featured ? styles.navItemFeatured : undefined, featured && active ? styles.navItemFeaturedActive : undefined]} testID={`tab-${tab.key}`}>
             <View style={featured ? styles.navFeaturedIcon : undefined}>
               {tab.icon(active)}
             </View>
@@ -53,14 +54,7 @@ export function BottomNav({
   );
 }
 
-export function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <View style={styles.titleBlock}>
-      <Text style={styles.screenTitle}>{title}</Text>
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-    </View>
-  );
-}
+export function SectionTitle({title,subtitle}:{title:string;subtitle?:string}) { return <SectionHeader title={title} subtitle={subtitle}/>; }
 
 export function InlineAdd({ placeholder, buttonLabel, onSubmit }: { placeholder: string; buttonLabel: string; onSubmit: (value: string) => void }) {
   const [value, setValue] = useState('');
@@ -73,6 +67,7 @@ export function InlineAdd({ placeholder, buttonLabel, onSubmit }: { placeholder:
   return (
     <View style={styles.addBox}>
       <TextInput
+        accessibilityLabel={placeholder}
         onChangeText={setValue}
         onSubmitEditing={submit}
         placeholder={placeholder}
@@ -81,7 +76,7 @@ export function InlineAdd({ placeholder, buttonLabel, onSubmit }: { placeholder:
         testID={`input-${buttonLabel}`}
         value={value}
       />
-      <Pressable onPress={submit} style={styles.addButton} testID={`add-${buttonLabel}`}>
+      <Pressable accessibilityRole="button" accessibilityLabel={buttonLabel} onPress={submit} style={styles.addButton} testID={`add-${buttonLabel}`}>
         <Plus color={accent} size={15} />
         <Text style={styles.addButtonText}>{buttonLabel}</Text>
       </Pressable>
@@ -90,13 +85,13 @@ export function InlineAdd({ placeholder, buttonLabel, onSubmit }: { placeholder:
 }
 
 export function Card({ children }: { children: ReactNode }) {
-  return <View style={styles.card}>{children}</View>;
+  return <BentoCard style={[styles.card,{borderRadius:32,borderWidth:0}]}>{children}</BentoCard>;
 }
 
 export function ProgressLine({ value }: { value: number }) {
   return (
     <View style={styles.progressTrack}>
-      <View style={[styles.progressFill, { width: `${Math.max(3, Math.min(100, value))}%` }]} />
+      <View style={[styles.progressFill, { width: `${Math.max(0, Math.min(100, value || 0))}%` }]} />
     </View>
   );
 }

@@ -32,8 +32,8 @@ const manifest = {
   display: 'standalone',
   display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
   orientation: 'any',
-  background_color: '#f5f6f2',
-  theme_color: '#f5f6f2',
+  background_color: themeOptions[0].colors['--koda-app-bg'],
+  theme_color: themeOptions[0].colors['--koda-app-bg'],
   categories: ['productivity', 'lifestyle'],
   icons: [
     {

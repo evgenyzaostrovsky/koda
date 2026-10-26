@@ -1,29 +1,36 @@
-import { KodaIcon } from './components/KodaIcon';
-import { AccountAvatar, accountDisplayName, WorkspaceIdentity } from './components/WorkspaceIdentity';
-import { WorkspaceActions } from './components/WorkspaceActions';
+import { habitIsDue, habitDoneOn } from './habitModel';
+import { WidgetDesktop } from './screens/WidgetDesktop';
+import { HabitsScreen } from './screens/HabitsScreen';
+import { WidgetShell, useWidgetLayout, type DesktopSearchResult } from './components/WidgetShell';
+import { getCurrentPlanVersion, recordPlanProgress, type PlanItemScore } from './dayPlan';
+import { syncDayPlanProgress } from './dayPlanSync';
+import { upsertRoutineLog } from './goalLogic';
+import { usePersistentChat } from './usePersistentChat';
+import { accountDisplayName } from './components/WorkspaceIdentity';
 import { mergeEmotionEntries, type EmotionEntry } from './emotionJournal';
-import { SyncCoordinator, parseDeletedIds, journalRowId } from './syncCoordinator';
+import { SyncCoordinator, parseDeletedIds, journalRowId, writeAppStateSnapshot } from './syncCoordinator';
 import { RightPanelProvider } from './components/RightPanel';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
-import { Bot, ListChecks, PanelLeftClose, PanelLeftOpen, Plus, X } from 'lucide-react-native';
-import type { ReactNode } from 'react';
+import { ListChecks, Plus, X } from 'lucide-react-native';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, SafeAreaView, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, AppState, Modal, Pressable, SafeAreaView, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { isSupabaseConfigured } from '../../config/env';
 import { supabase } from '../../lib/supabase';
-import { Header, BottomNav } from './components';
-import { DesktopShell } from './components/DesktopShell';
 import { defaultHabitMonth, defaultHabitYear, defaultJournalEntry, initialGoals, initialHabits, journalMoodByName, journalMoodByValue, journalOwnerKey } from './constants';
 import { calculateGoalProgress } from './goalLogic';
-import { autoFinalizeExpiredKodaDays, fromKodaDayRow, mergeKodaDaySources, toKodaDayRow } from './kodaDaySync';
+import { autoFinalizeExpiredKodaDays, fromKodaDayRow, kodaDayId, mergeKodaDaySources, toKodaDayRow } from './kodaDaySync';
 import { defaultPomodoroSettings, defaultProfile, isJournalEntryWorthSyncing, journalDateKey, mergeJournalEntries, mergePlannerItems, mergeStoredKodaState, normalizeStoredKodaState, parseJournalEntries, parseNotes, parsePlannerItems, parseStoredKodaState, type StoredKodaState } from './persistence';
-import { buildProjectPlannerItems } from './plannerProjections';
+import { buildHabitPlannerItems, buildProjectPlannerItems } from './plannerProjections';
+import { syncExplicitSourceChanges } from './dayPlanSync';
+import { recordHabitEdits } from './habitSync';
 import { GoalsScreen } from './screens/GoalsScreen';
 import { JournalScreen } from './screens/JournalScreen';
 import { KodaScreen } from './screens/KodaScreen';
-import { KodaDayScreen } from './screens/KodaDayScreen';
-import { PlannerScreen, parseQuickTaskInput } from './screens/PlannerScreen';
+import { DailyPlanScreen } from './screens/DailyPlanScreen';
+import { PlannerScreen } from './screens/PlannerScreen';
+import { parseQuickTaskInput } from './quickTaskInput';
+import { goalOverviewItems, isPlannerDate } from './plannerOverview';
 import { NotesScreen } from './screens/NotesScreen';
 import { PomodoroProvider } from './usePomodoroTimer';
 import { PomodoroScreen, playPomodoroSound } from './screens/PomodoroScreen';
@@ -32,23 +39,8 @@ import { ProfileScreen } from './screens/ProfileScreen';
 import { ProgressScreen } from './screens/ProgressScreen';
 import { styles } from './styles';
 import { accent, applyKodaTheme, muted, panel, resolveKodaThemeId } from './theme';
-import type { AccountInfo, ChatMessage, Goal, Habit, JournalEntry, KodaDay, Note, PlannerItem, PomodoroSettings, ProfileState, Project, TabKey } from './types';
+import type { AccountInfo, Goal, Habit, JournalEntry, KodaDay, Note, PlannerItem, PomodoroSettings, ProfileState, Project, TabKey } from './types';
 import { buildMonthDays, displayTimeValue, getCurrentWeekDates, getHabitMonthDays, monthKey, normalizeTimeValue, sleepDurationMinutes, todayDateKey, uid } from './utils';
-
-function KodaMarkIcon({ active = false, size = 18 }: { active?: boolean; size?: number }) { return <KodaIcon name="brand" size={size} color={active ? accent : muted} />; }
-
-const tabs: Array<{ key: TabKey; label: string; icon: (active: boolean) => ReactNode }> = [
-  { key: 'planner', label: 'Планнер', icon: (active) => <KodaIcon name="planner" color={active ? accent : muted} size={21} /> },
-  { key: 'goals', label: 'Цели', icon: (active) => <KodaIcon name="goals" color={active ? accent : muted} size={21} /> },
-  { key: 'projects', label: 'Проекты', icon: (active) => <KodaIcon name="projects" color={active ? accent : muted} size={21} /> },
-  { key: 'notes', label: 'Заметки', icon: (active) => <KodaIcon name="notes" color={active ? accent : muted} size={21} /> },
-  { key: 'journal', label: 'Дневник', icon: (active) => <KodaIcon name="journal" color={active ? accent : muted} size={21} /> },
-  { key: 'habits', label: 'KODA', icon: (active) => <KodaIcon name="habits" color={active ? accent : muted} size={21} /> },
-  { key: 'timer', label: 'Таймер', icon: (active) => <KodaIcon name="timer" color={active ? accent : muted} size={21} /> },
-  { key: 'progress', label: 'Прогресс', icon: (active) => <KodaIcon name="progress" color={active ? accent : muted} size={21} /> },
-  { key: 'profile', label: 'Профиль', icon: (active) => <KodaIcon name="profile" color={active ? accent : muted} size={21} /> },
-  { key: 'koda', label: 'Помощник', icon: (active) => <KodaIcon name="koda" color={active ? accent : muted} size={21} /> },
-];
 
 const desktopTabLabels: Record<TabKey, string> = {
   planner: 'Планнер',
@@ -56,7 +48,9 @@ const desktopTabLabels: Record<TabKey, string> = {
   projects: 'Проекты',
   notes: 'Заметки',
   journal: 'Дневник',
-  habits: 'KODA',
+  habits: 'Рабочий стол',
+  day: 'Мой день',
+  routines: 'Привычки',
   timer: 'Таймер',
   progress: 'Прогресс',
   profile: 'Профиль',
@@ -70,26 +64,33 @@ const calendarKeyStorageKey = 'koda:calendarKey:v1';
 const syncQueueStorageKey = 'koda:syncQueue:v1';
 const journalDeletedStorageKey = 'koda:journalDeleted:v1';
 const plannerDeletedStorageKey = 'koda:plannerDeleted:v1';
-const desktopSidebarStorageKey = 'koda:desktopSidebarCollapsed:v1';
 type CalendarSyncState = { count: number; message: string; status: 'idle' | 'syncing' | 'synced' | 'error' };
 type SyncDomain = 'planner' | 'journal' | 'appState' | 'notes' | 'kodaDays';
 const starterPlannerItemIds = new Set(['planner-1', 'planner-2', 'planner-3', 'planner-4', 'planner-5']);
 
 export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?: string | null }) {
-  const [activeTab, setActiveTab] = useState<TabKey>('planner');
-  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeTab, setActiveTabState] = useState<TabKey>(() => sectionFromHash());
+  function setActiveTab(tab: TabKey) {
+    setActiveTabState(tab);
+    if (typeof window !== 'undefined' && window.location.hash !== `#${tab}`) window.location.hash = tab;
+  }
+  useEffect(() => {
+    const navigate = () => {setActiveTabState(sectionFromHash());setFocusedPlannerItem(plannerFocusFromHash());};
+    if (typeof window !== 'undefined') window.addEventListener('hashchange', navigate);
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('hashchange', navigate); };
+  }, []);
+  const desktopLayout = useWidgetLayout(userId ?? null);
+  const [localDate, setLocalDate] = useState(todayDateKey());
+  useEffect(() => { const interval=setInterval(()=>setLocalDate(todayDateKey()),30000); return ()=>clearInterval(interval); }, []);
+  const [focusedPlannerItem,setFocusedPlannerItem] = useState<PlannerItem|null>(()=>plannerFocusFromHash());
+  function openPlannerItem(item:PlannerItem){setFocusedPlannerItem(item);setActiveTabState('planner');if(typeof window!=='undefined'){const query=new URLSearchParams({date:item.date,item:item.id,title:item.title,type:item.sourceType??'planner'});window.location.hash=`planner?${query}`;}}
+  const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null);
+
+  const [assistantDraft,setAssistantDraft]=useState('');
+  const [chatComposer, setChatComposer] = useState<{ownerId:string|null;text:string}>({ownerId:userId??null,text:''});
+  useEffect(()=>setAssistantDraft(''),[userId]);
   const { width } = useWindowDimensions();
   const isDesktopLayout = width >= 1040;
-  const desktopSidebarWidth = desktopSidebarCollapsed ? 72 : 238;
-  const desktopContentMaxWidth = 1360;
-  const desktopContentPadding = 32;
-  const desktopAvailableWidth = Math.max(0, width - desktopSidebarWidth);
-  const desktopContentWidth = Math.min(desktopContentMaxWidth, desktopAvailableWidth);
-  const desktopQuickAddRight = Math.max(
-    desktopContentPadding,
-    width - desktopSidebarWidth - ((desktopAvailableWidth - desktopContentWidth) / 2 + desktopContentWidth) + desktopContentPadding,
-  );
   const [plannerItems, setPlannerItems] = useState<PlannerItem[]>([]);
   const [plannerLoaded, setPlannerLoaded] = useState(false);
   const [plannerLoadedStorageKey, setPlannerLoadedStorageKey] = useState('');
@@ -102,6 +103,9 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const [projects, setProjects] = useState<Project[]>([]);
   const [habits, setHabits] = useState<Habit[]>(initialHabits);
   const [kodaDays, setKodaDays] = useState<KodaDay[]>([]);
+  const [focusedGoalId, setFocusedGoalId] = useState<string | null>(null);
+  const editSources = useRef<{goals:Goal[]; plannerItems:PlannerItem[]; projects:Project[]; habits:Habit[]}|null>(null);
+  useLayoutEffect(() => { editSources.current = { goals, plannerItems, projects, habits }; }, [goals, plannerItems, projects, habits, userId]);
   const [appStateLoaded, setAppStateLoaded] = useState(false);
   const [appStateLoadedStorageKey, setAppStateLoadedStorageKey] = useState('');
   const [initialStateReadyKey, setInitialStateReadyKey] = useState('');
@@ -133,16 +137,15 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const [quickAddEditingSubtaskId, setQuickAddEditingSubtaskId] = useState<string | null>(null);
   const [quickAddEditingSubtaskTitle, setQuickAddEditingSubtaskTitle] = useState('');
   const [quickAddLastSubtaskTap, setQuickAddLastSubtaskTap] = useState<{ id: string; at: number } | null>(null);
-  const [chat, setChat] = useState<ChatMessage[]>([
-    { id: 'koda-1', role: 'koda', text: 'Привет. Я рядом. Напиши цель, задачу или проблему - разложим на следующий шаг.' },
-  ]);
+  const savedChat=usePersistentChat(userId,activeTab==='koda');
 
   const projectPlannerItems = useMemo(() => buildProjectPlannerItems(projects), [projects]);
   const plannerDayItems = useMemo(() => [...plannerItems, ...projectPlannerItems], [plannerItems, projectPlannerItems]);
-  const completedTasks = plannerDayItems.filter((item) => item.done).length;
-  const habitScore = habits.length
-    ? Math.round((habits.flatMap((habit) => habit.doneDays).filter(Boolean).length / (habits.length * 7)) * 100)
-    : 0;
+  const completedTasks = plannerDayItems.filter((item) => !item.deletedAt && item.done).length;
+  const visibleHabits = habits.filter(habit=>!habit.deletedAt && !habit.archivedAt);
+  const habitWeek = Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-i);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;});
+  const habitOpportunities = visibleHabits.flatMap(habit=>habitWeek.filter(date=>habitIsDue(habit,date)).map(date=>habitDoneOn(habit,date)));
+  const habitScore = habitOpportunities.length ? Math.round(100*habitOpportunities.filter(Boolean).length/habitOpportunities.length) : 0;
 
   useEffect(() => {
     let active = true;
@@ -199,17 +202,6 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    setDesktopSidebarCollapsed(window.localStorage.getItem(desktopSidebarStorageKey) === '1');
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(desktopSidebarStorageKey, desktopSidebarCollapsed ? '1' : '0');
-  }, [desktopSidebarCollapsed]);
-
-
   useLayoutEffect(() => {
     if (!appStateLoaded || appStateLoadedStorageKey !== scopedStorageKey(kodaStateStorageKey, userId)) return;
     applyKodaTheme(resolveKodaThemeId(profile.themeId));
@@ -249,6 +241,9 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
     const channel = (supabase as any)
       .channel(`koda-cross-device:${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_app_state', filter: `user_id=eq.${userId}` }, () => {
+        setPlannerPullToken((value) => value + 1);
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'koda_days', filter: `user_id=eq.${userId}` }, () => {
         setPlannerPullToken((value) => value + 1);
       })
@@ -261,6 +256,15 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       void (supabase as any).removeChannel(channel);
     };
   }, [userId]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      setPlannerPullToken(value => value + 1);
+      if (pendingSync.current.length) setSyncRetryToken(value => value + 1);
+    });
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -414,6 +418,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         if (nextDays === days) return days;
 
         markSyncQueued('kodaDays');
+        markSyncQueued('appState');
         const storageKey = scopedStorageKey(kodaStateStorageKey, userId);
         if (appStateLoadedStorageKey === storageKey) {
           const state: StoredKodaState = { goals, habits, kodaDays: nextDays, pomodoro, profile, projects };
@@ -447,47 +452,8 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     if (!userId || !isSupabaseConfigured()) return;
 
     async function syncAppState() {
-      const existingState = await (supabase as any)
-        .from('user_app_state')
-        .select('profile')
-        .eq('user_id', userId)
-        .maybeSingle();
-      if (existingState.error) throw existingState.error;
-      const existingProfile = isPlainObject(existingState.data?.profile) ? existingState.data.profile : {};
-      const notesForProfile = existingProfile.__kodaNotes;
-      const payload = {
-        user_id: userId,
-        goals,
-        projects,
-        habits,
-        koda_days: kodaDays,
-        profile: {
-          ...existingProfile,
-          ...profile,
-          emotionEntries: mergeEmotionEntries(existingProfile.emotionEntries, profile.emotionEntries),
-          __kodaPomodoro: pomodoro,
-          ...(notesForProfile ? { __kodaNotes: notesForProfile } : {}),
-        },
-        updated_at: new Date().toISOString(),
-      };
-
-      let { error } = await (supabase as any).from('user_app_state').upsert(payload, { onConflict: 'user_id' });
-
-      if (appStateSchemaMissingJsonColumn(error?.message)) {
-        const { koda_days: _kodaDays, projects: _projects, ...payloadWithoutJsonColumns } = payload;
-        const retry = await (supabase as any).from('user_app_state').upsert(payloadWithoutJsonColumns, { onConflict: 'user_id' });
-        error = retry.error;
-      } else if (appStateSchemaMissingKodaDays(error?.message)) {
-        const { koda_days: _kodaDays, ...payloadWithoutKodaDays } = payload;
-        const retry = await (supabase as any).from('user_app_state').upsert(payloadWithoutKodaDays, { onConflict: 'user_id' });
-        error = retry.error;
-      }
-
-      if (error) throw error;
-      if (!error) {
-        await syncGoalsToBackend(goals);
-
-      }
+      await writeAppStateSnapshot(supabase, userId!, state);
+      await syncGoalsToBackend(goals);
     }
 
     return scheduleDomainSync('appState', syncAppState);
@@ -685,7 +651,6 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
       try {
         const storedValue = await AsyncStorage.getItem(storageKey);
-        const storedQueue = parseSyncQueue(await AsyncStorage.getItem(scopedStorageKey(syncQueueStorageKey, userId)));
         const storedState = parseStoredKodaState(storedValue);
         if (active && storedState && initialStateReadyKey !== storageKey) {
           applyStoredKodaState(storedState);
@@ -715,29 +680,11 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
           return;
         }
 
-        let { data, error } = await (supabase as any)
+        const { data, error } = await (supabase as any)
           .from('user_app_state')
-          .select('goals, projects, habits, koda_days, profile')
+          .select('*')
           .eq('user_id', userId)
           .maybeSingle();
-
-        if (appStateSchemaMissingJsonColumn(error?.message)) {
-          const retry = await (supabase as any)
-            .from('user_app_state')
-            .select('goals, habits, profile')
-            .eq('user_id', userId)
-            .maybeSingle();
-          data = retry.data;
-          error = retry.error;
-        } else if (appStateSchemaMissingKodaDays(error?.message)) {
-          const retry = await (supabase as any)
-            .from('user_app_state')
-            .select('goals, habits, profile')
-            .eq('user_id', userId)
-            .maybeSingle();
-          data = retry.data;
-          error = retry.error;
-        }
 
         if (!active) return;
 
@@ -764,10 +711,13 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
           const nextState = mergeStoredKodaState(remoteState, storedState);
           nextState.kodaDays = mergeKodaDaySources(canonicalRemoteDays, nextState.kodaDays);
           applyStoredKodaState(nextState);
+          // Recover projects previously acknowledged by the lossy schema fallback.
+          if (JSON.stringify(nextState.projects) !== JSON.stringify(remoteState.projects)) markSyncQueued('appState');
           void AsyncStorage.setItem(storageKey, JSON.stringify(nextState));
         } else if (storedState) {
           const nextState = { ...storedState, kodaDays: mergeKodaDaySources(canonicalRemoteDays, storedState.kodaDays) };
           applyStoredKodaState(nextState);
+          if (!error && storedState.projects.length) markSyncQueued('appState');
           void AsyncStorage.setItem(storageKey, JSON.stringify(nextState));
         } else if (canonicalRemoteDays.length) {
           const nextState = normalizeStoredKodaState({ kodaDays: canonicalRemoteDays });
@@ -900,6 +850,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     if (!accountGoals.length) return;
 
     const now = new Date().toISOString();
+    const entityId = (id: string) => isUuid(id) ? id : kodaDayId(userId!, `entity:${id}`);
     const goalRows = accountGoals.map((goal, index) => ({
       id: goal.id,
       user_id: userId,
@@ -922,7 +873,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
     const milestoneRows = accountGoals.flatMap((goal) =>
       goal.milestones.map((milestone) => ({
-        id: milestone.id,
+        id: entityId(milestone.id),
         goal_id: goal.id,
         user_id: userId,
         title: milestone.title,
@@ -941,9 +892,9 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
     const actionRows = accountGoals.flatMap((goal) =>
       goal.actions.map((action) => ({
-        id: action.id,
+        id: entityId(action.id),
         goal_id: goal.id,
-        milestone_id: action.milestoneId,
+        milestone_id: action.milestoneId ? entityId(action.milestoneId) : null,
         user_id: userId,
         title: action.title,
         description: action.description || null,
@@ -963,7 +914,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
     const routineRows = accountGoals.flatMap((goal) =>
       goal.routines.map((routine) => ({
-        id: routine.id,
+        id: entityId(routine.id),
         goal_id: goal.id,
         user_id: userId,
         title: routine.title,
@@ -984,8 +935,8 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
     const logRows = accountGoals.flatMap((goal) =>
       goal.routineLogs.map((log) => ({
-        id: log.id,
-        routine_id: log.routineId,
+        id: entityId(log.id),
+        routine_id: entityId(log.routineId),
         goal_id: goal.id,
         user_id: userId,
         log_date: log.date,
@@ -1024,7 +975,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       void syncCoordinator.run(domain, revision, async () => {
         if (cancelled) return;
         await work();
-        if (syncCoordinator.current(domain, revision)) clearSyncQueued(domain);
+        if (!cancelled && syncCoordinator.current(domain, revision)) clearSyncQueued(domain);
       }).catch(() => undefined);
     }, 650);
     return () => { cancelled = true; clearTimeout(timeout); };
@@ -1037,6 +988,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   function clearSyncQueued(domain: SyncDomain) {
     pendingSync.current = pendingSync.current.filter(item => item !== domain);
     setSyncQueue((items) => items.filter((item) => item !== domain));
+    if (domain === 'appState') setPlannerPullToken(value => value + 1);
   }
 
   useEffect(() => {
@@ -1119,7 +1071,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   function togglePlannerItem(id: string) {
     markSyncQueued('planner');
     const now = new Date().toISOString();
-    setPlannerItems((items) =>
+    updatePlannerSources((items) =>
       items.map((item) => {
         if (item.id !== id) return item;
         const done = !item.done;
@@ -1133,12 +1085,14 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     if (!trimmed) return;
     const now = new Date().toISOString();
     markSyncQueued('planner');
-    setPlannerItems((items) => [{ id: uid('planner'), date: item.date, time: item.time, title: trimmed, done: false, subtasks: item.subtasks ?? [], sourceType: 'planner', sourceId: null, ownerId: null, updatedAt: now, deletedAt: null }, ...items]);
+    const created: PlannerItem = { id: uid('planner'), date: item.date, time: item.time, title: trimmed, done: false, subtasks: item.subtasks ?? [], sourceType: 'planner', sourceId: null, ownerId: null, updatedAt: now, deletedAt: null };
+    setPlannerItems((items) => [created, ...items]);
+    return created;
   }
 
   function setPlannerItemFailed(id: string, failed: boolean) {
     markSyncQueued('planner');
-    setPlannerItems((items) => items.map((item) => item.id === id
+    updatePlannerSources((items) => items.map((item) => item.id === id
       ? { ...item, failed, done: false, updatedAt: new Date().toISOString() }
       : item));
   }
@@ -1211,7 +1165,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
   function togglePlannerSubtask(itemId: string, subtaskId: string) {
     markSyncQueued('planner');
-    setPlannerItems((items) =>
+    updatePlannerSources((items) =>
       items.map((item) => {
         if (item.id !== itemId) return item;
         const subtasks = (item.subtasks ?? []).map((subtask) => (subtask.id === subtaskId ? { ...subtask, done: !subtask.done } : subtask));
@@ -1228,16 +1182,50 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
   function updateGoals(updater: (items: Goal[]) => Goal[]) {
     markSyncQueued('appState');
-    setGoals(updater);
+    const next = updater(editSources.current?.goals ?? goals);
+    commitExplicitSources({ goals: next });
+    setGoals(next);
+  }
+
+  function commitExplicitSources(patch: Partial<{goals:Goal[];plannerItems:PlannerItem[];projects:Project[];habits:Habit[]}>) {
+    const previous = editSources.current ?? { goals, plannerItems, projects, habits };
+    const next = { ...previous, ...patch };
+    editSources.current = next;
+    const date = todayDateKey();
+    const before = [...previous.plannerItems,...buildProjectPlannerItems(previous.projects),...buildHabitPlannerItems(previous.habits,date)];
+    const after = [...next.plannerItems,...buildProjectPlannerItems(next.projects),...buildHabitPlannerItems(next.habits,date)];
+    if (!kodaDays.some(d=>d.status==='active'&&d.plan)) return;
+    updateKodaDays(days=>days.map(d=> {
+      if (!d.plan || d.status!=='active') return d;
+      const imported = syncDayPlanProgress(d.plan, previous.goals, before);
+      const plan = syncExplicitSourceChanges(imported,previous.goals,next.goals,before,after);
+      return plan===d.plan?d:{...d,plan,updatedAt:new Date().toISOString()};
+    }));
+  }
+
+  function updatePlannerSources(updater:(items:PlannerItem[])=>PlannerItem[]) {
+    const next=updater(editSources.current?.plannerItems??plannerItems);
+    commitExplicitSources({plannerItems:next});
+    setPlannerItems(next);
+  }
+
+  function updateHabitSources(updater:(items:Habit[])=>Habit[]) {
+    markSyncQueued('appState');
+    const previous=editSources.current?.habits??habits;
+    const next=recordHabitEdits(previous,updater(previous));
+    commitExplicitSources({habits:next});
+    setHabits(next);
   }
 
   function updateKodaDays(updater: (items: KodaDay[]) => KodaDay[]) {
     markSyncQueued('kodaDays');
+    markSyncQueued('appState');
     setKodaDays((items) => {
       const nextKodaDays = updater(items);
       const storageKey = scopedStorageKey(kodaStateStorageKey, userId);
       if (appStateLoaded && appStateLoadedStorageKey === storageKey) {
-        const state: StoredKodaState = { goals, habits, kodaDays: nextKodaDays, pomodoro, profile, projects };
+        const sources = editSources.current;
+        const state: StoredKodaState = { goals: sources?.goals ?? goals, habits: sources?.habits ?? habits, kodaDays: nextKodaDays, pomodoro, profile, projects: sources?.projects ?? projects };
         void AsyncStorage.setItem(storageKey, JSON.stringify(state));
       }
       return nextKodaDays;
@@ -1246,7 +1234,9 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
   function updateProjects(updater: (items: Project[]) => Project[]) {
     markSyncQueued('appState');
-    setProjects(updater);
+    const next=updater(editSources.current?.projects??projects);
+    commitExplicitSources({projects:next});
+    setProjects(next);
   }
 
   function updateNotes(updater: (items: Note[]) => Note[]) {
@@ -1312,7 +1302,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     if (!trimmed) return;
     markSyncQueued('appState');
     const monthDays = buildMonthDays();
-    setHabits((items) => [
+    updateHabitSources((items) => [
       {
         id: uid('habit'),
         title: trimmed,
@@ -1334,7 +1324,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     const monthIndex = weekDate.getMonth();
     const monthDayIndex = weekDate.getDate() - 1;
 
-    setHabits((items) =>
+    updateHabitSources((items) =>
       items.map((habit) =>
         {
           if (habit.id !== id) return habit;
@@ -1356,7 +1346,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
   function toggleHabitMonthDay(id: string, dayIndex: number, year: number, monthIndex: number) {
     markSyncQueued('appState');
-    setHabits((items) =>
+    updateHabitSources((items) =>
       items.map((habit) =>
         {
           if (habit.id !== id) return habit;
@@ -1381,12 +1371,12 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     const target = patch.target.trim();
     if (!title || !target) return;
     markSyncQueued('appState');
-    setHabits((items) => items.map((habit) => (habit.id === id ? { ...habit, title, target } : habit)));
+    updateHabitSources((items) => items.map((habit) => (habit.id === id ? { ...habit, title, target } : habit)));
   }
 
   function deleteHabit(id: string) {
     markSyncQueued('appState');
-    setHabits((items) => items.filter((habit) => habit.id !== id));
+    updateHabitSources((items) => items.filter((habit) => habit.id !== id));
   }
 
   async function saveJournalToBackend(entry: JournalEntry) {
@@ -1454,38 +1444,81 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     setDeletedJournalItemIds(ids => ids.includes(id) ? ids : [...ids, id]);
   }
 
-  function sendKodaMessage(textValue: string) {
-    const trimmed = textValue.trim();
-    if (!trimmed) return;
-    setChat((items) => [
-      ...items,
-      { id: uid('user'), role: 'user', text: trimmed },
-      { id: uid('koda'), role: 'koda', text: 'Принял. Следующий шаг: запиши это как конкретную задачу на сегодня или привяжи к цели.' },
-    ]);
-  }
 
+  function toggleHabitToday(id: string) {
+    const now = new Date();
+    toggleHabitMonthDay(id, now.getDate()-1, now.getFullYear(), now.getMonth());
+  }
+  function progressFromWidget(item: PlanItemScore, value: number) {
+    const date = todayDateKey();
+    const now = new Date().toISOString();
+    const day = kodaDays.find(d=>d.localDate===date);
+    if (!day?.plan || day.status !== 'active') return;
+    const current = getCurrentPlanVersion(day.plan);
+    updateKodaDays(days=>days.map(d=>d.id===day.id && d.status==='active' && d.plan ? {...d,plan:recordPlanProgress(d.plan,item.sourceKey,value,uid('completion'),{at:now,versionId:current.id}),updatedAt:now}:d));
+    if (item.source.kind==='action') updateGoals(gs=>gs.map(g=>g.id===item.source.goalId?{...g,actions:g.actions.map(a=>a.id===item.source.id?{...a,status:value>=item.targetValue?'completed':'pending',completedAt:value>=item.targetValue?now:null}:a),updatedAt:now}:g));
+    else if (item.source.kind==='routine') updateGoals(gs=>gs.map(g=>g.id===item.source.goalId?{...g,routineLogs:upsertRoutineLog(g.routineLogs,item.source.id,date,value),updatedAt:now}:g));
+    else {
+      const source=[...plannerDayItems,...buildHabitPlannerItems(habits,date)].find(p=>p.id===item.source.plannerId||p.id===item.source.id);
+      if (source && source.done!==(value>=item.targetValue)) {
+        if(source.id.startsWith('habit:')&&source.sourceId) toggleHabitToday(source.sourceId);
+        else if(source.sourceType&&source.sourceType!=='planner')toggleProjectedPlannerItem(source);
+        else togglePlannerItem(source.id);
+      }
+    }
+  }
+  const widgetItems=[...plannerDayItems,...buildHabitPlannerItems(habits,localDate)];
+  const overviewItems=[...plannerDayItems,...goalOverviewItems(goals,localDate)];
+  useEffect(() => {
+    if (!appStateLoaded || !plannerLoaded || appStateLoadedStorageKey !== scopedStorageKey(kodaStateStorageKey,userId)) return;
+    const day=kodaDays.find(d=>d.localDate===localDate&&d.status==='active'&&d.plan);
+    if (!day?.plan) return;
+    const sourcePlan=day.plan;
+    const synced=syncDayPlanProgress(sourcePlan,goals,widgetItems);
+    if (synced===sourcePlan) return;
+    updateKodaDays(days=>days.map(d=>d.id===day.id&&d.status==='active'&&d.plan===sourcePlan?{...d,plan:synced,updatedAt:new Date().toISOString()}:d));
+  }, [goals,habits,plannerDayItems,kodaDays,localDate,appStateLoaded,plannerLoaded,appStateLoadedStorageKey,userId]);
+  const searchResults: DesktopSearchResult[] = [
+    ...goals.filter(g=>!g.archivedAt).map(g=>({id:`goal:${g.id}`,title:g.title,kind:'Цель',open:()=>{setFocusedGoalId(g.id);setActiveTab('goals');}})),
+    ...notes.filter(n=>!n.deletedAt).map(n=>({id:`note:${n.id}`,title:n.title,kind:'Заметка',open:()=>{setFocusedNoteId(n.id);setActiveTab('notes');}})),
+    ...plannerDayItems.filter(p=>!p.deletedAt).map(p=>({id:`planner:${p.id}`,title:p.title,kind:'Дело',open:()=>setActiveTab('planner')})),
+    ...projects.filter(p=>p.status!=='archived').map(p=>({id:`project:${p.id}`,title:p.title,kind:'Проект',open:()=>setActiveTab('projects')})),
+  ];
   const screen = (() => {
+    if (activeTab === 'habits') return <WidgetDesktop timerSettings={pomodoro} goals={goals} habits={habits} days={kodaDays} notes={notes} projects={projects} items={widgetItems} overviewItems={overviewItems} onPlannerItem={openPlannerItem} onQuickAdd={()=>setQuickAddOpen(true)} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutReady={desktopLayout.ready} onOpen={setActiveTab} onGoal={id=>{setFocusedGoalId(id);setActiveTab('goals');}} onNote={id=>{setFocusedNoteId(id);setActiveTab('notes');}} onToggleHabit={toggleHabitToday} onProgress={progressFromWidget} />;
+    if (activeTab === 'routines') return <HabitsScreen habits={habits} onHabitsChange={updateHabitSources} onToggleToday={toggleHabitToday} />;
+
     if (activeTab === 'planner') {
-      return <PlannerScreen themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} goals={goals} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onGoalsChange={updateGoals} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} />;
+      return <PlannerScreen initialFocus={focusedPlannerItem} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} goals={goals} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onGoalsChange={updateGoals} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} projectNames={Object.fromEntries(projects.map(project=>[project.id,project.title]))} />;
     }
     if (activeTab === 'goals') {
-      return <GoalsScreen goals={goals} isDesktop={isDesktopLayout} isOnline={isOnline} onGoalsChange={updateGoals} />;
+      return <GoalsScreen goals={goals} hasCloudSync={Boolean(userId) && isSupabaseConfigured()} isDesktop={isDesktopLayout} isOnline={isOnline} onGoalsChange={updateGoals} userId={userId} initialGoalId={focusedGoalId} />;
     }
     if (activeTab === 'projects') {
       return <ProjectsScreen isDesktop={isDesktopLayout} onProjectsChange={updateProjects} projects={projects} />;
     }
     if (activeTab === 'notes') {
-      return <NotesScreen isDesktop={isDesktopLayout} notes={notes} onNotesChange={updateNotes} saveState={notesSaveState} userId={userId ?? null} />;
+      return <NotesScreen isDesktop={isDesktopLayout} notes={notes} onNotesChange={updateNotes} saveState={notesSaveState} userId={userId ?? null} initialNoteId={focusedNoteId} />;
     }
-    if (activeTab === 'habits') {
+    if (activeTab === 'day') {
       return (
-        <KodaDayScreen
+        <DailyPlanScreen
           goals={goals}
           isDesktop={isDesktopLayout}
           kodaDays={kodaDays}
           onGoalsChange={updateGoals}
           onKodaDaysChange={updateKodaDays}
-          plannerItems={plannerDayItems}
+          plannerItems={[...plannerDayItems,...buildHabitPlannerItems(habits,todayDateKey())]}
+          userId={userId}
+          onOpenSection={setActiveTab}
+          onDiscussDay={context=>{setAssistantDraft(context);setActiveTab('koda');}}
+          onOpenGoal={(id)=>{setFocusedGoalId(id);setActiveTab('goals');}}
+          onAddItem={(title)=>addPlannerItem({title,date:todayDateKey(),time:''})??null}
+          onTogglePlannerItem={(item) => {
+            if (item.id.startsWith('habit:') && item.sourceId) { const now = new Date(); toggleHabitMonthDay(item.sourceId, now.getDate()-1, now.getFullYear(), now.getMonth()); }
+            else if (item.sourceType && item.sourceType !== 'planner') toggleProjectedPlannerItem(item);
+            else togglePlannerItem(item.id);
+          }}
         />
       );
     }
@@ -1493,7 +1526,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       return <PomodoroScreen isDesktop={isDesktopLayout} onSettingsChange={updatePomodoro} settings={pomodoro} />;
     }
     if (activeTab === 'profile') {
-      return <ProfileScreen accountInfo={accountInfo} calendarKey={calendarKey} calendarSync={calendarSync} habits={habits} isDesktop={isDesktopLayout} onProfileChange={updateProfile} onSignOut={onSignOut} plannerItems={plannerItems} profile={profile} />;
+      return <ProfileScreen accountInfo={accountInfo} calendarKey={calendarKey} calendarSync={calendarSync} habits={habits.filter(h=>!h.deletedAt)} isDesktop={isDesktopLayout} onProfileChange={updateProfile} onSignOut={onSignOut} plannerItems={plannerItems} profile={profile} />;
     }
     if (activeTab === 'journal') {
       const activeEntry = journalEntries.find((entry) => entry.id === activeJournalId) ?? journalEntries[0];
@@ -1515,34 +1548,16 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       );
     }
     if (activeTab === 'progress') {
-      return <ProgressScreen completedTasks={completedTasks} goals={goals} habitScore={habitScore} isDesktop={isDesktopLayout} totalTasks={plannerDayItems.length} />;
+      return <ProgressScreen completedTasks={completedTasks} goals={goals} habitScore={habitScore} isDesktop={isDesktopLayout} totalTasks={plannerDayItems.filter(item=>!item.deletedAt).length} kodaDays={kodaDays} />;
     }
-    return <KodaScreen chat={chat} isDesktop={isDesktopLayout} onSend={sendKodaMessage} />;
+    return <KodaScreen key={userId || 'guest'} chat={savedChat.chat} composerValue={chatComposer.ownerId===(userId??null)?chatComposer.text:''} onComposerChange={(value)=>setChatComposer({ownerId:userId??null,text:value})} initialDraft={assistantDraft} onDraftConsumed={()=>setAssistantDraft('')} isDesktop={isDesktopLayout} onSend={savedChat.send} isSending={savedChat.busy} error={savedChat.error} provider={savedChat.provider} onRetry={savedChat.retry} retryLabel={savedChat.retryLabel} inputDisabled={savedChat.inputDisabled} historyStatus={savedChat.historyStatus} syncError={savedChat.cloudError} onSyncRetry={savedChat.retrySync} />;
   })();
 
   const syncReady = syncQueueLoaded && plannerLoaded && journalLoaded && appStateLoaded && notesLoaded;
   const visibleSyncQueue = syncReady ? syncQueue : [];
-  const syncText = getSyncText(visibleSyncQueue, isOnline, syncReady);
+  const hasCloudSync = Boolean(userId) && isSupabaseConfigured();
+  const syncText = getSyncText(visibleSyncQueue, isOnline, syncReady, hasCloudSync);
   const quickAddPreview = parseQuickTaskInput(quickAddText, todayDateKey(), '');
-  const workspaceTabs = tabs.filter(tab => tab.key !== 'profile');
-  const renderDesktopTab = (tab: (typeof tabs)[number]) => {
-    const active = activeTab === tab.key;
-
-    return (
-      <Pressable
-        key={tab.key}
-        accessibilityRole="button"
-        accessibilityLabel={desktopTabLabels[tab.key]}
-        accessibilityState={{ selected: active }}
-        onPress={() => setActiveTab(tab.key)}
-        style={[styles.desktopNavItem, active && styles.desktopNavItemActive, desktopSidebarCollapsed && styles.desktopNavItemCollapsed]}
-        testID={`desktop-tab-${tab.key}`}
-      >
-        <View style={styles.desktopNavIcon}>{tab.icon(active)}</View>
-        {!desktopSidebarCollapsed ? <Text style={[styles.desktopNavText, active && styles.desktopNavTextActive]}>{desktopTabLabels[tab.key]}</Text> : null}
-      </Pressable>
-    );
-  };
   if (initialStateReadyKey !== scopedStorageKey(kodaStateStorageKey, userId)) {
     return <SafeAreaView style={[styles.safe, { justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color={accent} /></SafeAreaView>;
   }
@@ -1550,98 +1565,9 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     <PomodoroProvider settings={pomodoro} owner={userId ?? 'guest'} onPhase={() => playPomodoroSound(pomodoro.soundId, 'end')}>
     <SafeAreaView style={styles.safe}>
       <StatusBar style={resolveKodaThemeId(profile.themeId).endsWith('dark') ? 'light' : 'dark'} />
-      <View style={[styles.stage, isDesktopLayout && styles.desktopStage]}>
-        <View style={[styles.frame, isDesktopLayout && styles.desktopFrame]}>
-          {isDesktopLayout ? (
-            <DesktopShell
-              globalNavigation={(
-              <View style={[styles.desktopSidebar, desktopSidebarCollapsed && styles.desktopSidebarCollapsed]}>
-                <View style={[styles.desktopSidebarHeader, desktopSidebarCollapsed && { flexDirection: 'column', gap: 10 }]}>
-                  <View style={[styles.desktopLogoGroup, desktopSidebarCollapsed && styles.desktopLogoGroupCollapsed]}>
-                    <KodaIcon name="brand" size={30} />
-                    {!desktopSidebarCollapsed ? <View style={{ gap: 3 }}><Text style={styles.desktopLogoWord}>koda</Text><Text style={styles.workspaceCaption}>МЯГКИЙ РИТМ</Text></View> : null}
-                  </View>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Свернуть или развернуть меню" onPress={() => setDesktopSidebarCollapsed((collapsed) => !collapsed)} style={styles.desktopSidebarToggle}>
-                    {desktopSidebarCollapsed ? <PanelLeftOpen color={muted} size={16} /> : <PanelLeftClose color={muted} size={16} />}
-                  </Pressable>
-                </View>
-
-                <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ flexGrow: 1, gap: 18 }} showsVerticalScrollIndicator={false}>
-                  <View style={styles.desktopNavList}>
-                    {!desktopSidebarCollapsed ? <Text style={styles.workspaceLabel}>ПРОСТРАНСТВО</Text> : null}
-                    {workspaceTabs.map(renderDesktopTab)}
-                  </View>
-                <View style={{ marginTop: 'auto', gap: 8 }}>
-                  <View style={[styles.desktopSidebarStatus, desktopSidebarCollapsed && styles.desktopSidebarStatusCollapsed]}>
-                    <View style={[styles.syncStripDot, isOnline && !visibleSyncQueue.length && styles.syncStripDotOk, !isOnline && styles.syncStripDotOffline]} />
-                    {!desktopSidebarCollapsed ? <Text style={styles.desktopSyncText}>{syncText}</Text> : null}
-                  </View>
-                  <WorkspaceIdentity account={accountInfo} days={kodaDays} items={plannerItems} collapsed={desktopSidebarCollapsed} onProfile={() => setActiveTab('profile')} />
-                </View>
-                </ScrollView>
-              </View>
-              )}
-              workspace={(
-                <View nativeID="koda-desktop-workspace" style={styles.desktopWorkspace}>
-                  <View style={styles.desktopContentGrid}>
-                    <View style={styles.desktopContent}><RightPanelProvider key={activeTab} title={desktopTabLabels[activeTab]} actions={<WorkspaceActions account={accountInfo} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} items={[...plannerItems, ...projectPlannerItems]} syncText={syncText} onOpenSection={setActiveTab} />}>{screen}</RightPanelProvider></View>
-                  </View>
-                </View>
-              )}
-            />
-          ) : (
-            <>
-              <Header hasPendingSync={Boolean(visibleSyncQueue.length)} isOnline={isOnline} onMenuPress={() => setMobileMenuOpen(true)} syncText={syncText} />
-              <View style={styles.content}>{screen}</View><BottomNav activeTab={activeTab} setActiveTab={setActiveTab} tabs={tabs.filter(tab => ['planner', 'projects', 'journal', 'timer'].includes(tab.key))} />
-            </>
-          )}
-        </View>
-      </View>
-      <Modal animationType="fade" transparent visible={!isDesktopLayout && mobileMenuOpen} onRequestClose={() => setMobileMenuOpen(false)}>
-        <Pressable accessibilityLabel="Закрыть меню" onPress={() => setMobileMenuOpen(false)} style={styles.mobileDrawerOverlay}>
-          <Pressable onPress={(event) => event.stopPropagation()} style={styles.mobileDrawer}>
-            <View style={styles.mobileDrawerHeader}>
-              <View style={styles.desktopLogoGroup}>
-                <KodaMarkIcon active size={18} />
-                <Text style={styles.desktopLogoWord}>KODA</Text>
-              </View>
-              <Pressable accessibilityLabel="Закрыть меню" onPress={() => setMobileMenuOpen(false)} style={styles.mobileDrawerClose}>
-                <X color={muted} size={20} />
-              </Pressable>
-            </View>
-            <ScrollView contentContainerStyle={styles.mobileDrawerNavigation} showsVerticalScrollIndicator={false}>
-              {tabs.map((tab) => {
-                const active = activeTab === tab.key;
-                return (
-                  <Pressable
-                    key={tab.key}
-                    accessibilityRole="button"
-                    accessibilityLabel={desktopTabLabels[tab.key]}
-                    accessibilityState={{ selected: active }}
-                    onPress={() => {
-                      setActiveTab(tab.key);
-                      setMobileMenuOpen(false);
-                    }}
-                    style={[styles.mobileDrawerItem, active && styles.mobileDrawerItemActive]}
-                    testID={`mobile-menu-${tab.key}`}
-                  >
-                    <View style={styles.mobileDrawerIcon}>{tab.icon(active)}</View>
-                    <Text style={[styles.mobileDrawerText, active && styles.mobileDrawerTextActive]}>{desktopTabLabels[tab.key]}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            <View style={styles.mobileDrawerFooter}>
-              <View style={[styles.syncStripDot, isOnline && !visibleSyncQueue.length && styles.syncStripDotOk, !isOnline && styles.syncStripDotOffline]} />
-              <Text style={styles.desktopSyncText}>{syncText}</Text>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 12 }}>
-              <AccountAvatar name={accountDisplayName(accountInfo)} onPress={() => { setActiveTab('profile'); setMobileMenuOpen(false); }} />
-              <View style={{ flex: 1, minWidth: 0 }}><Text numberOfLines={1} style={styles.rowTitle}>{accountDisplayName(accountInfo)}</Text><Text style={styles.rowMeta}>Моё пространство</Text></View>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <WidgetShell key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults}>
+        {activeTab==='habits'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
+      </WidgetShell>
       <Modal animationType="fade" transparent visible={quickAddOpen} onRequestClose={() => setQuickAddOpen(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.quickAddModalCard}>
@@ -1651,6 +1577,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
                 <Text style={styles.modalTitle}>В планнер</Text>
               </View>
               <Pressable
+                accessibilityRole="button" accessibilityLabel="Закрыть быстрое добавление"
                 onPress={() => {
                   setQuickAddOpen(false);
                   setQuickAddSubtaskOpen(false);
@@ -1663,6 +1590,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
             </View>
             <TextInput
               autoFocus
+              accessibilityLabel="Быстрое дело"
               onChangeText={setQuickAddText}
               onSubmitEditing={submitQuickPlannerItem}
               placeholder="Завтра 15:00 тренировка"
@@ -1717,12 +1645,12 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
                 </View>
               </View>
             ) : (
-              <Pressable onPress={() => setQuickAddSubtaskOpen(true)} style={styles.plannerInlineAddButton}>
+              <Pressable accessibilityRole="button" onPress={() => setQuickAddSubtaskOpen(true)} style={styles.plannerInlineAddButton}>
                 <Plus color={accent} size={13} />
                 <Text style={styles.plannerInlineAddText}>Добавить подзадачу</Text>
               </Pressable>
             )}
-            <Pressable disabled={!quickAddPreview} onPress={submitQuickPlannerItem} style={[styles.notificationButton, !quickAddPreview && styles.notificationButtonDisabled]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Добавить дело в планнер" disabled={!quickAddPreview} onPress={submitQuickPlannerItem} style={[styles.notificationButton, !quickAddPreview && styles.notificationButtonDisabled]}>
               <Text style={styles.notificationButtonText}>Добавить</Text>
             </Pressable>
           </View>
@@ -1751,16 +1679,6 @@ function calendarSyncErrorMessage(message: string) {
 
 function plannerSchemaMissingSubtasks(message?: string | null) {
   return Boolean(message && message.toLowerCase().includes('subtasks'));
-}
-
-function appStateSchemaMissingKodaDays(message?: string | null) {
-  return Boolean(message && message.toLowerCase().includes('koda_days'));
-}
-
-function appStateSchemaMissingJsonColumn(message?: string | null) {
-  if (!message) return false;
-  const normalized = message.toLowerCase();
-  return normalized.includes('koda_days') || normalized.includes('projects');
 }
 
 function parseSyncQueue(value: string | null): SyncDomain[] {
@@ -1867,11 +1785,12 @@ function preferredJournalEntryId(entries: JournalEntry[]) {
   return todayEntry?.id ?? entries[0]?.id ?? defaultJournalEntry.id;
 }
 
-function getSyncText(queue: SyncDomain[], online: boolean, ready = true) {
+function getSyncText(queue: SyncDomain[], online: boolean, ready = true, hasCloudSync = true) {
+  if (!hasCloudSync) return 'Сохранено на устройстве';
   if (!ready && online) return 'Синхронизация...';
-  if (!online && queue.length) return `${queue.length} изменений ждут интернет`;
+  if (!online && queue.length) return 'Изменения ждут подключения к интернету';
   if (!online) return 'Офлайн: новые данные сохранятся на телефоне';
-  if (queue.length) return `${queue.length} изменений ждут синхронизации`;
+  if (queue.length) return 'Изменения ждут синхронизации';
 
   return 'Синхронизировано';
 }
@@ -1890,4 +1809,19 @@ function parsePlannerSubtasks(value: unknown): PlannerItem['subtasks'] {
       return { id: subtask.id, title: subtask.title, done: Boolean(subtask.done) };
     })
     .filter((item): item is NonNullable<PlannerItem['subtasks']>[number] => Boolean(item));
+}
+
+function sectionFromHash(): TabKey {
+  if (typeof window === 'undefined') return 'habits';
+  const raw=window.location.hash.replace(/^#\/?/,'').split('?')[0];
+  const allowed:TabKey[]=['habits','day','routines','planner','goals','projects','notes','journal','timer','progress','koda','profile'];
+  return allowed.includes(raw as TabKey)?raw as TabKey:'habits';
+}
+
+function plannerFocusFromHash():PlannerItem|null {
+  if(typeof window==='undefined'||!window.location.hash.startsWith('#planner?'))return null;
+  const query=new URLSearchParams(window.location.hash.split('?')[1]);const date=query.get('date')??'';const id=query.get('item')??'';
+  if(!id||!isPlannerDate(date))return null;
+  const rawType=query.get('type');const sourceType=rawType==='goal'||rawType==='project'||rawType==='recurring'?rawType:'planner';
+  return {id,date,time:'',title:query.get('title')??'',done:false,sourceType};
 }

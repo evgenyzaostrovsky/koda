@@ -4,7 +4,10 @@ const defaultHabitMonth = 6;
 const defaultHabitYear = 2026;
 
 export function uid(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.round(Math.random() * 10000)}`;
+  const suffix = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${suffix}`;
 }
 
 export function monthKey(year: number, monthIndex: number) {

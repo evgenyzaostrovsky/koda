@@ -1,102 +1,84 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ProgressLine } from '../components';
+import { nextRoadmapAction } from '../components/goalPresentation';
+import { StyleSheet, Text, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import { calculateGoalProgress } from '../goalLogic';
-import type { Goal } from '../types';
-import { Card, ProgressLine, SectionTitle } from '../components';
+import type { Goal, KodaDay } from '../types';
 import { styles } from '../styles';
-import { DesktopPageLayout } from '../components/DesktopShell';
-import { line, panel, panelSoft, text } from '../theme';
+import { ScoreHistoryChart } from '../components/RoadmapUI';
+import { line, muted, text } from '../theme';
+import { BentoCard, BentoGrid, BentoPage, MetricCard, SectionHeader } from '../components/Bento';
+import { weeklyScoreSummary } from '../dashboardMetrics';
+import { todayDateKey } from '../utils';
 
 export function ProgressScreen({
   completedTasks,
   goals,
   habitScore,
-  isDesktop = false,
   totalTasks,
+  kodaDays = [],
 }: {
   completedTasks: number;
   goals: Goal[];
   habitScore: number;
   isDesktop?: boolean;
   totalTasks: number;
+  kodaDays?: KodaDay[];
 }) {
-  const taskScore = totalTasks ? Math.round((completedTasks / totalTasks) * 100) : 0;
-  const goalScore = goals.length ? Math.round(goals.reduce((sum, goal) => sum + calculateGoalProgress(goal), 0) / goals.length) : 0;
-  const combinedScore = Math.round((taskScore + goalScore + habitScore) / 3);
-  const activeGoals = goals.filter((goal) => goal.status === 'active');
+  const narrow=useWindowDimensions().width<760;
+  const visibleGoals = goals.filter(goal => !goal.archivedAt);
+  const activeGoals = visibleGoals.filter(goal => goal.status === 'active');
+  const goalScore = activeGoals.length ? Math.round(activeGoals.reduce((sum, goal) => sum + calculateGoalProgress(goal), 0) / activeGoals.length) : 0;
+  const scoreSummary = weeklyScoreSummary(kodaDays, todayDateKey());
 
-  const main = (
-    <View style={local.main}>
-      <SectionTitle title="Прогресс" subtitle="Статистика и динамика" />
-      <View style={local.metrics}>
-        <ProgressMetric label="Задачи" value={`${completedTasks} / ${totalTasks}`} progress={taskScore} />
-        <ProgressMetric label="Цели" value={`${goalScore}%`} progress={goalScore} />
-        <ProgressMetric label="Привычки" value={`${habitScore}%`} progress={habitScore} />
+  return <BentoPage maxWidth={960} contentStyle={local.page}>
+    <SectionHeader title="Прогресс" subtitle="Динамика SCORE и движение по твоим планам" />
+
+    <BentoGrid columns={3} style={local.overview}>
+      <View style={[local.chartSpan, { gridColumn: 'span 2' } as unknown as ViewStyle]}><ScoreHistoryChart days={kodaDays} compact showLatest /><View style={local.scoreNote}><Text style={local.noteText}>{scoreSummary.average===null?'За последние 7 дней пока нет завершённых планов.':`Средний SCORE за последние 7 дней · ${scoreSummary.average}/100 · ${scoreSummary.completedCount} ${scoreSummary.completedCount===1?'день':'дней'}.`}</Text><Text style={local.noteText}>SCORE оценивает выполнение принятого плана дня. Прогресс целей и привычек показан отдельно и не входит в SCORE.</Text></View></View>
+      <View style={[local.metricStack,narrow&&{flexDirection:'row',flexWrap:'wrap',gap:8}]} >
+        <MetricCard label="Дела планнера" value={`${completedTasks} / ${totalTasks}`} detail="всего отмечено" tone="light" valueSize={22} style={[local.metric,narrow&&{flex:1,minWidth:90,padding:12}]}/>
+        <MetricCard label="Цели в работе" value={`${goalScore}%`} detail={`${activeGoals.length} активных · среднее`} tone="soft" valueSize={24} style={[local.metric,narrow&&{flex:1,minWidth:90,padding:12}]}/>
+        <MetricCard label="Привычки" value={`${habitScore}%`} detail="за последние 7 дней" tone="lime" valueSize={24} style={[local.metric,narrow&&{flex:1,minWidth:90,padding:12}]}/>
       </View>
-      <View style={local.scorePanel}>
-        <View style={local.scoreLead}>
-          <Text style={styles.cardLabel}>KODA SCORE</Text>
-          <Text style={local.score}>{combinedScore}%</Text>
-          <Text style={styles.rowMeta}>Текущий срез по фактическим задачам, активным целям и привычкам.</Text>
-        </View>
-        <View style={local.breakdown}>
-          <BreakdownRow label="Задачи" value={taskScore} />
-          <BreakdownRow label="Цели" value={goalScore} />
-          <BreakdownRow label="Привычки" value={habitScore} />
-        </View>
+    </BentoGrid>
+
+    <BentoCard tone="light" style={local.goalsCard}>
+      <View style={local.goalsHeading}>
+        <View style={local.headingCopy}><Text style={local.sectionTitle}>Активные цели</Text><Text style={styles.rowMeta}>{activeGoals.length ? `В работе: ${activeGoals.length}` : 'Пока нет активных целей.'}</Text></View>
       </View>
-      <Card>
-        <Text style={styles.cardLabel}>АКТИВНЫЙ КОНТУР</Text>
-        <Text style={local.sectionValue}>{activeGoals.length} активных целей</Text>
-        <Text style={styles.rowMeta}>{totalTasks ? `${totalTasks - completedTasks} задач ещё требуют внимания.` : 'На сегодня задач в планнере нет.'}</Text>
-      </Card>
-    </View>
-  );
-  const right = (
-    <View style={local.aside}>
-      <Text style={local.asideTitle}>Сейчас</Text>
-      <Card>
-        <Text style={styles.cardLabel}>БЛИЖАЙШИЙ РЫЧАГ</Text>
-        <Text style={styles.cardText}>{taskScore <= goalScore && taskScore <= habitScore ? 'Закрой следующую задачу из планнера.' : goalScore <= habitScore ? 'Продвинь действие активной цели.' : 'Отметь следующую привычку.'}</Text>
-      </Card>
-      <Card>
-        <Text style={styles.cardLabel}>О ДАННЫХ</Text>
-        <Text style={styles.rowMeta}>История динамики появится здесь после накопления завершённых дней. Сейчас показан честный текущий срез.</Text>
-      </Card>
-    </View>
-  );
+      {activeGoals.length ? <View style={local.goalList}>{activeGoals.map(goal => {
+        const progress = calculateGoalProgress(goal);
+        const next = nextRoadmapAction(goal);
+        return <View key={goal.id} style={local.goalRow}>
+          <View style={local.goalHeading}><Text style={local.goalTitle}>{goal.title}</Text><Text style={local.goalProgress}>{progress}%</Text></View>
+          <ProgressLine value={progress} />
+          <Text style={local.goalNext}>{next.action ? `Следующее действие · ${next.action.title}` : next.current ? `На этапе «${next.current.title}» пока нет доступного действия` : 'Следующее действие пока не задано'}</Text>
+        </View>;
+      })}</View> : null}
+      <Text style={[styles.rowMeta, local.plannerSummary]}>{totalTasks ? `${completedTasks} из ${totalTasks} дел планнера выполнено.` : 'В планнере пока нет дел.'}</Text>
+    </BentoCard>
 
-  if (isDesktop) {
-    return <DesktopPageLayout main={main} right={right} />;
-  }
-
-  return (
-    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-      {main}
-      {right}
-    </ScrollView>
-  );
-}
-
-function ProgressMetric({ label, progress, value }: { label: string; progress: number; value: string }) {
-  return <View style={local.metric}><Text style={styles.cardLabel}>{label.toUpperCase()}</Text><Text style={local.metricValue}>{value}</Text><ProgressLine value={progress} /></View>;
-}
-
-function BreakdownRow({ label, value }: { label: string; value: number }) {
-  return <View style={local.breakdownRow}><View style={local.breakdownLabel}><Text style={styles.cardText}>{label}</Text><Text style={styles.rowMeta}>{value}%</Text></View><ProgressLine value={value} /></View>;
+  </BentoPage>;
 }
 
 const local = StyleSheet.create({
-  main: { gap: 14, minWidth: 0 },
-  metrics: { flexDirection: 'row', gap: 12, minWidth: 0 },
-  metric: { backgroundColor: panel, borderColor: line, borderRadius: 16, borderWidth: 1, flex: 1, gap: 9, minWidth: 0, padding: 16 },
-  metricValue: { color: text, fontSize: 24, fontWeight: '500', lineHeight: 30 },
-  scorePanel: { backgroundColor: panelSoft, borderColor: line, borderRadius: 18, borderWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 18, minHeight: 220, padding: 24 },
-  scoreLead: { flex: 0.8, gap: 10, justifyContent: 'center', minWidth: 140 },
-  score: { color: text, fontSize: 62, fontWeight: '500', lineHeight: 68 },
-  breakdown: { flex: 1.2, gap: 22, justifyContent: 'center', minWidth: 180 },
-  breakdownRow: { gap: 8 },
-  breakdownLabel: { flexDirection: 'row', justifyContent: 'space-between' },
-  sectionValue: { color: text, fontSize: 20, lineHeight: 26, marginVertical: 8 },
-  aside: { gap: 12 },
-  asideTitle: { color: text, fontSize: 18, lineHeight: 24 },
+  page: { alignSelf: 'center', gap: 20, maxWidth: 960, padding: 20, width: '100%' },
+  overview: { alignItems: 'stretch' },
+  chartSpan: { minWidth: 0, gap: 20 },
+  metricStack: { gap: 12, minWidth: 0,alignSelf:'flex-start' },
+  metric: { gap: 6, minHeight: 0, padding: 16 },
+  goalsCard: { gap: 12 },
+  goalsHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  headingCopy: { gap: 2 },
+  sectionTitle: { color: text, fontSize: 19, fontWeight: '600', lineHeight: 25 },
+  goalList: { gap: 10 },
+  goalRow: { borderTopColor: line, borderTopWidth: 1, gap: 8, paddingTop: 12 },
+  goalHeading: { alignItems: 'flex-start', flexDirection: 'row', gap: 8, justifyContent: 'space-between' },
+  goalTitle: { color: text, flex: 1, fontSize: 14, fontWeight: '600', lineHeight: 19 },
+  goalProgress: { color: text, fontSize: 14, fontWeight: '600', lineHeight: 19 },
+  goalNext: { color: muted, fontSize: 13, lineHeight: 18 },
+  plannerSummary: { borderTopColor: line, borderTopWidth: 1, marginTop: 4, paddingTop: 12 },
+  scoreNote: { gap: 6,paddingHorizontal:4 },
+  noteLabel: { color: muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  noteText: { color: muted, fontSize: 13, lineHeight: 19, maxWidth: 720 },
 });

@@ -1,17 +1,16 @@
+const { readAiConfig } = require('../src/ai/providerConfig');
 const { createAiProvider } = require('../src/ai/aiProvider');
+const { authorizeAiRequest } = require('../src/server/aiSecurity');
 
-const aiProvider = createAiProvider({
-  geminiApiKey: process.env.GEMINI_API_KEY,
-  geminiModel: process.env.GEMINI_MODEL,
-  openRouterApiKey: process.env.OPENROUTER_API_KEY,
-  openRouterModel: process.env.OPENROUTER_MODEL,
-});
+const aiProvider = createAiProvider(readAiConfig(process.env));
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
+
+  if (!(await authorizeAiRequest(req, res))) return;
 
   const body = req.body || {};
   const input = {

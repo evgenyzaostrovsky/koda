@@ -36,7 +36,7 @@ export function WorkspaceActions({ account, themeId, onThemeChange, items, syncT
 }
 
 const s = StyleSheet.create({
-  icon: { backgroundColor: panel, borderWidth: 1, borderColor: line, borderRadius: 14, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  icon: { backgroundColor: panel, borderWidth: 0, borderColor: line, borderRadius: 99, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   overlay: { flex: 1, backgroundColor: 'rgba(20,30,23,.35)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   sheet: { width: '100%', maxWidth: 420, backgroundColor: panel, padding: 22, borderRadius: 22, borderWidth: 1, borderColor: line, gap: 14 },
   heading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

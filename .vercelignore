@@ -9,3 +9,8 @@ dist-audit
 *-check*.png
 *-preview.png
 audit-*.png
+.tmp/
+.codex/
+.agents/
+supabase/.temp/
+docs/evidence/

@@ -3,7 +3,8 @@ import { Archive, Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SectionTitle } from '../components';
-import { accent, accentBorder, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
+import { BentoCard, BentoGrid, MetricCard, bentoWidths } from '../components/Bento';
+import { accent, accentBorder, activeBg, activeText, faint, line, muted, panel, panelSoft, readingWidths, text } from '../theme';
 import type { Project, ProjectTask } from '../types';
 import { uid } from '../utils';
 
@@ -39,7 +40,9 @@ export function ProjectsScreen({
   const archivedProjects = projects.filter(project => project.status === 'archived')
     .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt));
   const { setOpen: setRightPanelOpen } = useRightPanel();
+  const [detailOpen,setDetailOpen]=useState(false);
   const [projectListMode, setProjectListMode] = useState<'active' | 'archived'>('active');
+  const displayedProjects = projectListMode === 'archived' ? archivedProjects : sortedProjects;
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(sortedProjects[0]?.id ?? null);
   const selectedProject = sortedProjects.find((project) => project.id === selectedProjectId) ?? sortedProjects[0] ?? null;
   const [projectDraft, setProjectDraft] = useState<ProjectDraft>(emptyProjectDraft);
@@ -83,6 +86,7 @@ export function ProjectsScreen({
 
     onProjectsChange((items) => [nextProject, ...items]);
     setSelectedProjectId(nextProject.id);
+    setDetailOpen(true);
     setProjectModalOpen(false);
     setProjectDraft(emptyProjectDraft);
   }
@@ -166,6 +170,7 @@ export function ProjectsScreen({
   }
 
   function archiveProject(projectId: string) {
+    setDetailOpen(false);
     const now = new Date().toISOString();
     onProjectsChange((items) => items.map((project) => (project.id === projectId ? { ...project, status: 'archived', updatedAt: now } : project)));
     setSelectedProjectId((current) => (current === projectId ? null : current));
@@ -174,6 +179,7 @@ export function ProjectsScreen({
   }
 
   function showArchive() {
+    setDetailOpen(false);
     setProjectListMode('archived');
     if (isDesktop) setRightPanelOpen(true);
   }
@@ -189,7 +195,7 @@ export function ProjectsScreen({
 
   return (
     <View style={local.screen}>
-      <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll]} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll, { alignSelf: 'center', maxWidth: bentoWidths.projects, width: '100%' }]} showsVerticalScrollIndicator={false}>
         <View style={local.header}>
           <SectionTitle title="Проекты" subtitle="Вещи, которые состоят из нескольких дел" />
           <View style={local.headerActions}>
@@ -203,14 +209,20 @@ export function ProjectsScreen({
           </View>
         </View>
 
+        {!detailOpen?<View style={{gap:14}}>
+          <Text style={local.meta}>{sortedProjects.length} активных проектов · {sortedProjects.reduce((n,p)=>n+p.tasks.filter(t=>!t.deletedAt&&t.status!=='done').length,0)} задач впереди</Text>
+          <View style={local.listTabs}><Pressable accessibilityRole="button" onPress={()=>setProjectListMode('active')} style={[local.listTab,projectListMode==='active'&&local.projectCardActive]}><Text style={local.ghostText}>Активные</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>setProjectListMode('archived')} style={[local.listTab,projectListMode==='archived'&&local.projectCardActive]}><Text style={local.ghostText}>Архив</Text></Pressable></View>
+          <BentoGrid columns={2} style={local.projectLibraryGrid}>{displayedProjects.map((project,index)=>{const tasks=project.tasks.filter(task=>!task.deletedAt),done=tasks.filter(task=>task.status==='done').length,pending=tasks.filter(task=>task.status!=='done').sort((a,b)=>(a.plannedDate||'9999').localeCompare(b.plannedDate||'9999'));const nextTask=pending[0];return <BentoCard key={project.id} tone={index===0&&projectListMode==='active'?'soft':'light'} style={[local.projectLibraryCard,displayedProjects.length===1&&isDesktop&&local.singleProjectCard]}><Text style={local.projectTitle}>{project.title}</Text>{project.description&&<Text numberOfLines={2} style={local.meta}>{project.description}</Text>}{tasks.length?<><View style={local.progressTrack}><View style={[local.progressFill,{width:`${done/tasks.length*100}%`}]}/></View><Text style={local.meta}>{done} из {tasks.length} задач закрыто</Text></>:<Text style={local.meta}>Задачи пока не добавлены.</Text>}{projectListMode==='active'&&nextTask?<View style={local.projectNextTask}><Text style={local.meta}>Следующее действие</Text><Text style={local.nextTaskTitle}>{nextTask.title}</Text>{nextTask.plannedDate?<Text style={local.meta}>{nextTask.plannedDate}{nextTask.plannedTime?` · ${nextTask.plannedTime}`:''}</Text>:null}</View>:null}<Pressable accessibilityRole="button" accessibilityLabel={projectListMode==='archived'?`Вернуть проект «${project.title}»`:`Открыть проект «${project.title}»`} onPress={()=>{if(projectListMode==='archived')restoreProject(project.id);else{setSelectedProjectId(project.id);setDetailOpen(true)}}} style={local.inlineAdd}><Text style={local.inlineAddText}>{projectListMode==='archived'?'Вернуть в активные':'Открыть проект'}</Text></Pressable></BentoCard>})}</BentoGrid>
+          {displayedProjects.length===0&&<BentoCard><Text style={local.meta}>{projectListMode==='archived'?'Архив пока пуст.':'Пока нет активных проектов. Начни с одного понятного результата.'}</Text></BentoCard>}
+        </View>:<View><Pressable accessibilityRole="button" accessibilityLabel="К списку проектов" onPress={()=>setDetailOpen(false)} style={local.inlineAdd}><Text style={local.inlineAddText}>Все проекты</Text></Pressable>
         <View style={isDesktop ? local.desktopLayout : local.mobileLayout} testID={isDesktop ? 'desktop-page-columns' : undefined}>
-          <RightPanel enabled={isDesktop}><View style={isDesktop ? local.projectColumn : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
+          <RightPanel enabled={isDesktop}><View style={[isDesktop ? local.projectColumn : undefined, !isDesktop && { display: 'none' }]} testID={isDesktop ? 'desktop-right-column' : undefined}>
             {isDesktop ? (
               <View style={local.rightHeader}>
                 <View>
                   <Text style={local.rightTitle}>Проекты</Text>
                 </View>
-                <Pressable onPress={openProjectModal} style={local.rightAddButton}><Plus color={accent} size={18} strokeWidth={3} /></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Создать проект" onPress={openProjectModal} style={local.rightAddButton}><Plus color={accent} size={18} strokeWidth={3} /></Pressable>
               </View>
             ) : null}
             <View style={local.listTabs}>
@@ -224,7 +236,7 @@ export function ProjectsScreen({
             {projectListMode === 'archived' ? (
               <View style={local.archiveList}>
                 {archivedProjects.length ? archivedProjects.map(project => (
-                  <View key={project.id} style={local.projectCard}>
+                  <BentoCard key={project.id} tone="light" style={local.projectCard}>
                     <Text style={local.projectTitle}>{project.title}</Text>
                     {project.description ? <Text numberOfLines={2} style={local.meta}>{project.description}</Text> : null}
                     <Text style={local.meta}>Задач: {project.tasks.filter(task => !task.deletedAt).length}</Text>
@@ -232,7 +244,7 @@ export function ProjectsScreen({
                       <RotateCcw color={accent} size={16} />
                       <Text style={local.ghostText}>Вернуть в активные</Text>
                     </Pressable>
-                  </View>
+                  </BentoCard>
                 )) : <Text style={local.meta}>Архивных проектов пока нет.</Text>}
               </View>
             ) : sortedProjects.length ? (
@@ -244,6 +256,9 @@ export function ProjectsScreen({
 
                 return (
                   <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Открыть проект: ${project.title}`}
+                    accessibilityState={{ selected: active }}
                     key={project.id}
                     onPress={() => setSelectedProjectId(project.id)}
                     style={[local.projectCard, active && local.projectCardActive]}
@@ -280,50 +295,46 @@ export function ProjectsScreen({
                   </Pressable>
                 </View>
 
-                <View style={local.summaryRow}>
-                  <Text style={local.summaryValue}>{progress}%</Text>
-                  <View style={local.flexText}>
-                    <View style={local.progressTrack}>
-                      <View style={[local.progressFill, { width: `${progress}%` }]} />
-                    </View>
-                    <Text style={local.meta}>{doneTasks} из {totalTasks || 0} задач закрыто</Text>
-                  </View>
-                </View>
+                <BentoCard tone="soft" style={local.projectProgressCard}>
+                  <View style={local.projectProgressTop}><Text style={local.projectProgressTitle}>Ход проекта</Text><Text style={local.projectProgressValue}>{progress}%</Text></View>
+                  <View style={local.progressTrack}><View style={[local.progressFill, { width: `${progress}%` }]} /></View>
+                  <Text style={local.meta}>{doneTasks} из {totalTasks} задач закрыто · {Math.max(0, totalTasks - doneTasks)} впереди</Text>
+                </BentoCard>
 
-                <Pressable onPress={() => openTaskModal()} style={local.inlineAdd}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Добавить задачу" onPress={() => openTaskModal()} style={local.inlineAdd}>
                   <Plus color={accent} size={15} />
                   <Text style={local.inlineAddText}>Добавить задачу</Text>
                 </Pressable>
 
-                <View style={local.taskList}>
-                  {activeTasks.length ? activeTasks.map((task) => {
-                    const done = task.status === 'done';
-
-                    return (
-                      <View key={task.id} style={[local.taskRow, done && local.taskRowDone]}>
-                        <Pressable onPress={() => toggleTask(task.id)} style={[local.taskCheck, done && local.taskCheckDone]}>
-                          {done ? <Check color={activeText} size={13} strokeWidth={3} /> : null}
-                        </Pressable>
-                        <View style={local.flexText}>
-                          <Text style={[local.taskTitle, done && local.doneText]}>{task.title}</Text>
-                          {task.description ? <Text style={local.taskDescription}>{task.description}</Text> : null}
-                          {task.cost ? <Text style={local.costText}>{task.cost}</Text> : null}
-                          {task.plannedDate ? <Text style={local.taskDescription}>В планнере: {formatProjectTaskSchedule(task)}</Text> : null}
-                        </View>
-                        <View style={local.taskActions}>
-                          <Pressable onPress={() => openTaskModal(task)} style={local.iconButton}>
-                            <Pencil color={muted} size={15} />
-                          </Pressable>
-                          <Pressable onPress={() => setDeleteTaskId(task.id)} style={local.iconButton}>
-                            <Trash2 color={muted} size={15} />
-                          </Pressable>
-                        </View>
-                      </View>
-                    );
-                  }) : (
-                    <Text style={local.meta}>В проекте пока нет задач.</Text>
-                  )}
-                </View>
+                {activeTasks.length ? (
+                  <View style={local.taskGroups}>
+                    {(['todo', 'done'] as const).map((status) => {
+                      const tasks = activeTasks.filter((task) => task.status === status);
+                      if (!tasks.length) return null;
+                      return <View key={status} style={local.taskGroup}>
+                        <View style={local.taskGroupHeader}><Text style={local.taskGroupTitle}>{status === 'todo' ? 'Впереди' : 'Готово'}</Text><Text style={local.taskGroupCount}>{tasks.length}</Text></View>
+                        <BentoCard tone="light" style={[local.taskList, { padding: 0 }]}>{tasks.map((task) => {
+                          const done = task.status === 'done';
+                          return (
+                            <View key={task.id} style={[local.taskRow, done && local.taskRowDone]}>
+                              <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: Boolean(done) }} aria-checked={Boolean(done)} accessibilityLabel={`Отметить «${task.title}» ${done ? 'незавершённой' : 'готовой'}`} onPress={() => toggleTask(task.id)} style={local.taskCheckHitArea}><View style={[local.taskCheck, done && local.taskCheckDone]}>{done ? <Check color={activeText} size={13} strokeWidth={3} /> : null}</View></Pressable>
+                              <View style={local.flexText}>
+                                <Text style={[local.taskTitle, done && local.doneText]}>{task.title}</Text>
+                                {task.description ? <Text style={local.taskDescription}>{task.description}</Text> : null}
+                                {task.cost ? <Text style={local.costText}>{task.cost}</Text> : null}
+                                {task.plannedDate ? <Text style={local.taskDescription}>В планнере: {formatProjectTaskSchedule(task)}</Text> : null}
+                              </View>
+                              <View style={local.taskActions}>
+                                <Pressable accessibilityRole="button" accessibilityLabel={`Изменить задачу «${task.title}»`} onPress={() => openTaskModal(task)} style={local.iconButton}><Pencil color={muted} size={15} /></Pressable>
+                                <Pressable accessibilityRole="button" accessibilityLabel={`Удалить задачу «${task.title}»`} onPress={() => setDeleteTaskId(task.id)} style={local.iconButton}><Trash2 color={muted} size={15} /></Pressable>
+                              </View>
+                            </View>
+                          );
+                        })}</BentoCard>
+                      </View>;
+                    })}
+                  </View>
+                ) : <View style={local.projectEmptyTasks}><Text style={local.projectEmptyTitle}>Начни с первого шага</Text><Text style={local.meta}>Добавь задачи, чтобы видеть движение проекта.</Text><Pressable accessibilityRole="button" accessibilityLabel="Добавить первую задачу" onPress={() => openTaskModal()} style={local.inlineAdd}><Plus color={accent} size={15} /><Text style={local.inlineAddText}>Добавить первую задачу</Text></Pressable></View>}
               </>
             ) : (
               <View style={local.mainEmptyState}>
@@ -335,7 +346,7 @@ export function ProjectsScreen({
               </View>
             )}
           </View>
-        </View>
+        </View></View>}
       </ScrollView>
 
       <ProjectModal
@@ -375,6 +386,7 @@ function ProjectModal({ draft, onChange, onClose, onSave, visible }: {
         <View style={local.modalCard}>
           <ModalHeader onClose={onClose} title="Новый проект" />
           <TextInput
+            accessibilityLabel="Название проекта"
             onChangeText={(title) => onChange({ ...draft, title })}
             placeholder="Например, мой авто"
             placeholderTextColor={faint}
@@ -382,6 +394,7 @@ function ProjectModal({ draft, onChange, onClose, onSave, visible }: {
             value={draft.title}
           />
           <TextInput
+            accessibilityLabel="Описание проекта"
             multiline
             onChangeText={(description) => onChange({ ...draft, description })}
             placeholder="Короткое описание"
@@ -389,7 +402,7 @@ function ProjectModal({ draft, onChange, onClose, onSave, visible }: {
             style={[local.input, local.textArea]}
             value={draft.description}
           />
-          <Pressable disabled={!draft.title.trim()} onPress={onSave} style={[local.primaryButton, !draft.title.trim() && local.disabled]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Создать проект" disabled={!draft.title.trim()} onPress={onSave} style={[local.primaryButton, !draft.title.trim() && local.disabled]}>
             <Text style={local.primaryText}>Создать</Text>
           </Pressable>
         </View>
@@ -412,6 +425,7 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
         <View style={local.modalCard}>
           <ModalHeader onClose={onClose} title={editing ? 'Редактировать задачу' : 'Новая задача'} />
           <TextInput
+            accessibilityLabel="Название задачи"
             onChangeText={(title) => onChange({ ...draft, title })}
             placeholder="Поменять лобовое стекло"
             placeholderTextColor={faint}
@@ -419,6 +433,7 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
             value={draft.title}
           />
           <TextInput
+            accessibilityLabel="Описание задачи"
             multiline
             onChangeText={(description) => onChange({ ...draft, description })}
             placeholder="Описание, детали, контакты"
@@ -427,6 +442,7 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
             value={draft.description}
           />
           <TextInput
+            accessibilityLabel="Стоимость задачи"
             onChangeText={(cost) => onChange({ ...draft, cost })}
             placeholder="Стоимость, например 25 000 ₽"
             placeholderTextColor={faint}
@@ -435,6 +451,7 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
           />
           <View style={local.taskScheduleRow}>
             <TextInput
+              accessibilityLabel="Дата задачи в планнере"
               onChangeText={(plannedDate) => onChange({ ...draft, plannedDate })}
               placeholder="Дата в планнере: 2026-08-10"
               placeholderTextColor={faint}
@@ -442,6 +459,7 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
               value={draft.plannedDate}
             />
             <TextInput
+              accessibilityLabel="Время задачи"
               onChangeText={(plannedTime) => onChange({ ...draft, plannedTime })}
               placeholder="Время"
               placeholderTextColor={faint}
@@ -449,7 +467,7 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
               value={draft.plannedTime}
             />
           </View>
-          <Pressable disabled={!draft.title.trim()} onPress={onSave} style={[local.primaryButton, !draft.title.trim() && local.disabled]}>
+          <Pressable accessibilityRole="button" accessibilityLabel={editing ? 'Сохранить задачу' : 'Добавить задачу'} disabled={!draft.title.trim()} onPress={onSave} style={[local.primaryButton, !draft.title.trim() && local.disabled]}>
             <Text style={local.primaryText}>{editing ? 'Сохранить' : 'Добавить'}</Text>
           </Pressable>
         </View>
@@ -466,8 +484,8 @@ function ConfirmModal({ onCancel, onConfirm, visible }: { onCancel: () => void; 
           <Text style={local.modalTitle}>Удалить задачу?</Text>
           <Text style={local.meta}>Она исчезнет из проекта.</Text>
           <View style={local.confirmActions}>
-            <Pressable onPress={onCancel} style={local.secondaryButton}><Text style={local.secondaryText}>Отмена</Text></Pressable>
-            <Pressable onPress={onConfirm} style={local.dangerButton}><Text style={local.primaryText}>Удалить</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={onCancel} style={local.secondaryButton}><Text style={local.secondaryText}>Отмена</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={onConfirm} style={local.dangerButton}><Text style={local.primaryText}>Удалить</Text></Pressable>
           </View>
         </View>
       </View>
@@ -479,7 +497,7 @@ function ModalHeader({ onClose, title }: { onClose: () => void; title: string })
   return (
     <View style={local.modalHeader}>
       <Text style={local.modalTitle}>{title}</Text>
-      <Pressable onPress={onClose} style={local.closeButton}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Закрыть окно: ${title}`} onPress={onClose} style={local.closeButton}>
         <X color={muted} size={18} />
       </Pressable>
     </View>
@@ -493,60 +511,77 @@ function formatProjectTaskSchedule(task: ProjectTask) {
 const local = StyleSheet.create({
   screen: { flex: 1, minHeight: 0 },
   scroll: { gap: 16, paddingBottom: 96 },
-  desktopScroll: { paddingBottom: 36, width: '100%' },
+  desktopScroll: { alignSelf: 'center', maxWidth: readingWidths.projects, paddingBottom: 36, width: '100%' },
   header: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', width: '100%' },
   headerActions: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   archiveButton: { alignItems: 'center', flexDirection: 'row', gap: 7, borderColor: line, borderWidth: 1, borderRadius: 12, minHeight: 44, paddingHorizontal: 12 },
   listTabs: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   listTab: { flex: 1, alignItems: 'center', justifyContent: 'center', borderColor: line, borderWidth: 1, borderRadius: 12, minHeight: 44, paddingHorizontal: 6 },
   archiveList: { gap: 10 },
-  addButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 999, height: 44, justifyContent: 'center', width: 44 },
-  desktopLayout: { alignItems: 'flex-start', flexDirection: 'row-reverse', gap: 0, width: '100%' },
+  addButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 999, height: 46, justifyContent: 'center', width: 46 },
+  desktopLayout: { alignItems: 'flex-start', alignSelf: 'center', flexDirection: 'row-reverse', gap: 24, maxWidth: readingWidths.projects, width: '100%' },
   mobileLayout: { gap: 14 },
+  projectLibraryGrid: { alignItems: 'flex-start' },
+  projectLibraryCard: { alignSelf: 'flex-start', gap: 7, maxWidth: '100%', padding: 16, width: '100%' },
+  singleProjectCard: { maxWidth: 520 },
+  projectNextTask: { borderTopColor: line, borderTopWidth: 1, gap: 3, marginTop: 2, paddingTop: 8 },
+  nextTaskTitle: { color: text, fontSize: 14, fontWeight: '600', lineHeight: 19 },
   projectColumn: { borderLeftColor: line, borderLeftWidth: 1, flexShrink: 0, gap: 10, paddingLeft: 20, width: 282 },
   taskColumn: { flex: 1, gap: 12, minWidth: 0 },
   rightHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 52 },
   rightTitle: { color: text, fontSize: 18, fontWeight: '800', lineHeight: 24 },
-  rightAddButton: { alignItems: 'center', backgroundColor: panelSoft, borderRadius: 12, height: 32, justifyContent: 'center', width: 32 },
+  rightAddButton: { alignItems: 'center', backgroundColor: panelSoft, borderRadius: 12, height: 44, justifyContent: 'center', width: 44 },
   mainEmptyState: { gap: 8, justifyContent: 'center', minHeight: 220 },
-  projectCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 9, padding: 14 },
-  projectCardActive: { borderColor: accentBorder },
+  projectCard: { backgroundColor: panel, borderColor: line, borderRadius: 22, borderWidth: 1, gap: 8, padding: 14 },
+  projectCardActive: { backgroundColor: activeBg, borderColor: activeBg },
   projectTop: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
   flexText: { flex: 1, gap: 3, minWidth: 0 },
   projectTitle: { color: text, fontSize: 15, fontWeight: '700', lineHeight: 20 },
   detailTitle: { color: text, fontSize: 22, fontWeight: '800', lineHeight: 28 },
   meta: { color: muted, fontSize: 12, lineHeight: 17 },
   percent: { color: text, fontSize: 18, lineHeight: 24 },
-  progressTrack: { backgroundColor: line, borderRadius: 999, height: 4, width: '100%' },
-  progressFill: { backgroundColor: accent, height: 2 },
+  progressTrack: { backgroundColor: line, borderRadius: 999, height: 6, width: '100%' },
+  progressFill: { backgroundColor: accent, borderRadius: 999, height: 6 },
   emptyState: { borderColor: line, borderRadius: 12, borderWidth: 1, gap: 10, padding: 16 },
   emptyTitle: { color: text, fontSize: 18, fontWeight: '700', lineHeight: 24 },
-  primaryButton: { alignItems: 'center', backgroundColor: accent, borderRadius: 12, justifyContent: 'center', minHeight: 44, paddingHorizontal: 16 },
+  primaryButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 16, justifyContent: 'center', minHeight: 48, paddingHorizontal: 16 },
   primaryText: { color: activeText, fontSize: 13, fontWeight: '800' },
   detailHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between', width: '100%' },
-  ghostButton: { borderBottomColor: accent, borderBottomWidth: 1, minHeight: 30, paddingTop: 4 },
+  ghostButton: { borderBottomColor: accent, borderBottomWidth: 1, minHeight: 44, justifyContent: 'center' },
   ghostText: { color: accent, fontSize: 12, fontWeight: '700' },
   summaryRow: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 14, padding: 14 },
   summaryValue: { color: text, fontSize: 30, lineHeight: 36 },
-  inlineAdd: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: 7, minHeight: 34 },
+  inlineAdd: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: 7, minHeight: 44 },
   inlineAddText: { color: accent, fontSize: 13, fontWeight: '700' },
-  taskList: { borderColor: line, borderRadius: 12, borderWidth: 1, overflow: 'hidden' },
-  taskRow: { alignItems: 'flex-start', borderBottomColor: line, borderBottomWidth: 1, flexDirection: 'row', gap: 10, minHeight: 54, padding: 12 },
+  projectProgressCard: { backgroundColor: panel, borderColor: line, borderRadius: 22, borderWidth: 1, gap: 8, padding: 14 },
+  projectProgressTop: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  projectProgressTitle: { color: text, fontSize: 15, fontWeight: '700' },
+  projectProgressValue: { color: text, fontSize: 21, fontWeight: '700' },
+  taskGroups: { gap: 14 },
+  taskGroup: { gap: 9 },
+  taskGroupHeader: { alignItems: 'center', flexDirection: 'row', gap: 8, paddingHorizontal: 2 },
+  taskGroupTitle: { color: text, fontSize: 16, fontWeight: '700' },
+  taskGroupCount: { backgroundColor: panelSoft, borderRadius: 99, color: muted, fontSize: 12, overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 3 },
+  projectEmptyTasks: { alignItems: 'flex-start', backgroundColor: panel, borderColor: line, borderRadius: 22, borderWidth: 1, gap: 8, padding: 18 },
+  projectEmptyTitle: { color: text, fontSize: 17, fontWeight: '700' },
+  taskList: { backgroundColor: panel, borderColor: line, borderRadius: 20, borderWidth: 1, overflow: 'hidden' },
+  taskRow: { alignItems: 'flex-start', borderBottomColor: line, borderBottomWidth: 1, flexDirection: 'row', gap: 8, minHeight: 54, paddingHorizontal: 8, paddingVertical: 8 },
   taskRowDone: { opacity: 0.66 },
-  taskCheck: { alignItems: 'center', borderColor: muted, borderRadius: 5, borderWidth: 1, height: 20, justifyContent: 'center', marginTop: 1, width: 20 },
-  taskCheckDone: { backgroundColor: accent, borderColor: accent },
+  taskCheckHitArea: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
+  taskCheck: { alignItems: 'center', borderColor: muted, borderRadius: 5, borderWidth: 1, height: 20, justifyContent: 'center', width: 20 },
+  taskCheckDone: { backgroundColor: activeBg, borderColor: activeBg },
   taskTitle: { color: text, fontSize: 14, fontWeight: '700', lineHeight: 19 },
   taskDescription: { color: muted, fontSize: 12, lineHeight: 17 },
   costText: { color: accent, fontSize: 12, fontWeight: '700', lineHeight: 17 },
   doneText: { color: muted, textDecorationLine: 'line-through' },
   taskActions: { alignItems: 'center', flexDirection: 'row', gap: 6 },
-  iconButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, height: 32, justifyContent: 'center', width: 32 },
+  iconButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 },
   modalOverlay: { alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.72)', flex: 1, justifyContent: 'center', padding: 18 },
   modalCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 12, maxWidth: 430, padding: 16, width: '100%' },
   confirmCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, gap: 12, maxWidth: 360, padding: 16, width: '100%' },
   modalHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   modalTitle: { color: text, fontSize: 18, fontWeight: '700', lineHeight: 24 },
-  closeButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },
+  closeButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 },
   input: { borderColor: line, borderRadius: 12, borderWidth: 1, color: text, fontSize: 14, minHeight: 44, paddingHorizontal: 12 },
   taskScheduleRow: { flexDirection: 'row', gap: 8 },
   scheduleInput: { flex: 1 },
@@ -554,7 +589,7 @@ const local = StyleSheet.create({
   textArea: { minHeight: 86, paddingTop: 12, textAlignVertical: 'top' },
   disabled: { opacity: 0.35 },
   confirmActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end' },
-  secondaryButton: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
+  secondaryButton: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
   secondaryText: { color: text, fontSize: 13, fontWeight: '700' },
-  dangerButton: { alignItems: 'center', backgroundColor: '#ff4d4d', borderRadius: 12, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
+  dangerButton: { alignItems: 'center', backgroundColor: '#ff4d4d', borderRadius: 12, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 },
 });

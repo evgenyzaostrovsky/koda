@@ -1,10 +1,11 @@
 import { usePomodoroController } from '../usePomodoroTimer';
 import { RightPanel } from '../components/RightPanel';
-import { useState } from 'react';
+import { BentoCard, BentoGrid, MetricCard, bentoWidths } from '../components/Bento';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { ChevronDown, Pause, Play, RotateCcw, Volume2 } from 'lucide-react-native';
 import { ProgressLine, SectionTitle } from '../components';
-import { accent, accentBorder, accentFaint, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
+import { accent, accentBorder, accentFaint, activeText, faint, ink, inkText, lime, line, muted, panel, panelSoft, readingWidths, text } from '../theme';
 import type { PomodoroSettings, PomodoroSoundId } from '../types';
 
 type PomodoroMode = 'work' | 'break' | 'longBreak';
@@ -59,19 +60,21 @@ export function PomodoroScreen({
 
   function updateMinutes(key: keyof Pick<PomodoroSettings, 'breakMinutes' | 'longBreakMinutes' | 'sessionsBeforeLongBreak' | 'workMinutes'>, value: string) {
     const numeric = Number(value.replace(/[^\d]/g, ''));
-    if (!Number.isFinite(numeric)) return;
+    if (!Number.isFinite(numeric)) return settings[key];
     const limits = key === 'sessionsBeforeLongBreak' ? [2, 12] : [1, 180];
-    onSettingsChange({ [key]: Math.min(limits[1], Math.max(limits[0], numeric || limits[0])) });
+    const normalized = Math.min(limits[1], Math.max(limits[0], numeric || limits[0]));
+    onSettingsChange({ [key]: normalized });
+    return normalized;
   }
 
   const settingsPanel = (
     <View style={local.panel}>
       <Text style={local.panelTitle}>Настройки</Text>
       <View style={local.settingsGrid}>
-        <TimerField label="Работа" value={settings.workMinutes} onChange={(value) => updateMinutes('workMinutes', value)} suffix="мин" />
-        <TimerField label="Отдых" value={settings.breakMinutes} onChange={(value) => updateMinutes('breakMinutes', value)} suffix="мин" />
-        <TimerField label="Длинный отдых" value={settings.longBreakMinutes} onChange={(value) => updateMinutes('longBreakMinutes', value)} suffix="мин" />
-        <TimerField label="После циклов" value={settings.sessionsBeforeLongBreak} onChange={(value) => updateMinutes('sessionsBeforeLongBreak', value)} suffix="раз" />
+        <TimerField label="Работа" value={settings.workMinutes} onCommit={(value) => updateMinutes('workMinutes', value)} suffix="мин" />
+        <TimerField label="Отдых" value={settings.breakMinutes} onCommit={(value) => updateMinutes('breakMinutes', value)} suffix="мин" />
+        <TimerField label="Длинный отдых" value={settings.longBreakMinutes} onCommit={(value) => updateMinutes('longBreakMinutes', value)} suffix="мин" />
+        <TimerField label="После циклов" value={settings.sessionsBeforeLongBreak} onCommit={(value) => updateMinutes('sessionsBeforeLongBreak', value)} suffix="раз" />
       </View>
     </View>
   );
@@ -126,11 +129,11 @@ export function PomodoroScreen({
 
   return (
     <>
-    <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll]} showsVerticalScrollIndicator={false}>
-      <View style={isDesktop ? local.desktopLayout : undefined}>
+    <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll, { alignSelf: 'center', maxWidth: bentoWidths.timer, width: '100%' }]} showsVerticalScrollIndicator={false}>
+      <View style={{gap:24}}>
         <View style={isDesktop ? local.mainColumn : undefined}>
           <SectionTitle title="Таймер" subtitle="Помодоро без лишнего шума" />
-          <View style={local.hero}>
+          <BentoCard tone="dark" style={local.hero}>
             <View style={local.heroTop}>
               <View>
                 <Text style={local.kicker}>{modeLabel(mode)}</Text>
@@ -144,8 +147,9 @@ export function PomodoroScreen({
               <Text style={local.timerMeta}>{statusLabel(status)}</Text>
             </View>
 
-            <ProgressLine value={progress} />
-
+            <View accessibilityLabel={`Прошло ${progress}%, осталось ${100 - progress}%`} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: progress }}>
+              <ProgressLine value={progress} />
+            </View>
             <View style={local.controls}>
               {status === 'running' ? (
                 <Pressable accessibilityRole="button" onPress={pauseTimer} style={local.primaryControl}>
@@ -171,35 +175,48 @@ export function PomodoroScreen({
                 </Pressable>
               ))}
             </View>
-          </View>
+          </BentoCard>
         </View>
 
-        <RightPanel enabled={isDesktop}><View style={isDesktop ? local.sideColumn : undefined}>
+        <BentoGrid columns={2} style={{marginTop:24}}>
+          <MetricCard label="Завершено фокус-сессий" value={completedWorkSessions} detail="Завершённые рабочие интервалы" tone="soft"/>
           {settingsPanel}
           {soundsPanel}
-          <View style={local.panel}>
-            <Text style={local.panelTitle}>Как работает</Text>
-            <Text style={local.hint}>Таймер автоматически переключает работу и отдых. Длинный отдых включается после заданного числа фокус-сессий.</Text>
-          </View>
-        </View></RightPanel>
+        </BentoGrid>
       </View>
     </ScrollView>
     </>
   );
 }
 
-function TimerField({ label, onChange, suffix, value }: { label: string; onChange: (value: string) => void; suffix: string; value: number }) {
+function TimerField({ label, onCommit, suffix, value }: { label: string; onCommit: (value: string) => number; suffix: string; value: number }) {
+  const [draft, setDraft] = useState(String(value));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused) setDraft(String(value));
+  }, [focused, value]);
+
   return (
     <View style={local.timerField}>
       <Text style={local.fieldLabel}>{label}</Text>
       <View style={local.fieldRow}>
         <TextInput
+          accessibilityLabel={`Таймер: ${label}`}
           inputMode="numeric"
           keyboardType="number-pad"
-          onChangeText={onChange}
+          onChangeText={setDraft}
+          onFocus={() => setFocused(true)}
+          onBlur={() => {
+            setFocused(false);
+            if (draft.trim() === '') {
+              setDraft(String(value));
+              return;
+            }
+            setDraft(String(onCommit(draft)));
+          }}
           placeholderTextColor={faint}
           style={local.fieldInput}
-          value={String(value)}
+          value={draft}
         />
         <Text style={local.fieldSuffix}>{suffix}</Text>
       </View>
@@ -401,7 +418,7 @@ function playNoiseSweep(context: AudioContext, event: 'end' | 'start', kind: 'so
 
 const local: Record<string, any> = {
   controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  desktopLayout: { alignSelf: 'center', flexDirection: 'row', gap: 0, width: '100%' },
+  desktopLayout: { alignItems: 'flex-start', alignSelf: 'center', flexDirection: 'row', gap: 24, justifyContent: 'center', maxWidth: 1100, width: '100%' },
   desktopScroll: { paddingBottom: 72, paddingTop: 8 },
   dropdown: { gap: 8 },
   dropdownButton: {
@@ -446,21 +463,21 @@ const local: Record<string, any> = {
     outlineStyle: 'none',
     padding: 0,
   },
-  fieldLabel: { color: muted, fontSize: 11, letterSpacing: 2, lineHeight: 15, textTransform: 'uppercase' },
+  fieldLabel: { color: muted, fontSize: 12, letterSpacing: 2, lineHeight: 15, textTransform: 'uppercase' },
   fieldRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
   fieldSuffix: { color: faint, fontSize: 12 },
   hero: {
-    backgroundColor: panel,
-    borderColor: line,
-    borderRadius: 10,
-    borderWidth: 1,
-    gap: 18,
-    padding: 18,
+    backgroundColor: ink,
+    borderRadius: 28,
+    gap: 24,
+    minHeight: 380,
+    justifyContent: 'space-between',
+    padding: 30,
   },
   heroTop: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' },
   hint: { color: muted, fontSize: 12, lineHeight: 18 },
-  kicker: { color: accent, fontSize: 12, fontWeight: '800', letterSpacing: 2, lineHeight: 16, textTransform: 'uppercase' },
-  mainColumn: { flex: 1, gap: 18, minWidth: 0, maxWidth: 760, marginRight: 'auto' },
+  kicker: { color: lime, fontSize: 12, fontWeight: '700', letterSpacing: 1.6, lineHeight: 16, textTransform: 'uppercase' },
+  mainColumn: { alignSelf: 'center', flex: 1, gap: 18, minWidth: 0, maxWidth: readingWidths.timer, width: '100%' },
   modeButton: {
     alignItems: 'center',
     borderColor: line,
@@ -471,11 +488,14 @@ const local: Record<string, any> = {
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
-  modeButtonActive: { backgroundColor: accentFaint, borderColor: accentBorder },
-  modeButtonText: { color: muted, fontSize: 12, fontWeight: '700' },
-  modeButtonTextActive: { color: accent },
+  modeButtonActive: { backgroundColor: lime, borderColor: lime },
+  modeButtonText: { color: '#c0cab4', fontSize: 12, fontWeight: '500' },
+  modeButtonTextActive: { color: ink, fontWeight: '800' },
   modeSwitch: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  nextText: { color: muted, fontSize: 13, lineHeight: 18, marginTop: 4 },
+  nextText: { color: '#c0cab4', fontSize: 13, lineHeight: 18, marginTop: 4 },
+  remainingRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: -14 },
+  remainingLabel: { color: '#c0cab4', fontSize: 12, lineHeight: 17 },
+  remainingTime: { color: lime, fontSize: 12, fontVariant: ['tabular-nums'], fontWeight: '700', lineHeight: 17 },
   panel: {
     backgroundColor: panel,
     borderColor: line,
@@ -488,16 +508,16 @@ const local: Record<string, any> = {
   panelTitle: { color: text, fontSize: 18, fontWeight: '700', lineHeight: 23 },
   primaryControl: {
     alignItems: 'center',
-    backgroundColor: accent,
-    borderRadius: 10,
+    backgroundColor: lime,
+    borderRadius: 999,
     flex: 1,
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'center',
-    minHeight: 52,
+    minHeight: 56,
     outlineStyle: 'none',
   },
-  primaryControlText: { color: activeText, fontSize: 15, fontWeight: '900' },
+  primaryControlText: { color: ink, fontSize: 15, fontWeight: '700' },
   scroll: { gap: 18, paddingBottom: 104 },
   secondaryControl: {
     alignItems: 'center',
@@ -513,7 +533,7 @@ const local: Record<string, any> = {
     paddingHorizontal: 16,
   },
   secondaryControlText: { color: muted, fontSize: 13, fontWeight: '800' },
-  sessionText: { color: faint, fontSize: 12, lineHeight: 17, textAlign: 'right' },
+  sessionText: { color: '#c0cab4', fontSize: 12, lineHeight: 17, textAlign: 'right' },
   settingsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   sideColumn: { gap: 14, width: 282 },
   soundDot: { borderColor: line, borderRadius: 999, borderWidth: 1, height: 14, width: 14 },
@@ -524,7 +544,7 @@ const local: Record<string, any> = {
   soundTitleActive: { color: accent },
   textButton: { alignItems: 'center', flexDirection: 'row', gap: 6, minHeight: 34, outlineStyle: 'none' },
   textButtonText: { color: accent, fontSize: 12, fontWeight: '800' },
-  timerFace: { alignItems: 'center', justifyContent: 'center', paddingVertical: 20 },
+  timerFace: { alignItems: 'center', justifyContent: 'center', paddingVertical: 28 },
   timerField: {
     backgroundColor: panelSoft,
     borderColor: line,
@@ -537,9 +557,9 @@ const local: Record<string, any> = {
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
-  timerMeta: { color: muted, fontSize: 13, lineHeight: 18, marginTop: 6 },
+  timerMeta: { color: '#c0cab4', fontSize: 13, lineHeight: 18, marginTop: 8 },
   timerOverlay: { alignItems: 'center', backgroundColor: 'rgba(5, 7, 10, 0.92)', flex: 1, justifyContent: 'center', padding: 20 },
   timerOverlayCard: { backgroundColor: panel, borderColor: line, borderRadius: 14, borderWidth: 1, gap: 14, maxWidth: 420, padding: 24, width: '100%' },
   overlayTimerText: { color: text, fontSize: 64, fontWeight: '300', lineHeight: 76, textAlign: 'center' },
-  timerText: { color: text, fontSize: 72, fontWeight: '300', letterSpacing: 0, lineHeight: 82 },
+  timerText: { color: inkText, fontSize: 100, fontVariant: ['tabular-nums'], fontWeight: '400', letterSpacing: -5, lineHeight: 112 },
 };

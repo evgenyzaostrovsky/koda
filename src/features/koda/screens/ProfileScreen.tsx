@@ -4,6 +4,7 @@ import { Linking, Modal, Pressable, ScrollView, Text, TextInput, View } from 're
 import { ListChecks, LogOut, Palette, Plus, X } from 'lucide-react-native';
 import type { AccountInfo, Habit, PlannerItem, ProfileState, ThemeId } from '../types';
 import { Card } from '../components';
+import { BentoCard, BentoGrid, bentoWidths } from '../components/Bento';
 import { accent, faint, muted, resolveKodaThemeId, themeOptions } from '../theme';
 import { styles } from '../styles';
 import { enablePushNotifications, getPushStatus } from '../../../lib/pushNotifications';
@@ -173,30 +174,30 @@ export function ProfileScreen({
 
   return (
     <>
-    <ScrollView contentContainerStyle={[styles.profileScrollContent, isDesktop && styles.desktopPageScroll]} showsVerticalScrollIndicator={false}>
+    <ScrollView contentContainerStyle={[styles.profileScrollContent, isDesktop && styles.desktopPageScroll, { alignSelf: 'center', maxWidth: bentoWidths.settings, width: '100%' }]} showsVerticalScrollIndicator={false}>
       {!isDesktop ? <View style={styles.profileHeader}>
         <View style={styles.profileTitleRow}>
           <Text style={styles.screenTitle}>Профиль</Text>
           {onSignOut ? (
-            <Pressable onPress={onSignOut} style={styles.profileSignOutButton}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Выйти из аккаунта" onPress={onSignOut} style={styles.profileSignOutButton}>
               <LogOut color={muted} size={16} />
             </Pressable>
           ) : null}
         </View>
         <Text style={styles.subtitle}>Твоя будущая версия</Text>
       </View> : null}
-      <View style={isDesktop ? styles.profileDesktopLayout : undefined} testID={isDesktop ? 'desktop-page-columns' : undefined}>
+      <View style={isDesktop ? [styles.profileDesktopLayout, { alignSelf: 'center', gap: 24, maxWidth: bentoWidths.settings, width: '100%' }] : undefined} testID={isDesktop ? 'desktop-page-columns' : undefined}>
         <View style={isDesktop ? styles.profileDesktopMain : undefined} testID={isDesktop ? 'desktop-main-column' : undefined}>
       {isDesktop ? (
         <View style={styles.profileHeader}>
           <View style={styles.profileTitleRow}>
             <Text style={styles.screenTitle}>Профиль</Text>
-            {onSignOut ? <Pressable onPress={onSignOut} style={styles.profileSignOutButton}><LogOut color={muted} size={16} /></Pressable> : null}
+            {onSignOut ? <Pressable accessibilityRole="button" accessibilityLabel="Выйти из аккаунта" onPress={onSignOut} style={styles.profileSignOutButton}><LogOut color={muted} size={16} /></Pressable> : null}
           </View>
           <Text style={styles.subtitle}>Твоя будущая версия</Text>
         </View>
       ) : null}
-      <View style={[styles.profileAccountBox, !isDesktop && styles.profileAccountBoxMobile]}>
+      <BentoCard tone="soft" style={[styles.profileAccountBox, !isDesktop && styles.profileAccountBoxMobile]}>
         <View style={styles.profileAccountMain}>
           <Text style={styles.cardLabel}>АККАУНТ</Text>
           <Text numberOfLines={1} style={styles.profileAccountName}>{accountInfo?.name || 'Пользователь KODA'}</Text>
@@ -204,12 +205,12 @@ export function ProfileScreen({
         </View>
         <View style={[styles.profileAccountSide, !isDesktop && styles.profileAccountSideMobile]}>
           <Text style={styles.rowMeta}>{accountInfo?.createdAt ? `в KODA с ${formatAccountDate(accountInfo.createdAt)}` : 'дата входа...'}</Text>
-          <Pressable onPress={() => setPasswordSheetOpen(true)} style={styles.profilePasswordButton}>
+          <Pressable accessibilityRole="button" onPress={() => setPasswordSheetOpen(true)} style={styles.profilePasswordButton}>
             <Text style={styles.profilePasswordButtonText}>Сменить пароль</Text>
           </Pressable>
         </View>
-      </View>
-      <View style={styles.profileThemeBox}>
+      </BentoCard>
+      <View style={[styles.profileThemeBox, { backgroundColor: 'transparent', borderWidth: 0, padding: 0 }]}>
         <View style={styles.rowBetween}>
           <View style={styles.profileThemeTitleRow}>
             <Palette color={accent} size={15} />
@@ -217,7 +218,7 @@ export function ProfileScreen({
           </View>
           <Text style={styles.rowMeta}>{getThemeName(profile.themeId)}</Text>
         </View>
-        <View style={styles.profileThemeList}>
+        <BentoGrid columns={2} style={!isDesktop ? { alignItems: 'stretch', flexDirection: 'row', flexWrap: 'wrap', gap: 8 } as any : undefined}>
           {themeOptions.map((theme) => {
             const active = resolveKodaThemeId(profile.themeId) === theme.id;
             return (
@@ -227,7 +228,7 @@ export function ProfileScreen({
                 accessibilityLabel={theme.name}
                 accessibilityState={{ selected: active }}
                 onPress={() => onProfileChange({ themeId: theme.id })}
-                style={[styles.profileThemeOption, active && styles.profileThemeOptionActive]}
+                style={[styles.profileThemeOption,{minHeight:50,paddingHorizontal:10,paddingVertical:7}, active && styles.profileThemeOptionActive]}
               >
                 <View style={styles.profileThemeSwatches}>
                   <View style={[styles.profileThemeSwatch, { backgroundColor: theme.colors['--koda-app-bg'] }]} />
@@ -236,15 +237,16 @@ export function ProfileScreen({
                 </View>
                 <View style={styles.profileSettingText}>
                   <Text style={styles.rowTitle}>{theme.name}</Text>
-                  <Text style={styles.rowMeta}>{theme.description}</Text>
                 </View>
                 <Text style={[styles.profileThemeState, active && styles.profileThemeStateActive]}>{active ? 'выбрана' : 'выбрать'}</Text>
               </Pressable>
             );
           })}
-        </View>
+        </BentoGrid>
+        <Text style={styles.rowMeta}>{themeOptions.find(theme => theme.id === resolveKodaThemeId(profile.themeId))?.description ?? ''}</Text>
       </View>
-      <View style={styles.profileSettingsList}>
+      <Text style={styles.cardLabel}>НАСТРОЙКИ</Text>
+      <BentoCard tone="light" style={[styles.profileSettingsList, { padding: 0 }]}>
         <SettingRow
           disabled={pushBusy || pushStatus === 'unsupported'}
           meta={pushStatus === 'enabled' ? '14:00' : pushStatus === 'blocked' ? 'заблокированы' : pushBusy ? 'сохраняю...' : '14:00'}
@@ -266,7 +268,7 @@ export function ProfileScreen({
           title="Установить на компьютер"
           value={isInstalled}
         />
-      </View>
+      </BentoCard>
         </View>
 
         <RightPanel enabled={isDesktop}><View style={isDesktop ? styles.profileDesktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
@@ -327,7 +329,7 @@ export function ProfileScreen({
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Сменить пароль</Text>
-            <Pressable onPress={() => setPasswordSheetOpen(false)} style={styles.iconButton}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Закрыть смену пароля" onPress={() => setPasswordSheetOpen(false)} style={styles.iconButton}>
               <X color={muted} size={17} />
             </Pressable>
           </View>
@@ -352,7 +354,7 @@ export function ProfileScreen({
           </View>
           <View style={styles.modalActions}>
             <Text style={[styles.rowMeta, passwordMessage === 'Пароль изменён.' && styles.messageSuccess]}>{passwordMessage}</Text>
-            <Pressable disabled={passwordBusy} onPress={changePassword} style={[styles.saveButton, passwordBusy && styles.saveButtonDisabled]}>
+            <Pressable accessibilityRole="button" disabled={passwordBusy} onPress={changePassword} style={[styles.saveButton, passwordBusy && styles.saveButtonDisabled]}>
               <Text style={styles.saveButtonText}>{passwordBusy ? 'Секунду...' : 'Сохранить'}</Text>
             </Pressable>
           </View>
@@ -364,7 +366,7 @@ export function ProfileScreen({
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Установить KODA</Text>
-            <Pressable onPress={() => setInstallHelpOpen(false)} style={styles.iconButton}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Закрыть инструкцию установки" onPress={() => setInstallHelpOpen(false)} style={styles.iconButton}>
               <X color={muted} size={17} />
             </Pressable>
           </View>
@@ -426,7 +428,7 @@ function SettingRow({
   value: boolean;
 }) {
   return (
-    <Pressable disabled={disabled} onPress={onPress} style={[styles.profileSettingRow, disabled && !value && styles.profileSettingRowDisabled]}>
+    <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.profileSettingRow, disabled && !value && styles.profileSettingRowDisabled]}>
       <View style={styles.profileSettingText}>
         <Text style={styles.rowTitle}>{title}</Text>
         <Text style={styles.rowMeta}>{meta}</Text>

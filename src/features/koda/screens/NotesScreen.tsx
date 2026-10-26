@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SectionTitle } from '../components';
 import { DesktopPageLayout } from '../components/DesktopShell';
-import { accent, accentFaint, accentSoft, activeText, faint, line, muted, panel, panelSoft, surfaceElevated, text } from '../theme';
+import { BentoCard, BentoGrid, BentoPage } from '../components/Bento';
+import { accent, activeBg, activeText, faint, line, muted, panel, panelSoft, readingWidths, surfaceElevated, text } from '../theme';
 import type { Note, NoteBlock, NoteBlockType, NoteDocument } from '../types';
 import { uid } from '../utils';
 
@@ -40,21 +41,27 @@ export function NotesScreen({
   onNotesChange,
   saveState = 'idle',
   userId = null,
+  initialNoteId = null,
 }: {
   isDesktop?: boolean;
   notes: Note[];
   onNotesChange: NotesChange;
   saveState?: SaveState;
   userId?: string | null;
+  initialNoteId?: string | null;
 }) {
   const visibleNotes = notes.filter((note) => !note.deletedAt);
   const sortedNotes = useMemo(() => [...visibleNotes].sort(compareNotes), [visibleNotes]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(sortedNotes[0]?.id ?? null);
   const [query, setQuery] = useState('');
+  const [titleSize, setTitleSize] = useState({ key: '', height: 48 });
   const [blockMenu, setBlockMenu] = useState<{ blockId: string; childOf?: string | null } | null>(null);
   const [deleteNoteId, setDeleteNoteId] = useState<string | null>(null);
   const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
+  const [desktopEditorOpen, setDesktopEditorOpen] = useState(false);
+  useEffect(() => { if (initialNoteId && notes.some(note=>note.id===initialNoteId&&!note.deletedAt)) { setSelectedNoteId(initialNoteId); setMobileEditorOpen(true); setDesktopEditorOpen(true); } }, [initialNoteId]);
   const selectedNote = sortedNotes.find((note) => note.id === selectedNoteId) ?? sortedNotes[0] ?? null;
+  const titleSizeKey = `${selectedNote?.id ?? ''}:${isDesktop ? 'desktop' : 'mobile'}`;
   const filteredNotes = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return sortedNotes.filter((note) => !normalizedQuery || `${note.title} ${notePlainText(note)}`.toLowerCase().includes(normalizedQuery));
@@ -82,6 +89,7 @@ export function NotesScreen({
     onNotesChange((items) => [note, ...items]);
     setSelectedNoteId(note.id);
     setMobileEditorOpen(true);
+    setDesktopEditorOpen(true);
   }
 
   function patchNote(noteId: string, patch: Partial<Pick<Note, 'content' | 'pinned' | 'title'>>) {
@@ -143,7 +151,7 @@ export function NotesScreen({
     const start = Math.max(0, Math.min(selection?.start ?? 0, value.length));
     const end = Math.max(start, Math.min(selection?.end ?? value.length, value.length));
     if (start === end) {
-      updateBlock(block.id, { text: `${left}${value || 'текст'}${right}` });
+      updateBlock(block.id, { text: `${value.slice(0,start)}${left}текст${right}${value.slice(end)}` });
       return;
     }
     updateBlock(block.id, { text: `${value.slice(0, start)}${left}${value.slice(start, end)}${right}${value.slice(end)}` });
@@ -152,20 +160,22 @@ export function NotesScreen({
   function openNote(note: Note) {
     setSelectedNoteId(note.id);
     setMobileEditorOpen(true);
+    setDesktopEditorOpen(true);
   }
 
   const listPanel = (
     <View style={[local.notesListPanel, isDesktop && local.desktopNotesListPanel]}>
       <View style={local.notesListHeader}>
-        {isDesktop ? <Text style={local.desktopContextTitle}>Заметки</Text> : <SectionTitle title="Заметки" subtitle="Сохрани и найди потом" />}
+        {isDesktop ? <View style={local.desktopContextGroup}><Text style={local.desktopContextTitle}>Заметки</Text><Text style={local.desktopContextCount}>{filteredNotes.length}</Text></View> : <SectionTitle title="Заметки" subtitle="Сохрани и найди потом" />}
         <Pressable accessibilityLabel="Создать заметку" accessibilityRole="button" onPress={createNote} style={[local.roundAddButton, isDesktop && local.desktopAddButton]}>
-          <Plus color={isDesktop ? text : panel} size={isDesktop ? 17 : 19} strokeWidth={3} />
+          <Plus color={text} size={isDesktop ? 17 : 19} strokeWidth={3} />
         </Pressable>
       </View>
 
       <View style={local.searchBox}>
         <Search color={muted} size={16} />
         <TextInput
+          accessibilityLabel="Поиск по заметкам"
           onChangeText={setQuery}
           placeholder="Поиск..."
           placeholderTextColor={faint}
@@ -174,12 +184,12 @@ export function NotesScreen({
         />
       </View>
 
-      <ScrollView contentContainerStyle={local.noteListContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <ScrollView style={!isDesktop ? local.mobileNoteListScroll : undefined} contentContainerStyle={local.noteListContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {!filteredNotes.length ? (
           <View style={[local.emptyState, isDesktop && local.desktopEmptyState]}>
             <Text style={local.emptyTitle}>Заметок пока нет</Text>
             <Text style={local.meta}>Сохраняй здесь любую информацию, которую не хочешь потерять.</Text>
-            <Pressable accessibilityRole="button" onPress={createNote} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать заметку</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Создать заметку" onPress={createNote} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать заметку</Text></Pressable>
           </View>
         ) : (
           <>
@@ -195,39 +205,48 @@ export function NotesScreen({
     <View style={[local.editorPanel, isDesktop && local.desktopEditorPanel]}>
       {!isDesktop ? (
         <View style={local.mobileEditorHeader}>
-          <Pressable onPress={() => setMobileEditorOpen(false)} style={local.iconButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Вернуться к списку заметок" onPress={() => setMobileEditorOpen(false)} style={local.iconButton}>
             <ChevronLeft color={text} size={21} />
           </Pressable>
           <Text style={local.saveStateText}>{saveStateLabel(saveState)}</Text>
-          <Pressable onPress={() => setDeleteNoteId(selectedNote.id)} style={local.iconButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel={selectedNote.pinned ? 'Открепить заметку' : 'Закрепить заметку'} accessibilityState={{ selected: selectedNote.pinned }} onPress={() => patchNote(selectedNote.id, { pinned: !selectedNote.pinned })} style={local.iconButton}>
+            {selectedNote.pinned ? <PinOff color={accent} size={17} /> : <Pin color={muted} size={17} />}
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Удалить заметку" onPress={() => setDeleteNoteId(selectedNote.id)} style={local.iconButton}>
             <Trash2 color={muted} size={17} />
           </Pressable>
         </View>
       ) : null}
 
-      <View style={local.editorToolbar}>
+      {isDesktop ? <View style={local.editorToolbar}>
         <Text style={local.saveStateText}>{saveStateLabel(saveState)}</Text>
         <View style={local.editorToolbarActions}>
-          <Pressable onPress={() => patchNote(selectedNote.id, { pinned: !selectedNote.pinned })} style={local.inlineAction}>
+          <Pressable accessibilityRole="button" accessibilityLabel={selectedNote.pinned ? 'Открепить заметку' : 'Закрепить заметку'} onPress={() => patchNote(selectedNote.id, { pinned: !selectedNote.pinned })} style={[local.inlineAction, local.compactEditorAction]}>
             {selectedNote.pinned ? <PinOff color={accent} size={14} /> : <Pin color={muted} size={14} />}
             <Text style={local.inlineActionText}>{selectedNote.pinned ? 'Открепить' : 'Закрепить'}</Text>
           </Pressable>
-          <Pressable onPress={() => setDeleteNoteId(selectedNote.id)} style={local.inlineAction}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Удалить заметку" onPress={() => setDeleteNoteId(selectedNote.id)} style={[local.inlineAction, local.compactEditorAction]}>
             <Trash2 color={muted} size={14} />
             <Text style={local.inlineActionText}>Удалить</Text>
           </Pressable>
         </View>
-      </View>
+      </View> : null}
 
-      <ScrollView contentContainerStyle={local.editorScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[local.editorScroll, isDesktop && local.desktopEditorScroll]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={local.document}>
           <TextInput
-            autoFocus={isDesktop}
+            accessibilityLabel="Название заметки"
+            autoFocus={isDesktop && desktopEditorOpen}
             multiline
             onChangeText={updateTitle}
             placeholder="Без названия"
             placeholderTextColor={faint}
-            style={local.titleInput}
+            key={titleSizeKey}
+            onContentSizeChange={({ nativeEvent }) => {
+              const height = Math.max(48, Math.min(320, Math.ceil(nativeEvent.contentSize.height)));
+              setTitleSize(previous => previous.key === titleSizeKey && previous.height === height ? previous : { key: titleSizeKey, height });
+            }}
+            style={[local.titleInput, !isDesktop && { fontSize: 26, lineHeight: 32, letterSpacing: -0.5 }, { height: titleSize.key === titleSizeKey ? titleSize.height : 48 }]}
             value={selectedNote.title === 'Без названия' ? '' : selectedNote.title}
           />
           <View style={local.blockList}>
@@ -245,7 +264,7 @@ export function NotesScreen({
               />
             ))}
           </View>
-          <Pressable onPress={() => addBlock(selectedNote.content.content[selectedNote.content.content.length - 1]?.id)} style={local.addBlockButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Добавить блок в конец заметки" onPress={() => addBlock(selectedNote.content.content[selectedNote.content.content.length - 1]?.id)} style={local.addBlockButton}>
             <Plus color={accent} size={15} />
             <Text style={local.addBlockText}>Добавить блок</Text>
           </Pressable>
@@ -256,14 +275,49 @@ export function NotesScreen({
     <View style={[local.editorPanel, local.editorEmpty, isDesktop && local.desktopEditorPanel]}>
       <Text style={local.emptyTitle}>Выбери заметку</Text>
       <Text style={local.meta}>Или создай новую, чтобы сразу начать писать.</Text>
-      <Pressable accessibilityRole="button" onPress={createNote} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать заметку</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Создать заметку" onPress={createNote} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать заметку</Text></Pressable>
     </View>
+  );
+
+  const desktopLibrary = (
+    <BentoPage maxWidth={840}>
+      <View style={local.notesListHeader}>
+        <SectionTitle title="Заметки" subtitle="Закреплённые и недавние" />
+        <Pressable accessibilityLabel="Создать заметку" accessibilityRole="button" onPress={createNote} style={local.roundAddButton}>
+          <Plus color={text} size={19} strokeWidth={3} />
+        </Pressable>
+      </View>
+      <View style={local.searchBox}>
+        <Search color={muted} size={16} />
+        <TextInput accessibilityLabel="Поиск по заметкам" onChangeText={setQuery} placeholder="Поиск по заметкам" placeholderTextColor={faint} style={local.searchInput} value={query} />
+      </View>
+      {!filteredNotes.length ? (
+        <View style={local.emptyState}>
+          <Text style={local.emptyTitle}>{sortedNotes.length ? 'Ничего не найдено' : 'Заметок пока нет'}</Text>
+          <Text style={local.meta}>{sortedNotes.length ? 'Попробуй изменить запрос.' : 'Сохраняй здесь информацию, к которой захочешь вернуться.'}</Text>
+          {!sortedNotes.length ? <Pressable accessibilityRole="button" onPress={createNote} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать заметку</Text></Pressable> : null}
+        </View>
+      ) : (
+        <>
+          {pinnedNotes.length ? <View style={local.noteGroup}><Text style={local.groupTitle}>Закреплённые</Text><BentoGrid columns={2}>{pinnedNotes.map((note) => <NoteTile key={note.id} note={note} onOpen={openNote} />)}</BentoGrid></View> : null}
+          <View style={local.noteGroup}><Text style={local.groupTitle}>{pinnedNotes.length ? 'Недавние' : 'Все заметки'}</Text><BentoGrid columns={2}>{regularNotes.map((note) => <NoteTile key={note.id} note={note} onOpen={openNote} />)}</BentoGrid></View>
+        </>
+      )}
+    </BentoPage>
   );
 
   return (
     <View style={local.screen}>
       {isDesktop ? (
-        <DesktopPageLayout main={editorPanel} right={listPanel} />
+        <View style={{ flex: 1, minHeight: 0 }}>
+          <View style={{ display: desktopEditorOpen ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
+            <View style={local.desktopEditorHeader}>
+              <Pressable accessibilityRole="button" onPress={() => setDesktopEditorOpen(false)} style={local.inlineAction}><ChevronLeft color={text} size={18} /><Text style={local.inlineActionText}>Все заметки</Text></Pressable>
+            </View>
+            <DesktopPageLayout main={editorPanel} right={listPanel} />
+          </View>
+          <View style={{ display: desktopEditorOpen ? 'none' : 'flex', flex: 1, minHeight: 0 }}>{desktopLibrary}</View>
+        </View>
       ) : mobileEditorOpen && selectedNote ? (
         editorPanel
       ) : (
@@ -275,7 +329,7 @@ export function NotesScreen({
           <View style={local.blockMenuCard}>
             <View style={local.modalHeader}>
               <Text style={local.modalTitle}>Тип блока</Text>
-              <Pressable onPress={() => setBlockMenu(null)} style={local.iconButton}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Закрыть меню блоков" onPress={() => setBlockMenu(null)} style={local.iconButton}>
                 <X color={muted} size={18} />
               </Pressable>
             </View>
@@ -283,6 +337,8 @@ export function NotesScreen({
               {blockOptions.map((option) => {
                 return (
                   <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Добавить блок: ${option.label}`}
                     key={option.type}
                     onPress={() => {
                       if (!selectedNote || !blockMenu) return;
@@ -311,10 +367,10 @@ export function NotesScreen({
             <Text style={local.modalTitle}>Удалить заметку?</Text>
             <Text style={local.meta}>Заметка исчезнет из списка и не восстановится после синхронизации.</Text>
             <View style={local.confirmActions}>
-              <Pressable onPress={() => setDeleteNoteId(null)} style={local.secondaryButton}>
+              <Pressable accessibilityRole="button" onPress={() => setDeleteNoteId(null)} style={local.secondaryButton}>
                 <Text style={local.secondaryButtonText}>Отмена</Text>
               </Pressable>
-              <Pressable onPress={() => deleteNoteId && softDeleteNote(deleteNoteId)} style={local.dangerButton}>
+              <Pressable accessibilityRole="button" onPress={() => deleteNoteId && softDeleteNote(deleteNoteId)} style={local.dangerButton}>
                 <Text style={local.dangerButtonText}>Удалить</Text>
               </Pressable>
             </View>
@@ -325,6 +381,16 @@ export function NotesScreen({
   );
 }
 
+function NoteTile({ note, onOpen }: { note: Note; onOpen: (note: Note) => void }) {
+  return <BentoCard tone={note.pinned ? 'lime' : 'light'}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Открыть заметку: ${note.title.trim() || 'Без названия'}`} onPress={() => onOpen(note)} style={local.noteTile}>
+      <View style={local.noteRowTop}><Text numberOfLines={2} style={local.noteTitle}>{note.title.trim() || 'Без названия'}</Text>{note.pinned ? <Pin color={accent} size={14} /> : null}</View>
+      <Text numberOfLines={3} style={local.notePreview}>{notePlainText(note) || 'Пустая заметка'}</Text>
+      <Text style={local.noteTime}>{formatNoteTime(note.updatedAt)}</Text>
+    </Pressable>
+  </BentoCard>;
+}
+
 function NoteGroup({ compact, notes, onOpen, selectedNoteId, title }: { compact: boolean; notes: Note[]; onOpen: (note: Note) => void; selectedNoteId: string | null; title: string }) {
   if (!notes.length) return null;
 
@@ -332,7 +398,7 @@ function NoteGroup({ compact, notes, onOpen, selectedNoteId, title }: { compact:
     <View style={local.noteGroup}>
       <Text style={local.groupTitle}>{title}</Text>
       {notes.map((note) => (
-        <Pressable key={note.id} onPress={() => onOpen(note)} style={[local.noteRow, compact && local.desktopNoteRow, selectedNoteId === note.id && local.noteRowActive, compact && selectedNoteId === note.id && local.desktopNoteRowActive]}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Открыть заметку: ${note.title.trim() || 'Без названия'}`} accessibilityState={{ selected: selectedNoteId === note.id }} key={note.id} onPress={() => onOpen(note)} style={[local.noteRow, compact && local.desktopNoteRow, selectedNoteId === note.id && local.noteRowActive, compact && selectedNoteId === note.id && local.desktopNoteRowActive]}>
           <View style={local.noteRowTop}>
             <Text numberOfLines={1} style={local.noteTitle}>{note.title.trim() || 'Без названия'}</Text>
             {note.pinned ? <Pin color={accent} size={12} /> : null}
@@ -365,12 +431,13 @@ function NoteBlockEditor({
   onOpenBlockMenu: (childOf?: string | null) => void;
 }) {
   const [selection, setSelection] = useState<TextSelection>({ start: 0, end: 0 });
+  const [inputHeight, setInputHeight] = useState(36);
 
   if (block.type === 'divider') {
     return (
       <View style={local.dividerBlock}>
         <View style={local.dividerLine} />
-        <Pressable onPress={() => onOpenBlockMenu(null)} style={local.blockIconButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Открыть меню блока-разделителя" onPress={() => onOpenBlockMenu(null)} style={local.blockIconButton}>
           <MoreHorizontal color={muted} size={15} />
         </Pressable>
       </View>
@@ -379,7 +446,6 @@ function NoteBlockEditor({
 
   const inputStyle = [
     local.blockInput,
-    index === 0 && block.type === 'paragraph' && local.primaryBlockInput,
     block.type === 'heading1' && local.heading1,
     block.type === 'heading2' && local.heading2,
     block.type === 'heading3' && local.heading3,
@@ -389,42 +455,48 @@ function NoteBlockEditor({
   const prefix = blockPrefix(block, index);
 
   return (
-    <View style={[local.blockEditor, index === 0 && block.type === 'paragraph' && local.primaryBlockEditor, block.type === 'quote' && local.quoteBlock, block.type === 'code' && local.codeBlock]}>
+    <View style={[local.blockEditor, block.type === 'quote' && local.quoteBlock, block.type === 'code' && local.codeBlock]}>
       <View style={local.blockRow}>
-        <Pressable onPress={() => onOpenBlockMenu(null)} style={local.blockHandle}>
-          {block.type === 'checklist' ? (
-            <Pressable onPress={() => onChange(block.id, { checked: !block.checked })} style={[local.checkBox, block.checked && local.checkBoxDone]}>
-              {block.checked ? <Check color={activeText} size={12} strokeWidth={3} /> : null}
+        {block.type === 'checklist' ? (
+          <View style={local.blockHandleActions}>
+            <Pressable accessibilityRole="checkbox" accessibilityLabel={`Отметить блок «${block.text || 'чек-лист'}» ${block.checked ? 'незавершённым' : 'выполненным'}`} accessibilityState={{ checked: Boolean(block.checked) }} aria-checked={Boolean(block.checked)} onPress={() => onChange(block.id, { checked: !block.checked })} style={local.checkBox}>
+              <View style={[local.checkBoxMark, block.checked && local.checkBoxDone]}>{block.checked ? <Check color={activeText} size={12} strokeWidth={3} /> : null}</View>
             </Pressable>
-          ) : block.type === 'toggle' ? (
-            <Pressable onPress={() => onChange(block.id, { collapsed: !block.collapsed })} style={local.blockIconButton}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Настроить блок: ${block.text || block.type}`} onPress={() => onOpenBlockMenu(null)} style={local.blockIconButton}><MoreHorizontal color={muted} size={15} /></Pressable>
+          </View>
+        ) : block.type === 'toggle' ? (
+          <View style={local.blockHandleActions}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`${block.collapsed ? 'Развернуть' : 'Свернуть'} блок ${block.text || 'Toggle'}`} onPress={() => onChange(block.id, { collapsed: !block.collapsed })} style={local.blockIconButton}>
               {block.collapsed ? <ChevronRight color={muted} size={15} /> : <ChevronDown color={muted} size={15} />}
             </Pressable>
-          ) : (
-            <Text style={local.blockPrefix}>{prefix}</Text>
-          )}
-        </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Настроить блок: ${block.text || block.type}`} onPress={() => onOpenBlockMenu(null)} style={local.blockIconButton}><MoreHorizontal color={muted} size={15} /></Pressable>
+          </View>
+        ) : (
+          <Pressable accessibilityRole="button" accessibilityLabel={`Настроить блок: ${block.text || block.type}`} onPress={() => onOpenBlockMenu(null)} style={local.blockHandle}><Text style={local.blockPrefix}>{prefix}</Text></Pressable>
+        )}
         <TextInput
+          accessibilityLabel={block.type === 'heading1' ? 'Заголовок первого уровня' : block.type === 'heading2' ? 'Заголовок второго уровня' : block.type === 'heading3' ? 'Заголовок третьего уровня' : `Текст блока: ${block.type}`}
           multiline
           onChangeText={(value) => onChange(block.id, { text: value })}
           onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
           onSubmitEditing={onAddNext}
           placeholder={block.type === 'toggle' ? 'Toggle' : 'Напиши что-нибудь'}
           placeholderTextColor={faint}
-          style={inputStyle}
+          onContentSizeChange={({nativeEvent}) => setInputHeight(Math.max(36,Math.min(640,Math.ceil(nativeEvent.contentSize.height))))}
+          style={[inputStyle,{height:inputHeight}]}
           value={block.text}
         />
-        <Pressable onPress={() => onDelete(block.id)} style={local.blockIconButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Удалить блок: ${block.text || block.type}`} onPress={() => onDelete(block.id)} style={local.blockIconButton}>
           <Trash2 color={muted} size={14} />
         </Pressable>
       </View>
       <View style={local.inlineToolbar}>
         {inlineTools.map((tool) => (
-          <Pressable key={tool.mark} onPress={() => onApplyInlineMark(block, tool.mark, selection)} style={local.inlineToolButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Форматирование: ${tool.label}`} key={tool.mark} onPress={() => onApplyInlineMark(block, tool.mark, selection)} style={local.inlineToolButton}>
             {tool.mark === 'italic' ? <Italic color={muted} size={12} /> : tool.mark === 'strike' ? <Strikethrough color={muted} size={12} /> : <Text style={local.inlineToolText}>{tool.label}</Text>}
           </Pressable>
         ))}
-        <Pressable onPress={onAddNext} style={local.inlineToolButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Добавить следующий блок" onPress={onAddNext} style={local.inlineToolButton}>
           <Plus color={muted} size={12} />
         </Pressable>
       </View>
@@ -442,7 +514,7 @@ function NoteBlockEditor({
               onOpenBlockMenu={() => onOpenBlockMenu(block.id)}
             />
           ))}
-          <Pressable onPress={onAddChild} style={local.addChildButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Добавить вложенный блок" onPress={onAddChild} style={local.addChildButton}>
             <Plus color={accent} size={13} />
             <Text style={local.addBlockText}>Добавить внутрь</Text>
           </Pressable>
@@ -470,6 +542,7 @@ function ChildNoteBlockEditor({
   onOpenBlockMenu: () => void;
 }) {
   const [selection, setSelection] = useState<TextSelection>({ start: 0, end: 0 });
+  const [inputHeight, setInputHeight] = useState(36);
   const prefix = blockPrefix(block, index);
   const inputStyle = [
     local.blockInput,
@@ -483,7 +556,7 @@ function ChildNoteBlockEditor({
     return (
       <View style={local.dividerBlock}>
         <View style={local.dividerLine} />
-        <Pressable onPress={onOpenBlockMenu} style={local.blockIconButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Открыть меню блока-разделителя" onPress={onOpenBlockMenu} style={local.blockIconButton}>
           <MoreHorizontal color={muted} size={15} />
         </Pressable>
       </View>
@@ -493,36 +566,39 @@ function ChildNoteBlockEditor({
   return (
     <View style={[local.blockEditor, block.type === 'quote' && local.quoteBlock, block.type === 'code' && local.codeBlock]}>
       <View style={local.blockRow}>
-        <Pressable onPress={onOpenBlockMenu} style={local.blockHandle}>
-          {block.type === 'checklist' ? (
-            <Pressable onPress={() => onChange(block.id, { checked: !block.checked })} style={[local.checkBox, block.checked && local.checkBoxDone]}>
-              {block.checked ? <Check color={activeText} size={12} strokeWidth={3} /> : null}
+        {block.type === 'checklist' ? (
+          <View style={local.blockHandleActions}>
+            <Pressable accessibilityRole="checkbox" accessibilityLabel={`Отметить блок «${block.text || 'чек-лист'}» ${block.checked ? 'незавершённым' : 'выполненным'}`} accessibilityState={{ checked: Boolean(block.checked) }} aria-checked={Boolean(block.checked)} onPress={() => onChange(block.id, { checked: !block.checked })} style={local.checkBox}>
+              <View style={[local.checkBoxMark, block.checked && local.checkBoxDone]}>{block.checked ? <Check color={activeText} size={12} strokeWidth={3} /> : null}</View>
             </Pressable>
-          ) : (
-            <Text style={local.blockPrefix}>{prefix}</Text>
-          )}
-        </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Настроить блок: ${block.text || block.type}`} onPress={onOpenBlockMenu} style={local.blockIconButton}><MoreHorizontal color={muted} size={15} /></Pressable>
+          </View>
+        ) : (
+          <Pressable accessibilityRole="button" accessibilityLabel={`Настроить блок: ${block.text || block.type}`} onPress={onOpenBlockMenu} style={local.blockHandle}><Text style={local.blockPrefix}>{prefix}</Text></Pressable>
+        )}
         <TextInput
+          accessibilityLabel={`Текст блока: ${block.type}`}
           multiline
           onChangeText={(value) => onChange(block.id, { text: value })}
           onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
           onSubmitEditing={onAddNext}
           placeholder="Напиши что-нибудь"
           placeholderTextColor={faint}
-          style={inputStyle}
+          onContentSizeChange={({nativeEvent}) => setInputHeight(Math.max(36,Math.min(640,Math.ceil(nativeEvent.contentSize.height))))}
+          style={[inputStyle,{height:inputHeight}]}
           value={block.text}
         />
-        <Pressable onPress={() => onDelete(block.id)} style={local.blockIconButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Удалить блок: ${block.text || block.type}`} onPress={() => onDelete(block.id)} style={local.blockIconButton}>
           <Trash2 color={muted} size={14} />
         </Pressable>
       </View>
       <View style={local.inlineToolbar}>
         {inlineTools.map((tool) => (
-          <Pressable key={tool.mark} onPress={() => onApplyInlineMark(block, tool.mark, selection)} style={local.inlineToolButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Форматирование: ${tool.label}`} key={tool.mark} onPress={() => onApplyInlineMark(block, tool.mark, selection)} style={local.inlineToolButton}>
             {tool.mark === 'italic' ? <Italic color={muted} size={12} /> : tool.mark === 'strike' ? <Strikethrough color={muted} size={12} /> : <Text style={local.inlineToolText}>{tool.label}</Text>}
           </Pressable>
         ))}
-        <Pressable onPress={onAddNext} style={local.inlineToolButton}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Добавить следующий блок" onPress={onAddNext} style={local.inlineToolButton}>
           <Plus color={muted} size={12} />
         </Pressable>
       </View>
@@ -609,8 +685,7 @@ const local: Record<string, any> = {
     alignSelf: 'flex-start',
     flexDirection: 'row' as const,
     gap: 7,
-    minHeight: 34,
-    outlineStyle: 'none' as const,
+    minHeight: 44,
     paddingHorizontal: 2,
   },
   addBlockText: { color: accent, fontSize: 12, lineHeight: 16 },
@@ -618,18 +693,17 @@ const local: Record<string, any> = {
     alignItems: 'center',
     flexDirection: 'row' as const,
     gap: 6,
-    minHeight: 30,
-    outlineStyle: 'none' as const,
+    minHeight: 44,
   },
   blockEditor: { gap: 5 },
-  blockHandle: { alignItems: 'center', minHeight: 36, justifyContent: 'center', width: 28 },
+  blockHandleActions: { alignItems: 'center', flexDirection: 'row' as const },
+  blockHandle: { alignItems: 'center', minHeight: 44, justifyContent: 'center', width: 44 },
   blockIconButton: {
     alignItems: 'center',
     borderRadius: 999,
-    height: 30,
+    height: 44,
     justifyContent: 'center',
-    outlineStyle: 'none' as const,
-    width: 30,
+    width: 44,
   },
   blockInput: {
     color: text,
@@ -637,17 +711,8 @@ const local: Record<string, any> = {
     fontSize: 16,
     lineHeight: 22,
     minHeight: 36,
-    outlineStyle: 'none' as const,
     paddingVertical: 5,
     textAlignVertical: 'top' as const,
-  },
-  primaryBlockInput: { minHeight: 240 },
-  primaryBlockEditor: {
-    backgroundColor: panelSoft,
-    borderColor: line,
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 10,
   },
   blockList: { gap: 9 },
   blockMenuCard: {
@@ -676,8 +741,7 @@ const local: Record<string, any> = {
     borderWidth: 1,
     flexDirection: 'row' as const,
     gap: 7,
-    minHeight: 34,
-    outlineStyle: 'none' as const,
+    minHeight: 44,
     paddingHorizontal: 11,
   },
   blockMenuText: { color: text, fontSize: 13, lineHeight: 17 },
@@ -685,14 +749,12 @@ const local: Record<string, any> = {
   blockRow: { alignItems: 'flex-start', flexDirection: 'row' as const, gap: 6 },
   checkBox: {
     alignItems: 'center',
-    borderColor: muted,
-    borderRadius: 5,
-    borderWidth: 1,
-    height: 18,
+    height: 44,
     justifyContent: 'center',
-    width: 18,
+    width: 44,
   },
-  checkBoxDone: { backgroundColor: accent, borderColor: accent },
+  checkBoxMark: { alignItems: 'center', borderColor: muted, borderRadius: 5, borderWidth: 1, height: 18, justifyContent: 'center', width: 18 },
+  checkBoxDone: { backgroundColor: activeBg, borderColor: activeBg },
   codeBlock: {
     backgroundColor: surfaceElevated,
     borderColor: line,
@@ -717,52 +779,56 @@ const local: Record<string, any> = {
     borderColor: 'var(--koda-error, #d97875)',
     borderRadius: 12,
     borderWidth: 1,
-    minHeight: 38,
-    outlineStyle: 'none' as const,
+    minHeight: 44,
     paddingHorizontal: 16,
     justifyContent: 'center',
   },
   dangerButtonText: { color: 'var(--koda-error, #d97875)', fontSize: 13, fontWeight: '700' as const },
-  desktopContextTitle: { color: text, fontSize: 18, fontWeight: '800' as const, lineHeight: 24 },
-  desktopAddButton: { backgroundColor: accentSoft, borderRadius: 6, height: 30, width: 30 },
+  desktopContextGroup: { alignItems: 'center', flexDirection: 'row' as const, gap: 10 },
+  desktopContextTitle: { color: text, fontSize: 20, fontWeight: '600' as const, letterSpacing: -0.4, lineHeight: 26 },
+  desktopContextCount: { color: muted, fontSize: 12, lineHeight: 18 },
+  desktopEditorHeader: { alignSelf: 'center', maxWidth: 840, width: '100%' as const },
+  desktopAddButton: { backgroundColor: activeBg, borderRadius: 999, height: 34, width: 34 },
   desktopEmptyState: { borderWidth: 0, paddingHorizontal: 0 },
-  desktopEditorPanel: { borderColor: line, borderRadius: 20, borderWidth: 1, width: '100%' as const },
-  desktopNoteRow: { borderLeftColor: 'transparent', borderLeftWidth: 2, borderRadius: 5, minHeight: 64, paddingHorizontal: 10, paddingVertical: 8 },
-  desktopNoteRowActive: { borderLeftColor: accent },
-  desktopNotesListPanel: { backgroundColor: panel, borderRadius: 0, borderWidth: 0, padding: 0, width: '100%' as const },
+  desktopEditorPanel: { borderColor: line, borderRadius: 28, borderWidth: 1, width: '100%' as const },
+  desktopNoteRow: { borderRadius: 18, minHeight: 76, paddingHorizontal: 14, paddingVertical: 11 },
+  desktopNoteRowActive: { backgroundColor: activeBg, borderColor: activeBg },
+  desktopNotesListPanel: { backgroundColor: panel, borderColor: line, borderRadius: 24, borderWidth: 1, padding: 16, width: '100%' as const },
   dividerBlock: { alignItems: 'center', flexDirection: 'row' as const, gap: 10, minHeight: 34 },
   dividerLine: { backgroundColor: line, flex: 1, height: 1 },
-  document: { flexGrow: 1, gap: 16, maxWidth: 860, width: '100%' as const },
+  document: { flexGrow: 1, gap: 16, maxWidth: readingWidths.notes, width: '100%' as const },
   editorEmpty: { alignItems: 'flex-start', gap: 10, justifyContent: 'center' },
   editorPanel: {
     backgroundColor: panel,
     borderColor: line,
-    borderRadius: 12,
+    borderRadius: 28,
     borderWidth: 1,
     flex: 1,
     minHeight: 0,
     overflow: 'hidden' as const,
   },
   editorScroll: { alignItems: 'center', flexGrow: 1, padding: 22, paddingBottom: 96 },
+  desktopEditorScroll: { paddingHorizontal: 36, paddingTop: 18, paddingBottom: 64 },
   editorToolbar: {
     alignItems: 'center',
     borderBottomColor: line,
     borderBottomWidth: 1,
     flexDirection: 'row' as const,
     justifyContent: 'space-between',
-    minHeight: 46,
-    paddingHorizontal: 16,
+    minHeight: 44,
+    paddingHorizontal: 12,
   },
+  compactEditorAction: { gap: 5, paddingHorizontal: 6 },
   editorToolbarActions: { alignItems: 'center', flexDirection: 'row' as const, gap: 8 },
   emptyState: {
     borderColor: line,
-    borderRadius: 12,
+    borderRadius: 24,
     borderWidth: 1,
     gap: 10,
     padding: 16,
   },
   emptyTitle: { color: text, fontSize: 18, fontWeight: '700' as const, lineHeight: 23 },
-  groupTitle: { color: muted, fontSize: 11, fontWeight: '700' as const, letterSpacing: 3, lineHeight: 15, textTransform: 'uppercase' as const },
+  groupTitle: { color: muted, fontSize: 12, fontWeight: '700' as const, letterSpacing: 3, lineHeight: 15, textTransform: 'uppercase' as const },
   heading1: { fontSize: 26, fontWeight: '800' as const, lineHeight: 32 },
   heading2: { fontSize: 21, fontWeight: '800' as const, lineHeight: 27 },
   heading3: { fontSize: 18, fontWeight: '750' as const, lineHeight: 24 },
@@ -771,32 +837,29 @@ const local: Record<string, any> = {
     borderColor: line,
     borderRadius: 999,
     borderWidth: 1,
-    height: 36,
+    height: 44,
     justifyContent: 'center',
-    outlineStyle: 'none' as const,
-    width: 36,
+    width: 44,
   },
   inlineAction: {
     alignItems: 'center',
     flexDirection: 'row' as const,
     gap: 6,
-    minHeight: 30,
-    outlineStyle: 'none' as const,
+    minHeight: 44,
   },
   inlineActionText: { color: muted, fontSize: 12, lineHeight: 16 },
-  inlineToolbar: { flexDirection: 'row' as const, gap: 6, paddingLeft: 34 },
+  inlineToolbar: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 6, paddingLeft: 34 },
   inlineToolButton: {
     alignItems: 'center',
     borderColor: line,
     borderRadius: 999,
     borderWidth: 1,
-    height: 26,
+    height: 44,
     justifyContent: 'center',
-    minWidth: 26,
-    outlineStyle: 'none' as const,
+    minWidth: 44,
     paddingHorizontal: 8,
   },
-  inlineToolText: { color: muted, fontSize: 11, fontWeight: '700' as const, lineHeight: 14 },
+  inlineToolText: { color: muted, fontSize: 12, fontWeight: '700' as const, lineHeight: 14 },
   meta: { color: muted, fontSize: 13, lineHeight: 18 },
   mobileEditorHeader: {
     alignItems: 'center',
@@ -817,7 +880,9 @@ const local: Record<string, any> = {
   },
   modalTitle: { color: text, fontSize: 18, fontWeight: '700' as const, lineHeight: 23 },
   noteGroup: { gap: 8 },
-  noteListContent: { gap: 16, paddingBottom: 90 },
+  noteTile: { gap: 8, minHeight: 110, justifyContent: 'space-between' as const, width: '100%' as const },
+  noteListContent: { gap: 12, paddingBottom: 16 },
+  mobileNoteListScroll: { flexGrow: 0, flexShrink: 1, maxHeight: 360 },
   notePreview: { color: muted, fontSize: 12, lineHeight: 17 },
   noteRow: {
     borderColor: line,
@@ -825,18 +890,17 @@ const local: Record<string, any> = {
     borderWidth: 1,
     gap: 6,
     minHeight: 86,
-    outlineStyle: 'none' as const,
     padding: 12,
   },
-  noteRowActive: { backgroundColor: accentFaint, borderColor: accent },
+  noteRowActive: { backgroundColor: activeBg, borderColor: activeBg },
   noteRowTop: { alignItems: 'center', flexDirection: 'row' as const, gap: 8 },
-  noteTime: { color: faint, fontSize: 11, lineHeight: 14 },
+  noteTime: { color: faint, fontSize: 12, lineHeight: 14 },
   noteTitle: { color: text, flex: 1, fontSize: 15, fontWeight: '700' as const, lineHeight: 20 },
   notesListHeader: { alignItems: 'flex-start', flexDirection: 'row' as const, justifyContent: 'space-between', gap: 12 },
   notesListPanel: {
     backgroundColor: panel,
     borderColor: line,
-    borderRadius: 12,
+    borderRadius: 24,
     borderWidth: 1,
     flexShrink: 0,
     gap: 14,
@@ -846,11 +910,10 @@ const local: Record<string, any> = {
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: accent,
-    borderRadius: 12,
-    minHeight: 40,
+    backgroundColor: activeBg,
+    borderRadius: 999,
+    minHeight: 44,
     justifyContent: 'center',
-    outlineStyle: 'none' as const,
     paddingHorizontal: 14,
   },
   primaryButtonText: { color: activeText, fontSize: 13, fontWeight: '800' as const, lineHeight: 17 },
@@ -858,14 +921,13 @@ const local: Record<string, any> = {
   quoteInput: { color: text, fontStyle: 'italic' as const },
   roundAddButton: {
     alignItems: 'center',
-    backgroundColor: accent,
+    backgroundColor: activeBg,
     borderRadius: 999,
-    height: 42,
+    height: 44,
     justifyContent: 'center',
-    outlineStyle: 'none' as const,
-    width: 42,
+    width: 44,
   },
-  saveStateText: { color: faint, fontSize: 11, lineHeight: 14 },
+  saveStateText: { color: faint, fontSize: 12, lineHeight: 14 },
   screen: { flex: 1, minHeight: 0 },
   searchBox: {
     alignItems: 'center',
@@ -884,26 +946,24 @@ const local: Record<string, any> = {
     fontSize: 16,
     lineHeight: 20,
     minHeight: 40,
-    outlineStyle: 'none' as const,
     paddingVertical: 0,
   },
   secondaryButton: {
     borderColor: line,
     borderRadius: 12,
     borderWidth: 1,
-    minHeight: 38,
-    outlineStyle: 'none' as const,
+    minHeight: 44,
     paddingHorizontal: 16,
     justifyContent: 'center',
   },
   secondaryButtonText: { color: text, fontSize: 13, fontWeight: '700' as const },
   titleInput: {
     color: text,
-    fontSize: 32,
-    fontWeight: '850' as const,
-    lineHeight: 39,
+    fontSize: 36,
+    fontWeight: '600' as const,
+    letterSpacing: -1.2,
+    lineHeight: 44,
     minHeight: 48,
-    outlineStyle: 'none' as const,
     paddingVertical: 0,
   },
   toggleChildren: {

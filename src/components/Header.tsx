@@ -12,7 +12,7 @@ type Props = {
 
 export function Header({ aiMode, theme, themeMode, onToggleTheme }: Props) {
   const Icon = themeMode === 'dark' ? Sun : Moon;
-  const aiLabel = aiMode === 'gemini' ? 'Gemini' : aiMode === 'openrouter' ? 'Router' : aiMode === 'checking' ? '...' : 'rules';
+  const aiLabel = aiMode === 'yandex' ? 'Яндекс' : aiMode === 'gemini' ? 'Gemini' : aiMode === 'openrouter' ? 'Router' : aiMode === 'checking' ? '...' : 'rules';
 
   return (
     <View style={styles.topBar}>
@@ -22,7 +22,7 @@ export function Header({ aiMode, theme, themeMode, onToggleTheme }: Props) {
         </View>
         <Text style={[styles.logoText, { color: theme.text }]}>KODA</Text>
         <View style={[styles.aiPill, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.aiPillText, { color: aiMode === 'gemini' || aiMode === 'openrouter' ? theme.accent : theme.muted }]}>{aiLabel}</Text>
+          <Text style={[styles.aiPillText, { color: aiMode === 'yandex' || aiMode === 'gemini' || aiMode === 'openrouter' ? theme.accent : theme.muted }]}>{aiLabel}</Text>
         </View>
       </View>
 

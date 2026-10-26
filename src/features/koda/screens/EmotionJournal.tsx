@@ -2,7 +2,7 @@ import { RightPanel } from '../components/RightPanel';
 import { useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { emotionGroups, type EmotionEntry } from '../emotionJournal';
-import { accent, accentSoft, line, muted, panel, text } from '../theme';
+import { accent, activeBg, activeText, line, muted, panel, text } from '../theme';
 import { uid } from '../utils';
 
 function localDateTime(value = new Date().toISOString()) {
@@ -39,7 +39,7 @@ export function EmotionJournal({ entries, onSave, onBack, isDesktop = false }: {
     onSave({ id: editingId ?? uid('emotion'), occurredAt, event: event.trim(), group, emotion, action: action.trim(), updatedAt: new Date().toISOString() });
     clear(); setMessage('Запись сохранена в истории.');
   }
-  const button = (label: string, onPress: () => void, selected = false) => <Pressable key={label} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={[s.chip, selected && s.selected]}><Text style={{ color: selected ? accent : text }}>{label}</Text></Pressable>;
+  const button = (label: string, onPress: () => void, selected = false) => <Pressable key={label} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={[s.chip, selected && s.selected]}><Text style={{ color: selected ? activeText : text, fontWeight: selected ? '600' : '400' }}>{label}</Text></Pressable>;
   return <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={s.page}>
     <View style={[s.layout, isDesktop && s.desktopLayout]}>
     <View style={[s.main, isDesktop && s.desktopMain]}>
@@ -118,13 +118,13 @@ const s = StyleSheet.create({
   popupContent: { padding: 18, gap: 12 },
   page: { padding: 20, gap: 18, paddingBottom: 60 },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
-  heading: { color: text, fontSize: 22, fontWeight: '600' },
+  heading: { color: text, fontSize: 27, fontWeight: '600', letterSpacing: -0.8, lineHeight: 34 },
   hint: { color: muted, fontSize: 14, lineHeight: 21 },
   body: { color: text, fontSize: 16, lineHeight: 24 },
   label: { color: text, fontWeight: '600', fontSize: 15, marginTop: 8 },
-  card: { backgroundColor: panel, borderColor: line, borderWidth: 1, borderRadius: 14, padding: 18, gap: 12 },
-  input: { color: text, borderWidth: 1, borderColor: line, borderRadius: 8, padding: 12, fontSize: 16, lineHeight: 24, minHeight: 48 },
-  multiline: { minHeight: 90, textAlignVertical: 'top' },
-  chip: { paddingHorizontal: 14, paddingVertical: 11, minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: line, borderRadius: 9 },
-  selected: { borderColor: accent, backgroundColor: accentSoft },
+  card: { backgroundColor: panel, borderColor: line, borderWidth: 1, borderRadius: 26, padding: 24, gap: 16 },
+  input: { color: text, borderWidth: 1, borderColor: line, borderRadius: 16, padding: 14, fontSize: 16, lineHeight: 24, minHeight: 52 },
+  multiline: { minHeight: 112, textAlignVertical: 'top' },
+  chip: { paddingHorizontal: 16, paddingVertical: 11, minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: line, borderRadius: 999 },
+  selected: { borderColor: activeBg, backgroundColor: activeBg },
 });

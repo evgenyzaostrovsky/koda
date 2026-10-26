@@ -1,6 +1,11 @@
 import { mergeEmotionEntries, parseEmotionEntries } from './emotionJournal';
 import { defaultJournalEntry, initialGoals, initialHabits } from './constants';
 import { normalizeGoal } from './goalLogic';
+import { mergeGoalWindows } from './openWindow';
+import { mergeRoadmapClarifications } from './goalRoadmapClarifications';
+import { mergeDayPlans, parseDayPlanState } from './dayPlanSync';
+import { mergeHabits } from './habitSync';
+import { normalizeHabitMetadata } from './habitModel';
 import type { Goal, Habit, JournalEntry, KodaDay, Note, NoteBlock, NoteDocument, PlannerItem, PomodoroSettings, ProfileState, Project, ThemeId } from './types';
 import { todayDateKey } from './utils';
 
@@ -110,8 +115,8 @@ export function mergeStoredKodaState(remoteState: StoredKodaState, localState: S
   if (!localState) return remoteState;
 
   return {
-    goals: mergeByUpdatedAt(remoteState.goals, localState.goals),
-    habits: localState.habits.length ? localState.habits : remoteState.habits,
+    goals: mergeGoals(remoteState.goals, localState.goals),
+    habits: mergeHabits(remoteState.habits, localState.habits),
     kodaDays: mergeKodaDays(remoteState.kodaDays, localState.kodaDays),
     pomodoro: isDefaultPomodoroSettings(localState.pomodoro) ? remoteState.pomodoro : localState.pomodoro,
     profile: { ...(isProfileEmpty(localState.profile) ? remoteState.profile : localState.profile), emotionEntries: mergeEmotionEntries(remoteState.profile.emotionEntries, localState.profile.emotionEntries) },
@@ -155,13 +160,17 @@ export function normalizeStoredKodaState(value: unknown): StoredKodaState | null
 
   const state = value as Partial<StoredKodaState> & { koda_days?: unknown };
   const goals = normalizeGoalList(state.goals) ?? initialGoals;
-  const habits = isHabitList(state.habits) ? state.habits : initialHabits;
+  const habits = normalizeHabitList(state.habits);
+  const embeddedDays = state.profile && typeof state.profile === 'object' ? (state.profile as { __kodaDays?: unknown }).__kodaDays : undefined;
   const rawKodaDays = state.kodaDays ?? state.koda_days;
-  const kodaDays = isKodaDayList(rawKodaDays) ? rawKodaDays : [];
+  const kodaDays = mergeKodaDays(isKodaDayList(embeddedDays) ? embeddedDays : [], isKodaDayList(rawKodaDays) ? rawKodaDays : []);
   const rawProfile = state.profile;
   const pomodoro = normalizePomodoroSettings(state.pomodoro ?? getEmbeddedPomodoroSettings(rawProfile));
   const profile = normalizeProfileState(state.profile);
-  const projects = normalizeProjectList(state.projects) ?? [];
+  // Keep the compatibility copy readable after the projects column is added.
+  const embeddedProjects = rawProfile && typeof rawProfile === 'object'
+    ? (rawProfile as { __kodaProjects?: unknown }).__kodaProjects : undefined;
+  const projects = mergeProjects(normalizeProjectList(embeddedProjects) ?? [], normalizeProjectList(state.projects) ?? []);
 
   return { goals, habits, kodaDays, pomodoro, profile, projects };
 }
@@ -197,7 +206,7 @@ function mergeByUpdatedAt<T extends { id: string; updatedAt?: string }>(remoteIt
   return Array.from(itemsById.values());
 }
 
-function mergeProjects(remoteProjects: Project[], localProjects: Project[]) {
+export function mergeProjects(remoteProjects: Project[], localProjects: Project[]) {
   const projectsById = new Map<string, Project>();
 
   for (const project of remoteProjects) {
@@ -225,18 +234,44 @@ export function mergeKodaDays(remoteDays: KodaDay[], localDays: KodaDay[]) {
   const daysByKey = new Map<string, KodaDay>();
 
   for (const day of remoteDays) {
-    daysByKey.set(day.localDate || day.id, day);
+    daysByKey.set(day.localDate || day.id, normalizeStoredDay(day));
   }
 
-  for (const day of localDays) {
+  for (const rawDay of localDays) {
+    const day = normalizeStoredDay(rawDay);
     const key = day.localDate || day.id;
     const existing = daysByKey.get(key);
-    if (!existing || timeValue(day.updatedAt) >= timeValue(existing.updatedAt)) {
-      daysByKey.set(key, day);
-    }
+    if (!existing) { daysByKey.set(key, day); continue; }
+    const newest = timeValue(day.updatedAt) >= timeValue(existing.updatedAt) ? day : existing;
+    // Completion is a fixed historical result; do not let a stale active device reopen it.
+    const winner = existing.status === 'completed' && day.status !== 'completed' ? existing
+      : day.status === 'completed' && existing.status !== 'completed' ? day : newest;
+    const a = parseDayPlanState(existing.plan), b = parseDayPlanState(day.plan);
+    const plan = a && b ? mergeDayPlans(a, b) : a ?? b;
+    daysByKey.set(key, plan ? { ...winner, plan } : winner);
   }
 
   return Array.from(daysByKey.values()).sort((first, second) => second.localDate.localeCompare(first.localDate));
+}
+
+function normalizeStoredDay(day: KodaDay): KodaDay {
+  const embedded = day.calculationSnapshot && typeof day.calculationSnapshot === 'object' ? (day.calculationSnapshot as Record<string, unknown>).__dayPlan : undefined;
+  const plan = parseDayPlanState(day.plan ?? embedded);
+  return { ...day, plan: plan ?? undefined };
+}
+
+export function mergeGoals(remote: Goal[], local: Goal[]) {
+  const byId = new Map<string, Goal>();
+  for (const goal of [...remote, ...local]) {
+    const previous = byId.get(goal.id);
+    const merged = previous ? mergeGoalWindows(previous, goal) : goal;
+    // Older clients omit this field. Only an explicit empty string clears context.
+    const planningContext = merged.planningContext ?? previous?.planningContext ?? goal.planningContext;
+    const roadmapClarifications = mergeRoadmapClarifications(previous?.roadmapClarifications, goal.roadmapClarifications);
+    byId.set(goal.id, { ...merged, ...(planningContext === undefined ? {} : { planningContext }),
+      ...(roadmapClarifications === undefined ? {} : { roadmapClarifications }) });
+  }
+  return [...byId.values()];
 }
 
 function timeValue(value?: string | null) {
@@ -367,17 +402,20 @@ function normalizeGoalList(value: unknown): Goal[] | null {
   return goals.length || value.length === 0 ? goals : null;
 }
 
-function isHabitList(value: unknown): value is Habit[] {
-  return Array.isArray(value) && value.every((item) => (
-    item &&
-    typeof item === 'object' &&
-    typeof (item as Habit).id === 'string' &&
-    typeof (item as Habit).title === 'string' &&
-    typeof (item as Habit).target === 'string' &&
-    Array.isArray((item as Habit).doneDays) &&
-    Array.isArray((item as Habit).monthDays) &&
-    typeof (item as Habit).monthHistory === 'object'
-  ));
+function normalizeHabitList(value: unknown): Habit[] {
+  if (!Array.isArray(value)) return initialHabits.map(normalizeHabitMetadata);
+  // One malformed row must not replace every saved habit with starter data.
+  const habits = value.flatMap(item => {
+    if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !item.id.trim() ||
+      typeof item.title !== 'string' || typeof item.target !== 'string') return [];
+    const booleans = (days: unknown) => Array.isArray(days) ? days.map(day => day === true) : [];
+    const history = item.monthHistory && typeof item.monthHistory === 'object' && !Array.isArray(item.monthHistory)
+      ? Object.fromEntries(Object.entries(item.monthHistory).filter(([key, days]) => /^\d{4}-(0[1-9]|1[0-2])$/.test(key) && Array.isArray(days))
+        .map(([key, days]) => [key, booleans(days)])) : {};
+    return [normalizeHabitMetadata({ ...item, doneDays: booleans(item.doneDays), monthDays: booleans(item.monthDays), monthHistory: history })];
+  });
+  // Merge duplicated IDs only when necessary, keeping ordinary legacy shapes untouched.
+  return new Set(habits.map(habit => habit.id)).size === habits.length ? habits : mergeHabits([], habits);
 }
 
 function isPlannerSourceType(value: unknown) {

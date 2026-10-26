@@ -1,6 +1,6 @@
 import type { Database } from '../../types/database';
 
-export type TabKey = 'planner' | 'goals' | 'projects' | 'notes' | 'habits' | 'timer' | 'profile' | 'journal' | 'progress' | 'koda';
+export type TabKey = 'planner' | 'goals' | 'projects' | 'notes' | 'habits' | 'day' | 'routines' | 'timer' | 'profile' | 'journal' | 'progress' | 'koda';
 export type ThemeId = 'calm-light' | 'calm-dark' | 'calm-sky-light' | 'calm-sky-dark' | 'calm-lavender-light' | 'calm-lavender-dark';
 export type AccountInfo = { name: string; username: string; createdAt: string };
 export type GoalStatus = 'active' | 'paused' | 'completed' | 'archived';
@@ -32,6 +32,9 @@ export type GoalAction = {
   status: GoalActionStatus;
   position: number;
   completedAt: string | null;
+  archivedAt?: string | null;
+  deferredUntil?: string;
+  dependsOn?: string[];
 };
 
 export type GoalRoutine = {
@@ -77,12 +80,38 @@ export type KodaDay = {
   calculationSnapshot: unknown;
   createdAt: string;
   updatedAt: string;
+  plan?: import('./dayPlan').DayPlanState;
+};
+
+export type OpenWindowDirection = {
+  id: string;
+  title: string;
+  position: number;
+  actionIds: string[];
+  routineIds: string[];
+  archivedAt: string | null;
+};
+export type OpenWindowChange = {
+  id: string;
+  at: string;
+  label: string;
+  directions: OpenWindowDirection[];
+  actionsSnapshot?: GoalAction[];
+  routinesSnapshot?: GoalRoutine[];
+};
+export type OpenWindow = {
+  version: 1;
+  directions: OpenWindowDirection[];
+  history: OpenWindowChange[];
+  conflicts?: OpenWindowChange[];
 };
 
 export type Goal = {
   id: string;
   title: string;
   desiredResult: string;
+  planningContext?: string;
+  roadmapClarifications?: import('./goalRoadmapClarifications').RoadmapClarifications;
   deadline: string;
   priority: GoalPriority;
   status: GoalStatus;
@@ -94,8 +123,11 @@ export type Goal = {
   actions: GoalAction[];
   routines: GoalRoutine[];
   routineLogs: GoalRoutineLog[];
+  openWindow?: OpenWindow;
 };
-export type Habit = { id: string; title: string; target: string; doneDays: boolean[]; monthDays: boolean[]; monthHistory: Record<string, boolean[]> };
+/** Local civil day events; a resume on a day makes that day scheduled again. */
+export type HabitPauseEdit = { paused: boolean; at: string; id: string };
+export type Habit = { id: string; title: string; target: string; doneDays: boolean[]; monthDays: boolean[]; monthHistory: Record<string, boolean[]>; icon?: string; color?: string; frequency?: 'daily' | 'weekdays'; weekdays?: number[]; isActive?: boolean; createdDate?: string; archivedAt?: string | null; pauseEdits?: Record<string, HabitPauseEdit>; metadataUpdatedAt?: string; updatedAt?: string; deletedAt?: string | null; dayEdits?: Record<string, {done:boolean;at:string;id:string}> };
 export type Task = { id: string; title: string; detail: string; done: boolean };
 export type PlannerSubtask = { id: string; title: string; done: boolean };
 export type PlannerSourceType = 'planner' | 'goal' | 'project' | 'recurring';
@@ -176,7 +208,7 @@ export type JournalEntry = {
   mood: JournalMood;
   createdAt: string;
 };
-export type ChatMessage = { id: string; role: 'user' | 'koda'; text: string };
+export type ChatMessage = { id: string; role: 'user' | 'koda'; text: string; createdAt?: string };
 export type PomodoroSoundId =
   | 'aurora'
   | 'bell'

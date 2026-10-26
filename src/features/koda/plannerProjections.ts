@@ -1,4 +1,10 @@
-import type { PlannerItem, Project } from './types';
+import type { Habit, PlannerItem, Project } from './types';
+import { habitDoneOn, habitIsDue } from './habitModel';
+
+export function buildHabitPlannerItems(habits: Habit[], date: string): PlannerItem[] {
+  return habits.filter(habit => habitIsDue(habit, date)).map(habit => ({ id: `habit:${habit.id}:${date}`, date, time: '', title: habit.title,
+    done: habitDoneOn(habit, date), sourceType: 'recurring' as const, sourceId: habit.id }));
+}
 
 export function buildProjectPlannerItems(projects: Project[]): PlannerItem[] {
   return projects

@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {mergeCloudChat,stampLegacyChat} from '../src/features/koda/chatCloudState';
+import type {ChatHistorySnapshot} from '../src/features/koda/chatHistory';
+const user={id:'u1',role:'user' as const,text:'Тест',createdAt:'2026-10-21T10:00:00.000Z'};
+const local:ChatHistorySnapshot={version:1,messages:[user],provider:null,pendingRequest:[{role:'user',content:'Тест'}],pendingMessageId:'u1'};
+const reply={id:'reply-u1',role:'koda' as const,text:'Первый канонический ответ',createdAt:'2026-10-21T10:00:01.000Z'};
+const merged=mergeCloudChat(local,{messages:[user,reply],provider:'yandex'});
+assert.equal(merged.messages.length,2);assert.equal(merged.pendingRequest,null);assert.equal(merged.pendingMessageId,undefined);assert.equal(merged.provider,'yandex');
+const unrelated=mergeCloudChat(local,{messages:[{...reply,id:'reply-other'}],provider:'openrouter'});
+assert.ok(unrelated.pendingRequest);assert.equal(unrelated.pendingMessageId,'u1');
+const withNewLocal={...local,messages:[user,{id:'u2',role:'user' as const,text:'Офлайн новое',createdAt:'2026-10-21T10:00:03.000Z'}]};
+assert.ok(mergeCloudChat(withNewLocal,{messages:[reply],provider:'yandex'}).messages.some(m=>m.id==='u2'));
+assert.equal(mergeCloudChat({...merged,messages:[user,{...reply,text:'Повторный иной ответ'}]},{messages:[reply],provider:'yandex'}).messages.find(m=>m.id===reply.id)?.text,reply.text);
+const legacy={...local,messages:[{id:'old1',role:'user' as const,text:'Один'},{id:'old2',role:'koda' as const,text:'Два'}]};
+const stamped=stampLegacyChat(legacy,Date.parse('2026-10-21T10:00:00Z'));assert.ok(stamped.messages[0].createdAt!<stamped.messages[1].createdAt!);assert.deepEqual(stampLegacyChat(stamped,Date.now()+100000),stamped);
+console.log('Chat cloud state: pending reply convergence, unrelated pending preserved, in-flight local additions retained, canonical dedupe, legacy timestamps stable PASS');

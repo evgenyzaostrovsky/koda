@@ -1,28 +1,39 @@
+import { createChatGenerator, normalizeChatInput } from './src/ai/chatProvider';
 import cors from 'cors';
 import 'dotenv/config';
 import express from 'express';
 import { createAiProvider } from './src/ai/aiProvider';
+import { readAiConfig, configuredAiHealth } from './src/ai/providerConfig';
 import type { KodaAiInput } from './src/types/koda';
+import { createGoalPlanGenerator } from './src/ai/goalPlanProvider';
+import { normalizeGoalPlanInput } from './src/ai/goalPlanContract';
+const { authorizeAiRequest } = require('./src/server/aiSecurity');
 
 const app = express();
 const port = Number(process.env.PORT || process.env.KODA_API_PORT || 3333);
-const aiProvider = createAiProvider({
-  geminiApiKey: process.env.GEMINI_API_KEY,
-  geminiModel: process.env.GEMINI_MODEL,
-  openRouterApiKey: process.env.OPENROUTER_API_KEY,
-  openRouterModel: process.env.OPENROUTER_MODEL,
-});
+const aiConfig = readAiConfig(process.env);
+const aiProvider = createAiProvider(aiConfig);
 
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
+const generateChat = createChatGenerator(aiConfig);
+app.post('/api/chat', async (req, res) => {
+  if (!(await authorizeAiRequest(req, res))) return;
+  let messages;
+  try { messages=normalizeChatInput(req.body); } catch { res.status(400).json({error:'Напишите сообщение.'}); return; }
+  try { res.json(await generateChat({messages})); } catch { res.status(503).json({error:'Помощник сейчас недоступен. Попробуйте ещё раз.'}); }
+});
+const generateGoalPlan = createGoalPlanGenerator(aiConfig);
+app.post('/api/goal-plan', async (req, res) => {
+  if (!(await authorizeAiRequest(req, res))) return;
+  let input;
+  try { input = normalizeGoalPlanInput(req.body); } catch { res.status(400).json({ error: 'Опишите желание.' }); return; }
+  try { res.json(await generateGoalPlan(input)); } catch { res.status(503).json({ error: 'Помощник недоступен. Продолжите вручную.' }); }
+});
+
 app.get('/api/health', (_req, res) => {
-  res.json({
-    provider: aiProvider.name,
-    geminiEnabled: Boolean(process.env.GEMINI_API_KEY),
-    openRouterEnabled: Boolean(process.env.OPENROUTER_API_KEY),
-    model: getActiveModel(),
-  });
+  res.json(configuredAiHealth(aiConfig));
 });
 
 app.get('/api/koda-calendar.ics', (req, res) => {
@@ -58,6 +69,7 @@ app.get('/api/koda-calendar.ics', (req, res) => {
 });
 
 app.post('/api/onboarding', async (req, res) => {
+  if (!(await authorizeAiRequest(req, res))) return;
   const input = normalizeInput(req.body);
 
   try {
@@ -71,7 +83,7 @@ app.post('/api/onboarding', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+app.listen(port, process.env.KODA_API_HOST || '0.0.0.0', () => {
   console.log(`KODA API listening on port ${port}`);
   console.log(`Provider: ${aiProvider.name}`);
 });
@@ -85,17 +97,6 @@ function normalizeInput(body: Partial<KodaAiInput>): KodaAiInput {
   };
 }
 
-function getActiveModel() {
-  if (process.env.GEMINI_API_KEY) {
-    return process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
-  }
-
-  if (process.env.OPENROUTER_API_KEY) {
-    return process.env.OPENROUTER_MODEL || 'openrouter/free';
-  }
-
-  return 'rules';
-}
 
 function createCalendarEvent(date: Date, hour: number, minute: number, summary: string, description: string, timezone: string, uidPrefix: string) {
   const startsAt = withTime(date, hour, minute);

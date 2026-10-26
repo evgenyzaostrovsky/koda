@@ -1,7 +1,7 @@
-import { accent, activeText, bg, panel, line, text, muted, faint } from '../koda/theme';
+import { activeBg, activeText, bg, panel, panelSoft, line, text, muted, faint } from '../koda/theme';
 import { Lock, User } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
 type AuthMode = 'login' | 'register';
@@ -39,6 +39,10 @@ export function AuthScreen() {
       setMessage('Введи логин и пароль.');
       return;
     }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setMessage('Нет связи с сервером. Для входа в аккаунт нужен интернет. Сохранённая история останется на устройстве.');
+      return;
+    }
 
     setIsLoading(true);
     const resolvedEmail = await resolveLoginEmail(login);
@@ -54,7 +58,8 @@ export function AuthScreen() {
       password: cleanPassword,
     });
     setIsLoading(false);
-    setMessage(error ? 'Неверный логин или пароль.' : '');
+    const connectionFailed = error && (error.name === 'AuthRetryableFetchError' || error.status === 0 || (error.status ?? 0) >= 500);
+    setMessage(error ? connectionFailed ? 'Нет связи с сервером. Для входа в аккаунт нужен интернет. Сохранённая история останется на устройстве.' : 'Неверный логин или пароль.' : '');
   }
 
   async function register() {
@@ -104,9 +109,9 @@ export function AuthScreen() {
   const submit = mode === 'login' ? signIn : register;
 
   return (
-    <View style={styles.screen}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen} style={{flex:1,backgroundColor:bg}}>
       <View style={styles.panel}>
-        <Text style={styles.logo}>K O D A</Text>
+        <Text style={styles.logo}>koda life</Text>
 
         <View style={styles.tabs}>
           <Pressable onPress={() => setMode('login')} style={[styles.tab, mode === 'login' && styles.tabActive]}>
@@ -142,7 +147,7 @@ export function AuthScreen() {
 
         {message ? <Text style={[styles.message, message.includes('создан') && styles.messageSuccess]}>{message}</Text> : null}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -218,6 +223,7 @@ function AuthInput({
     <View style={styles.inputWrap}>
       {iconNode}
       <TextInput
+        accessibilityLabel={placeholder}
         autoCapitalize="none"
         keyboardType={keyboardType}
         onChangeText={onChangeText}
@@ -236,63 +242,64 @@ const styles = StyleSheet.create({
   screen: {
     alignItems: 'center',
     backgroundColor: bg,
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
-    padding: 18,
+    padding: 24,
   },
   panel: {
     backgroundColor: panel,
     borderColor: line,
-    borderRadius: 16,
+    borderRadius: 28,
     borderWidth: 1,
-    gap: 13,
-    maxWidth: 390,
-    padding: 18,
+    gap: 16,
+    maxWidth: 420,
+    padding: 28,
     width: '100%',
   },
-  logo: { color: text, fontSize: 12, letterSpacing: 2, marginBottom: 4, textAlign: 'center' },
+  logo: { color: text, fontSize: 26, fontWeight: '600', letterSpacing: -0.8, marginBottom: 5, textAlign: 'center' },
   tabs: {
     borderColor: line,
-    borderRadius: 7,
+    backgroundColor: panelSoft,
+    borderRadius: 999,
     borderWidth: 1,
     flexDirection: 'row',
-    padding: 3,
+    padding: 4,
   },
   tab: {
     alignItems: 'center',
-    borderRadius: 5,
+    borderRadius: 999,
     flex: 1,
-    minHeight: 34,
+    minHeight: 42,
     justifyContent: 'center',
   },
-  tabActive: { backgroundColor: accent },
+  tabActive: { backgroundColor: activeBg },
   tabText: { color: muted, fontSize: 13 },
   tabTextActive: { color: activeText, fontWeight: '700' },
   inputWrap: {
     alignItems: 'center',
     borderColor: line,
-    borderRadius: 7,
+    borderRadius: 16,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 10,
-    minHeight: 48,
-    paddingHorizontal: 12,
+    minHeight: 54,
+    paddingHorizontal: 16,
   },
   input: {
     color: text,
     flex: 1,
     fontSize: 15,
-    minHeight: 46,
+    minHeight: 52,
   },
   button: {
     alignItems: 'center',
-    backgroundColor: accent,
-    borderRadius: 7,
-    minHeight: 44,
+    backgroundColor: activeBg,
+    borderRadius: 999,
+    minHeight: 52,
     justifyContent: 'center',
   },
   buttonDisabled: { opacity: 0.55 },
   buttonText: { color: activeText, fontSize: 14, fontWeight: '700' },
-  message: { color: muted, fontSize: 12, lineHeight: 18 },
-  messageSuccess: { color: accent },
+  message: { color: muted, fontSize: 13, lineHeight: 19 },
+  messageSuccess: { color: text },
 });

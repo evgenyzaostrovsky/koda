@@ -1,3 +1,4 @@
+import { isRoutineScheduled } from './routineSchedule';
 import type {
   Goal,
   GoalAction,
@@ -9,6 +10,8 @@ import type {
   GoalRoutineMetricType,
 } from './types';
 import { todayDateKey, uid } from './utils';
+import { normalizeOpenWindow } from './openWindow';
+import { normalizeRoadmapClarifications } from './goalRoadmapClarifications';
 
 type LegacyGoal = { id?: string; title?: string; progress?: number; daysLeft?: number; archived?: boolean };
 
@@ -18,6 +21,17 @@ export type GoalDraft = {
   deadline: string;
   priority: GoalPriority;
 };
+
+export function wouldCreateDependencyCycle(actions: GoalAction[], actionId: string, dependencies: string[]): boolean {
+  const seen = new Set<string>();
+  const visit = (id: string): boolean => {
+    if (id === actionId) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return (actions.find(action=>action.id===id)?.dependsOn ?? []).some(visit);
+  };
+  return dependencies.some(visit);
+}
 
 export function createGoal(draft: GoalDraft, now = new Date().toISOString()): Goal {
   return {
@@ -43,12 +57,15 @@ function createStableGoalId() {
     return crypto.randomUUID();
   }
 
-  return uid('goal');
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+    const value = Math.floor(Math.random() * 16);
+    return (char === 'x' ? value : (value & 3) | 8).toString(16);
+  });
 }
 
 export function createMilestone(title: string, description = '', deadline = '', position = 0): GoalMilestone {
   return {
-    id: uid('milestone'),
+    id: createStableGoalId(),
     title: title.trim(),
     description: description.trim(),
     deadline,
@@ -68,7 +85,7 @@ export function createGoalAction(input: {
   position?: number;
 }): GoalAction {
   return {
-    id: uid('goal-action'),
+    id: createStableGoalId(),
     title: input.title.trim(),
     description: input.description?.trim() ?? '',
     dueDate: input.dueDate ?? '',
@@ -91,7 +108,7 @@ export function createGoalRoutine(input: {
   endDate?: string;
 }): GoalRoutine {
   return {
-    id: uid('goal-routine'),
+    id: createStableGoalId(),
     title: input.title.trim(),
     metricType: input.metricType,
     targetValue: Math.max(1, Math.round(input.targetValue || 1)),
@@ -116,6 +133,8 @@ export function normalizeGoal(value: unknown): Goal | null {
     id: typeof raw.id === 'string' ? raw.id : uid('goal'),
     title,
     desiredResult: typeof raw.desiredResult === 'string' ? raw.desiredResult : '',
+    ...(typeof raw.planningContext === 'string' ? { planningContext: raw.planningContext.slice(0, 2000) } : {}),
+    ...(normalizeRoadmapClarifications(raw.roadmapClarifications) ? { roadmapClarifications: normalizeRoadmapClarifications(raw.roadmapClarifications) } : {}),
     deadline,
     priority: isGoalPriority(raw.priority) ? raw.priority : 'important',
     status: isGoalStatus(raw.status) ? raw.status : raw.archived ? 'archived' : 'active',
@@ -127,40 +146,40 @@ export function normalizeGoal(value: unknown): Goal | null {
     actions: normalizeActions(raw.actions),
     routines: normalizeRoutines(raw.routines),
     routineLogs: normalizeRoutineLogs(raw.routineLogs),
+    openWindow: normalizeOpenWindow(raw.openWindow, typeof raw.id === 'string' ? raw.id : 'legacy'),
   };
 }
 
 export function calculateMilestoneProgress(milestone: GoalMilestone, actions: GoalAction[]) {
-  const ownActions = actions.filter((action) => action.milestoneId === milestone.id);
+  const ownActions = uniqueProgressActions(actions.filter((action) => action.milestoneId === milestone.id && !action.archivedAt));
   if (!ownActions.length) return milestone.status === 'completed' ? 100 : 0;
   return Math.round((ownActions.filter((action) => action.status === 'completed').length / ownActions.length) * 100);
 }
 
 export function calculateGoalProgress(goal: Goal) {
-  const milestones = goal.milestones.filter((milestone) => milestone.status !== 'completed' || !goal.archivedAt);
+  // Completing matrix cells is activity, not proof that the desired outcome was achieved.
+  if (goal.openWindow && !goal.milestones.length) return goal.status === 'completed' ? 100 : 0;
+  const milestones = [...new Map(goal.milestones.map(milestone=>[milestone.id,milestone])).values()];
   if (milestones.length) {
     return Math.round(milestones.reduce((sum, milestone) => sum + calculateMilestoneProgress(milestone, goal.actions), 0) / milestones.length);
   }
 
-  if (goal.actions.length) {
-    return Math.round((goal.actions.filter((action) => action.status === 'completed').length / goal.actions.length) * 100);
+  const activeActions = uniqueProgressActions(goal.actions.filter((action) => !action.archivedAt));
+  if (activeActions.length) {
+    return Math.round((activeActions.filter((action) => action.status === 'completed').length / activeActions.length) * 100);
   }
 
   return goal.status === 'completed' ? 100 : 0;
 }
 
+function uniqueProgressActions(actions:GoalAction[]) {
+  const unique=new Map<string,GoalAction>();
+  for(const action of actions){const before=unique.get(action.id);if(!before||before.status==='completed'&&action.status!=='completed')unique.set(action.id,action);}
+  return [...unique.values()];
+}
+
 export function isRoutineDueToday(routine: GoalRoutine, date = todayDateKey()) {
-  if (!routine.isActive) return false;
-  if (routine.startDate && routine.startDate > date) return false;
-  if (routine.endDate && routine.endDate < date) return false;
-  if (routine.frequencyType === 'daily') return true;
-  if (routine.frequencyType === 'selected_weekdays') {
-    const weekday = getIsoWeekday(date);
-    return routine.weekdays.includes(weekday);
-  }
-  if (routine.frequencyType === 'weekly') return true;
-  if (routine.frequencyType === 'monthly') return date.endsWith('-01') || routine.startDate.slice(-2) === date.slice(-2);
-  return false;
+  return isRoutineScheduled(routine, date);
 }
 
 export function routineLogValue(goal: Goal, routineId: string, date = todayDateKey()) {
@@ -199,7 +218,7 @@ export function formatDateLong(dateKey: string) {
 }
 
 export function todayActionCandidates(goal: Goal, date = todayDateKey()) {
-  const standaloneActions = goal.actions.filter((action) => !action.milestoneId);
+  const standaloneActions = goal.actions.filter((action) => !action.milestoneId && !action.archivedAt);
   const overdue = standaloneActions
     .filter((action) => action.status !== 'completed' && action.dueDate && action.dueDate <= date)
     .sort(sortGoalActions);
@@ -248,7 +267,7 @@ function normalizeMilestones(value: unknown): GoalMilestone[] {
 function normalizeActions(value: unknown): GoalAction[] {
   if (!Array.isArray(value)) return [];
   return value
-    .map((item, index) => {
+    .map((item, index): GoalAction | null => {
       if (!item || typeof item !== 'object') return null;
       const raw = item as Partial<GoalAction>;
       if (typeof raw.title !== 'string' || !raw.title.trim()) return null;
@@ -263,6 +282,9 @@ function normalizeActions(value: unknown): GoalAction[] {
         status: raw.status === 'completed' ? 'completed' : 'pending',
         position: typeof raw.position === 'number' ? raw.position : index,
         completedAt: typeof raw.completedAt === 'string' ? raw.completedAt : null,
+        archivedAt: typeof raw.archivedAt === 'string' ? raw.archivedAt : null,
+        deferredUntil: typeof raw.deferredUntil === 'string' ? raw.deferredUntil : '',
+        dependsOn: Array.isArray(raw.dependsOn) ? [...new Set(raw.dependsOn.filter((id): id is string => typeof id === 'string'))] : [],
       };
     })
     .filter((item): item is GoalAction => Boolean(item));

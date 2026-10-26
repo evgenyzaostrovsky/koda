@@ -17,5 +17,5 @@ export function KodaIcon({ name, size = 22, color = accent }: { name: TabKey | '
     koda: <><Path d="M20 12c0 5-4 8-8 8H5l-2 2v-9a9 9 0 0 1 9-9m6-2v6m-3-3h6M8 11h5m-5 4h8"/></>,
     brand: <><Path d="M4 17c3-6 5-7 8-4s5 1 8-3M5 21h14M5 8l3-3 3 3"/><Circle cx="17" cy="6" r="2"/></>,
   };
-  return <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden>{shapes[name]}</Svg>;
+  return <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden>{shapes[name === 'day' ? 'planner' : name === 'routines' ? 'habits' : name]}</Svg>;
 }

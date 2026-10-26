@@ -58,7 +58,10 @@ const mergedAcrossDevices = mergeStoredKodaState(
 assert.equal(mergedAcrossDevices.goals[0].title, 'Изменено на телефоне');
 assert.equal(mergedAcrossDevices.kodaDays[0].status, 'active');
 
-const cutoff = getKodaDayAutoCloseAt(offlineLocal.localDate);
+const cutoff = getKodaDayAutoCloseAt(offlineLocal.localDate, offlineLocal.timezone);
+assert.equal(cutoff.toISOString(),'2026-08-14T00:00:00.000Z');
+assert.equal(getKodaDayAutoCloseAt('2026-08-13','UTC').toISOString(),'2026-08-14T03:00:00.000Z');
+assert.equal(getKodaDayAutoCloseAt('2026-08-13','America/New_York').toISOString(),'2026-08-14T07:00:00.000Z');
 const justBeforeCutoff = new Date(cutoff.getTime() - 1);
 const justAfterCutoff = new Date(cutoff.getTime() + 1);
 assert.equal(autoFinalizeExpiredKodaDays([offlineLocal], [], [], justBeforeCutoff)[0].status, 'active');

@@ -7,6 +7,7 @@ import { isSupabaseConfigured } from './src/config/env';
 import { registerServiceWorker } from './src/lib/serviceWorker';
 import { supabase, authStorageKey } from './src/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { signOutDevice } from './src/lib/signOutDevice';
 import { accent, bg } from './src/features/koda/theme';
 
 export default function App() {
@@ -81,7 +82,7 @@ export default function App() {
     return <KodaApp />;
   }
 
-  return session?.user ? <KodaApp onSignOut={() => supabase.auth.signOut()} userId={session.user.id} /> : <AuthScreen />;
+  return session?.user ? <KodaApp onSignOut={() => { void signOutDevice(supabase, AsyncStorage, authStorageKey); }} userId={session.user.id} /> : <AuthScreen />;
 }
 
 const styles = StyleSheet.create({

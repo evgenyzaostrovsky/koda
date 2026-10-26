@@ -22,7 +22,7 @@ export function useRightPanel() {
   return { open, setOpen };
 }
 
-export function RightPanelProvider({ children, title, actions }: { children: ReactNode; title?: string; actions?: ReactNode }) {
+export function RightPanelProvider({ children, title, actions, compact = false }: { children: ReactNode; title?: string; actions?: ReactNode; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState(0);
   const [external, setExternal] = useState<ExternalPanel | null>(null);
@@ -30,11 +30,11 @@ export function RightPanelProvider({ children, title, actions }: { children: Rea
   const register = useRef((delta: number) => setCount((value) => value + delta)).current;
   const expanded = external?.open ?? open;
   return <PanelContext.Provider value={{ open, setOpen, register, registerExternal }}>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 16, minHeight: 60 }}><Text style={{ flex: 1, color: muted, fontSize: 12 }}>Моё пространство / {title}</Text>{count > 0 || external ? <View>
+    {(!compact || count > 0 || external || actions) && <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, paddingBottom: compact ? 8 : 16, minHeight: compact ? 44 : 60 }}>{!compact && <Text style={{ flex: 1, color: muted, fontSize: 12 }}>Моё пространство / {title}</Text>}{count > 0 || external ? <View>
       <Pressable accessibilityRole="button" accessibilityLabel={expanded ? 'Скрыть правую панель' : 'Показать правую панель'} accessibilityState={{ expanded }} onPress={external?.onToggle ?? (() => setOpen(!open))} style={{ backgroundColor: panel, borderColor: line, borderWidth: 1, borderRadius: 14, padding: 10, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
-        <PanelRight color={expanded ? accent : muted} size={22} />
+        <View style={{flexDirection:'row',alignItems:'center',gap:6}}><PanelRight color={expanded ? accent : muted} size={18} /><Text style={{fontSize:12,color:muted}}>Дополнительно</Text></View>
       </Pressable>
-    </View> : null}{actions}</View>
+    </View> : null}{actions}</View>}
     {children}
   </PanelContext.Provider>;
 }

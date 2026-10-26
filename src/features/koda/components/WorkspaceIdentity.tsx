@@ -28,7 +28,7 @@ export function WorkspaceIdentity({ account, days, items, collapsed, onProfile }
     {!collapsed ? <>
       <View style={identity.movement}>
         <Text style={identity.title}>Ты уже в движении</Text>
-        <Text style={identity.copy}>Маленький шаг тоже считается.</Text>
+
         <Text style={identity.copy}>{activeDates.size ? `За последние 7 дней движение отмечено в ${activeDates.size} из 7 дней.` : 'Начни с одного посильного дела. Здесь появится твой ритм за последние 7 дней.'}</Text>
         <View accessibilityLabel={`Активность: ${activeDates.size} из 7 дней`} style={identity.track}><View style={[identity.fill, { width: `${activeDates.size / 7 * 100}%` }]} /></View>
       </View>
@@ -44,12 +44,12 @@ export function WorkspaceIdentity({ account, days, items, collapsed, onProfile }
 
 const identity = StyleSheet.create({
   footer: { gap: 8 },
-  movement: { backgroundColor: panelSoft, borderWidth: 1, borderColor: line, borderRadius: 16, padding: 14, gap: 4, marginBottom: 6 },
+  movement: { backgroundColor: panelSoft, borderWidth: 0, borderColor: line, borderRadius: 24, padding: 12, gap: 4, marginBottom: 6 },
   title: { color: text, fontWeight: '600', fontSize: 12, lineHeight: 17 },
-  copy: { color: muted, fontSize: 11, lineHeight: 16 },
+  copy: { color: muted, fontSize: 12, lineHeight: 16 },
   track: { height: 5, borderRadius: 8, backgroundColor: line, overflow: 'hidden', marginTop: 8 },
   fill: { height: 5, backgroundColor: accent, borderRadius: 8 },
-  label: { color: muted, fontSize: 10, letterSpacing: 1.1, paddingHorizontal: 10 },
+  label: { color: muted, fontSize: 12, letterSpacing: 1.1, paddingHorizontal: 10 },
   settings: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44, paddingHorizontal: 10 },
   settingsText: { color: muted, fontSize: 13 },
   profile: { flexDirection: 'row', gap: 9, alignItems: 'center', borderTopWidth: 1, borderTopColor: line, paddingTop: 10, paddingBottom: 8 },

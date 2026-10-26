@@ -9,11 +9,13 @@ import { Clock, Plus, Smile, Tags, Trash2, X } from 'lucide-react-native';
 import type { JournalEntry, JournalMood } from '../types';
 import { dayTagOptions, defaultJournalEntry } from '../constants';
 import { sleepDurationMinutes } from '../utils';
-import { Card, SectionTitle } from '../components';
+import { SectionTitle } from '../components';
+import { BentoCard, bentoWidths } from '../components/Bento';
 import { accent, activeText, faint, muted, panel } from '../theme';
 import { styles } from '../styles';
 
 const hours = Array.from({ length: 24 }, (_, index) => index);
+const compactJournalCard = { padding: 16, gap: 12 } as const;
 const minutes = Array.from({ length: 60 }, (_, index) => index);
 const sleepWheelItemStep = 38;
 
@@ -128,18 +130,20 @@ export function JournalScreen({
 
   if (emotionalMode) return <EmotionJournal isDesktop={isDesktop} entries={emotionEntries} onSave={onSaveEmotion} onBack={() => setEmotionalMode(false)} />;
   return (
-    <ScrollView contentContainerStyle={[styles.scrollContent, isDesktop && styles.desktopPageScroll]} showsVerticalScrollIndicator={false}>
-      <Pressable accessibilityRole="button" onPress={() => setEmotionalMode(true)} style={styles.journalHistoryButton}><Text style={styles.journalHistoryText}>Эмоциональный дневник →</Text></Pressable>
+    <ScrollView contentContainerStyle={[styles.scrollContent, isDesktop && styles.desktopPageScroll, { alignSelf: 'center', maxWidth: bentoWidths.journal, width: '100%' }]} showsVerticalScrollIndicator={false}>
       {!isDesktop ? <View style={styles.journalHeader}>
         <SectionTitle title="Дневник" subtitle="Сон, настроение, мысли" />
         <View style={styles.journalHeaderActions}>
           {!isCurrentEntry ? (
-            <Pressable onPress={() => onSelectEntry(entries[0]?.id ?? activeEntryId)} style={styles.journalReturnButton}>
+            <Pressable accessibilityRole="button" onPress={() => onSelectEntry(entries[0]?.id ?? activeEntryId)} style={styles.journalReturnButton}>
               <Text style={styles.journalReturnText}>Новая запись</Text>
             </Pressable>
           ) : null}
-          <Pressable onPress={() => setHistoryOpen(true)} style={styles.journalHistoryButton}>
+          <Pressable accessibilityRole="button" onPress={() => setHistoryOpen(true)} style={styles.journalHistoryButton}>
             <Text style={styles.journalHistoryText}>История</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => setEmotionalMode(true)} style={styles.journalHistoryButton}>
+            <Text style={styles.journalHistoryText}>Эмоции</Text>
           </Pressable>
         </View>
       </View> : null}
@@ -151,7 +155,7 @@ export function JournalScreen({
                 <Text style={styles.cardLabel}>ДНЕВНИК</Text>
                 <Text style={styles.modalTitle}>История</Text>
               </View>
-              <Pressable onPress={() => setHistoryOpen(false)} style={styles.iconButton}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Закрыть историю дневника" onPress={() => setHistoryOpen(false)} style={styles.iconButton}>
                 <X color={muted} size={18} />
               </Pressable>
             </View>
@@ -160,7 +164,7 @@ export function JournalScreen({
                 const active = item.id === activeEntryId;
 
                 return (
-                  <Pressable
+                  <Pressable accessibilityRole="button"
                     key={item.id}
                     onPress={() => setPreviewEntryId(item.id)}
                     style={[styles.historyRow, active && styles.historyRowActive]}
@@ -171,6 +175,8 @@ export function JournalScreen({
                       {journalEntryPreview(item)}
                     </Text>
                     <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Удалить запись дневника ${journalEntryDateLabel(item)}`}
                       onHoverIn={() => setHoveredDeleteEntryId(item.id)}
                       onHoverOut={() => setHoveredDeleteEntryId((current) => (current === item.id ? null : current))}
                       onPress={(event) => requestDeleteEntry(item.id, event)}
@@ -194,7 +200,7 @@ export function JournalScreen({
                   <Text style={styles.cardLabel}>ДНЕВНИК</Text>
                 <Text style={styles.modalTitle}>История</Text>
                 </View>
-                <Pressable onPress={() => setPreviewEntryId(null)} style={styles.iconButton}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Закрыть запись дневника" onPress={() => setPreviewEntryId(null)} style={styles.iconButton}>
                   <X color={muted} size={18} />
                 </Pressable>
               </View>
@@ -232,10 +238,10 @@ export function JournalScreen({
               </ScrollView>
 
               <View style={styles.modalActions}>
-                <Pressable onPress={() => setPreviewEntryId(null)} style={styles.deleteButton}>
+                <Pressable accessibilityRole="button" onPress={() => setPreviewEntryId(null)} style={styles.deleteButton}>
                   <Text style={styles.deleteButtonText}>Назад</Text>
                 </Pressable>
-                <Pressable
+                <Pressable accessibilityRole="button"
                   onPress={() => {
                     onSelectEntry(previewEntry.id);
                     setPreviewEntryId(null);
@@ -258,38 +264,48 @@ export function JournalScreen({
                 <Text style={styles.cardLabel}>ДНЕВНИК</Text>
                 <Text style={styles.modalTitle}>Подтвердить удаление?</Text>
               </View>
-              <Pressable onPress={() => setDeleteEntryId(null)} style={styles.modalCloseButton}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Отменить удаление записи" onPress={() => setDeleteEntryId(null)} style={styles.modalCloseButton}>
                 <X color={muted} size={18} />
               </Pressable>
             </View>
             <Text style={styles.rowMeta}>Запись исчезнет из истории.</Text>
             <View style={styles.plannerConfirmActions}>
-              <Pressable onPress={() => setDeleteEntryId(null)} style={styles.plannerCancelButton}>
+              <Pressable accessibilityRole="button" onPress={() => setDeleteEntryId(null)} style={styles.plannerCancelButton}>
                 <Text style={styles.plannerCancelText}>Нет</Text>
               </Pressable>
-              <Pressable onPress={confirmDeleteEntry} style={styles.plannerDeleteButton}>
+              <Pressable accessibilityRole="button" onPress={confirmDeleteEntry} style={styles.plannerDeleteButton}>
                 <Text style={styles.plannerDeleteText}>Да, удалить</Text>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
-      <View style={isDesktop ? styles.journalDesktopLayout : undefined} testID={isDesktop ? 'desktop-page-columns' : undefined}>
-        <View style={isDesktop ? styles.journalDesktopMain : undefined} testID={isDesktop ? 'desktop-main-column' : undefined}>
+      <View style={isDesktop ? [styles.journalDesktopLayout, { alignSelf: 'center', gap: 24, maxWidth: bentoWidths.journal, width: '100%' }] : undefined} testID={isDesktop ? 'desktop-page-columns' : undefined}>
+        <View style={isDesktop ? [styles.journalDesktopMain, { maxWidth: bentoWidths.journal, width: '100%', gap:12 }] : {gap:12}} testID={isDesktop ? 'desktop-main-column' : undefined}>
       {isDesktop ? (
         <View style={styles.journalHeader}>
           <SectionTitle title="Дневник" subtitle="Сон, настроение, мысли" />
-          {!isCurrentEntry ? (
-            <Pressable onPress={() => onSelectEntry(entries[0]?.id ?? activeEntryId)} style={styles.journalReturnButton}>
-              <Text style={styles.journalReturnText}>Новая запись</Text>
+          <View style={styles.journalHeaderActions}>
+            {!isCurrentEntry ? (
+              <Pressable accessibilityRole="button" onPress={() => onSelectEntry(entries[0]?.id ?? activeEntryId)} style={styles.journalReturnButton}>
+                <Text style={styles.journalReturnText}>Новая запись</Text>
+              </Pressable>
+            ) : null}
+            <Pressable accessibilityRole="button" accessibilityLabel="Открыть историю дневника" onPress={() => setHistoryOpen(true)} style={styles.journalHistoryButton}>
+              <Text style={styles.journalHistoryText}>История</Text>
             </Pressable>
-          ) : null}
+            <Pressable accessibilityRole="button" onPress={() => setEmotionalMode(true)} style={styles.journalHistoryButton}>
+              <Text style={styles.journalHistoryText}>Эмоции</Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
+      <Text style={[styles.rowMeta, { fontSize: 13, lineHeight: 18 }]}>{journalEntryDateLabel(entry)}</Text>
       {isCurrentEntry ? (
-        <Card>
+        <BentoCard tone="light">
           <Text style={styles.cardLabel}>МЫСЛИ ДНЯ</Text>
           <TextInput
+            accessibilityLabel="Мысли дня"
             multiline
             onChangeText={(value) => onUpdate({ text: value })}
             placeholder="Запиши свои мысли..."
@@ -297,12 +313,12 @@ export function JournalScreen({
             style={styles.largeTextArea}
             value={entry.text}
           />
-        </Card>
+        </BentoCard>
       ) : (
-        <View style={styles.journalReadonlyArticle}>
+        <BentoCard tone="light" style={{gap:16}}>
           <Text style={styles.cardLabel}>МЫСЛИ ДНЯ</Text>
           <Text style={styles.journalReadonlyText}>{entry.text.trim() || 'Без текста'}</Text>
-        </View>
+        </BentoCard>
       )}
       {!isCurrentEntry ? (
         <View style={styles.journalReadonlyMetaGrid}>
@@ -330,7 +346,7 @@ export function JournalScreen({
         </View>
       )}
       {isCurrentEntry && sleepOpen ? (
-        <Card>
+        <BentoCard tone="soft" style={compactJournalCard}>
           <View style={styles.cardLabelRow}>
             <Clock color={muted} size={13} />
             <Text style={styles.cardLabel}>СОН</Text>
@@ -343,10 +359,10 @@ export function JournalScreen({
               <Text style={styles.sleepValue}>{sleepDuration}</Text>
             </View>
           </View>
-        </Card>
+        </BentoCard>
       ) : null}
       {isCurrentEntry && tagsOpen ? (
-        <Card>
+        <BentoCard tone="soft" style={compactJournalCard}>
           <View style={styles.cardLabelRow}>
             <Tags color={muted} size={13} />
             <Text style={styles.cardLabel}>МЕТКИ ДНЯ</Text>
@@ -356,21 +372,24 @@ export function JournalScreen({
               const active = entry.tags.includes(tag);
 
               return (
-                <Pressable key={tag} onPress={() => toggleTag(tag)} style={[styles.tagChip, active && styles.tagChipActive]}>
+                <Pressable accessibilityRole="button" key={tag} onPress={() => toggleTag(tag)} style={[styles.tagChip, active && styles.tagChipActive]}>
                   <Text style={[styles.tagText, active && styles.tagTextActive]}>{tag}</Text>
                 </Pressable>
               );
             })}
           </View>
-        </Card>
+        </BentoCard>
       ) : null}
       {isCurrentEntry && moodOpen ? (
-        <Card>
+        <BentoCard tone="soft" style={compactJournalCard}>
           <Text style={styles.cardLabel}>НАСТРОЕНИЕ</Text>
           <View style={styles.moodRow}>
             {[1, 2, 3, 4, 5].map((value) => (
               <Pressable
                 key={value}
+                accessibilityRole="button"
+                accessibilityLabel={`Настроение: ${value} из 5`}
+                accessibilityState={{ selected: entry.mood === value }}
                 onPress={() => onUpdate({ mood: value as JournalMood })}
                 style={[styles.moodButton, entry.mood === value && styles.moodButtonActive]}
               >
@@ -378,7 +397,7 @@ export function JournalScreen({
               </Pressable>
             ))}
           </View>
-        </Card>
+        </BentoCard>
       ) : null}
       {isCurrentEntry && (sleepOpen || tagsOpen || moodOpen) && !(sleepOpen && tagsOpen && moodOpen) ? (
         <View style={styles.journalOptionalActions}>
@@ -388,7 +407,7 @@ export function JournalScreen({
         </View>
       ) : null}
       {isCurrentEntry ? (
-        <Pressable disabled={!canAddEntry} onPress={onAddEntry} style={[styles.journalBottomAddButton, !canAddEntry && styles.journalBottomAddButtonDisabled]}>
+        <Pressable accessibilityRole="button" disabled={!canAddEntry} onPress={onAddEntry} style={[styles.journalBottomAddButton, !canAddEntry && styles.journalBottomAddButtonDisabled]}>
           <Plus color={activeText} size={15} strokeWidth={2.8} />
           <Text style={styles.journalBottomAddText}>Добавить запись</Text>
         </Pressable>
@@ -402,7 +421,7 @@ export function JournalScreen({
             </View>
             <ScrollView contentContainerStyle={styles.journalDesktopHistoryList} showsVerticalScrollIndicator={false}>
               {historyEntries.map((item, index) => (
-                <Pressable key={item.id} onPress={() => onSelectEntry(item.id)} style={[styles.journalDesktopHistoryRow, item.id === activeEntryId && styles.journalDesktopHistoryRowActive]}>
+                <Pressable accessibilityRole="button" key={item.id} onPress={() => onSelectEntry(item.id)} style={[styles.journalDesktopHistoryRow, item.id === activeEntryId && styles.journalDesktopHistoryRowActive]}>
                   <Text style={styles.historyDate}>{journalEntryDateLabel(item)}</Text>
                   <Text style={styles.historyTime}>{journalEntryLabel(item, index)}</Text>
                   <Text numberOfLines={2} style={styles.historyPreview}>{journalEntryPreview(item)}</Text>
@@ -418,7 +437,7 @@ export function JournalScreen({
 
 function JournalOptionButton({ icon, label, onPress }: { icon: ReactNode; label: string; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={styles.journalOptionButton}>
+    <Pressable accessibilityRole="button" onPress={onPress} style={styles.journalOptionButton}>
       <Plus color={muted} size={13} />
       {icon}
       <Text style={styles.journalOptionText}>{label}</Text>
@@ -446,7 +465,7 @@ export function SleepTimeField({ label, onChange, value }: { label: string; onCh
 
   return (
     <>
-    <Pressable onPress={openPicker} style={styles.sleepInputChip}>
+    <Pressable accessibilityRole="button" onPress={openPicker} style={styles.sleepInputChip}>
       <Text style={styles.rowMeta}>{label}</Text>
       <Text style={styles.sleepValue}>{value || '00:00'}</Text>
     </Pressable>
@@ -458,7 +477,7 @@ export function SleepTimeField({ label, onChange, value }: { label: string; onCh
               <Text style={styles.cardLabel}>{label}</Text>
               <Text style={styles.modalTitle}>{formatTimeValue(draftHour, draftMinute)}</Text>
             </View>
-            <Pressable onPress={() => setPickerOpen(false)} style={styles.iconButton}>
+            <Pressable accessibilityRole="button" onPress={() => setPickerOpen(false)} style={styles.iconButton}>
               <X color={muted} size={18} />
             </Pressable>
           </View>
@@ -471,10 +490,10 @@ export function SleepTimeField({ label, onChange, value }: { label: string; onCh
           </View>
 
           <View style={styles.modalActions}>
-            <Pressable onPress={() => setPickerOpen(false)} style={styles.deleteButton}>
+            <Pressable accessibilityRole="button" onPress={() => setPickerOpen(false)} style={styles.deleteButton}>
               <Text style={styles.deleteButtonText}>Закрыть</Text>
             </Pressable>
-            <Pressable onPress={saveTime} style={styles.saveButton}>
+            <Pressable accessibilityRole="button" onPress={saveTime} style={styles.saveButton}>
               <Text style={styles.saveButtonText}>Выбрать</Text>
             </Pressable>
           </View>
@@ -521,7 +540,7 @@ function TimeWheelColumn({ items, onChange, resetKey, value }: { items: number[]
         style={styles.sleepWheelColumn}
       >
         {items.map((item) => (
-          <Pressable
+          <Pressable accessibilityRole="button"
             key={item}
             onPress={() => {
               selectedRef.current = item;

@@ -10,7 +10,8 @@ export const env = {
 };
 
 export function isSupabaseConfigured() {
-  return Boolean(env.supabaseUrl && env.supabaseAnonKey);
+  // The existing disposable UI audit mode must never write guest fixtures to a real backend.
+  return process.env.EXPO_PUBLIC_KODA_UI_AUDIT !== '1' && Boolean(env.supabaseUrl && env.supabaseAnonKey);
 }
 
 export function assertSupabaseConfigured() {

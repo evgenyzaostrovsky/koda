@@ -6,6 +6,7 @@ node_modules/
 # Expo
 .expo/
 dist/
+.tmp/koda2-audit/
 web-build/
 expo-env.d.ts
 
