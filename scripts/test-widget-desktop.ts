@@ -4,7 +4,7 @@ import { createGoal, createMilestone, createGoalAction } from '../src/features/k
 import { currentGoalMilestone } from '../src/features/koda/components/goalPresentation';
 import type { KodaDay, Note, PlannerItem } from '../src/features/koda/types';
 const layout=normalizeWidgetLayout({order:['notes','notes','removed','day'],hidden:['removed','notes','notes']});
-assert.equal(new Set(layout.order).size,8);assert.deepEqual(layout.order.slice(0,2),['notes','day']);assert.deepEqual(layout.hidden,['notes']);
+assert.equal(new Set(layout.order).size,widgetIds.length);assert.deepEqual(layout.order.slice(0,2),['notes','day']);assert.deepEqual(layout.hidden,['notes']);
 assert.deepEqual(normalizeWidgetLayout(null).order,[...widgetIds]);
 const row=(id:string,date:string,time='',extra:Partial<PlannerItem>={}):PlannerItem=>({id,date,time,title:id,done:false,...extra});
 assert.deepEqual(nearestPlannerItems([row('undated',''),row('overdue','2026-10-22'),row('late','2026-10-23','18:00'),row('untimed','2026-10-23'),row('early','2026-10-23','09:00'),row('done','2026-10-23','08:00',{done:true}),row('deleted','2026-10-23','07:00',{deletedAt:'now'})],'2026-10-23').map(i=>i.id),['early','late','untimed']);
@@ -24,8 +24,19 @@ assert.deepEqual(visualOrder.slice(0, 3), ['day', 'goal', 'score']);
 const movedLayout = moveWidget({...baseLayout, hidden:['notes']}, visualOrder, 'score', 'day');
 assert.deepEqual(movedLayout.order.slice(0, 3), ['score', 'day', 'goal']);
 assert.deepEqual(movedLayout.hidden, ['notes']);
-assert.equal(new Set(movedLayout.order).size, 8);
+assert.equal(new Set(movedLayout.order).size, widgetIds.length);
 assert.deepEqual(displayedWidgetOrder(normalizeWidgetLayout(JSON.parse(JSON.stringify(movedLayout))), true), movedLayout.order);
 assert.strictEqual(moveWidget(baseLayout, visualOrder, 'day', 'day'), baseLayout);
-assert.deepEqual(moveWidget(baseLayout, visualOrder, 'day', 'habits').order.at(-1), 'day');
+const movedDay=moveWidget(baseLayout, visualOrder, 'day', 'habits').order;
+assert.equal(movedDay.indexOf('day'),movedDay.indexOf('habits')+1);
 console.log('Widget drag: visual order, forward/backward moves, hidden tiles and persisted layout passed.');
+
+const legacy=normalizeWidgetLayout({order:['day','planner','goal','score','notes','focus','projects','habits'],hidden:['notes']});
+assert.deepEqual(legacy.order.slice(-3),['assistant','journal','progress']);
+assert.deepEqual(legacy.hidden,['notes']);
+for (const id of ['assistant','journal','progress'] as const) {
+ const moved=moveWidget(legacy,displayedWidgetOrder(legacy,true),id,'day');
+ assert.equal(moved.order[0],id);
+ assert.deepEqual(normalizeWidgetLayout(JSON.parse(JSON.stringify(moved))),moved);
+}
+console.log('Companion widgets: old layouts migrate without losing hidden/order, new cards drag and round-trip.');

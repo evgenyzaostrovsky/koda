@@ -1,12 +1,12 @@
 import type { Goal, KodaDay, Note, NoteBlock, PlannerItem } from './types';
 import { plannerDateOffset, plannerOverview } from './plannerOverview';
 
-export const widgetIds = ['day','planner','goal','score','notes','focus','projects','habits'] as const;
+export const widgetIds = ['day','planner','goal','score','notes','focus','projects','habits','assistant','journal','progress'] as const;
 export type WidgetId = typeof widgetIds[number];
 export type WidgetLayout = { order: WidgetId[]; hidden: WidgetId[] };
 export function displayedWidgetOrder(layout: WidgetLayout, wide: boolean): WidgetId[] {
   const original = layout.order.join(',') === widgetIds.join(',');
-  return original ? (wide ? ['day','goal','score','planner','notes','focus','projects','habits'] : ['day','planner','score','goal','focus','notes','habits','projects']) : [...layout.order];
+  return original ? (wide ? ['day','goal','score','planner','notes','focus','projects','habits','assistant','journal','progress'] : ['day','planner','score','goal','focus','notes','habits','projects','assistant','journal','progress']) : [...layout.order];
 }
 export function moveWidget(layout: WidgetLayout, displayOrder: WidgetId[], source: WidgetId, target: WidgetId): WidgetLayout {
   const order = [...displayOrder], from = order.indexOf(source), to = order.indexOf(target);
