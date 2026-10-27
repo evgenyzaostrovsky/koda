@@ -11,7 +11,7 @@ const backgrounds:Record<BentoTone,string>={light:panel,soft:panelSoft,lime:'#e8
 export function BentoPage({children,maxWidth=960,scroll=true,style,contentStyle,testID}:{children:ReactNode;maxWidth?:number;scroll?:boolean;style?:StyleProp<ViewStyle>;contentStyle?:StyleProp<ViewStyle>;testID?:string}){
  const compact=useWindowDimensions().width<680;
  const inner=<View testID={testID} style={[s.page,{maxWidth},contentStyle,compact&&{paddingHorizontal:0}]}>{children}</View>;
- return scroll?<ScrollView style={[{flex:1,minWidth:0},style]} contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{inner}</ScrollView>:<View style={[s.page,{flex:1,maxWidth},style,contentStyle,compact&&{paddingHorizontal:0}]} testID={testID}>{children}</View>;
+ return scroll?<ScrollView style={[{flex:1,minWidth:0},style]} contentContainerStyle={[s.scroll,{flexGrow:1,justifyContent:'center',paddingVertical:16}]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{inner}</ScrollView>:<View style={[s.page,{flex:1,maxWidth},style,contentStyle,compact&&{paddingHorizontal:0}]} testID={testID}>{children}</View>;
 }
 export function BentoGrid({children,columns=2,style}:{children:ReactNode;columns?:number;style?:StyleProp<ViewStyle>}){
  const wide=useWindowDimensions().width>=760;

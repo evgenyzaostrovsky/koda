@@ -1,3 +1,4 @@
+import { SectionOverview } from '../components/SectionOverview';
 import { BentoCard, BentoGrid, MetricCard, SectionHeader } from '../components/Bento';
 import { plannerOverview } from '../plannerOverview';
 import { parseQuickTaskInput } from '../quickTaskInput';
@@ -91,15 +92,16 @@ export function PlannerScreen({
   onThemeChange?: (id: ThemeId) => void;
   onOpenSection?: (tab: TabKey) => void;
 }) {
+  const [workspaceOpen,setWorkspaceOpen]=useState(Boolean(initialFocus));
   const [selectedDate, setSelectedDate] = useState(initialFocus&&isPlannerDate(initialFocus.date)?initialFocus.date:todayDateKey());
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
-  useEffect(()=>{if(initialFocus&&isPlannerDate(initialFocus.date)){setSelectedDate(initialFocus.date);setNewDate(initialFocus.date);setVisibleMonth(dateFromKey(initialFocus.date));setViewMode(initialFocus.sourceType==='goal'?'goals':'day');}},[initialFocus?.id,initialFocus?.date]);
+  useEffect(()=>{if(initialFocus&&isPlannerDate(initialFocus.date)){setWorkspaceOpen(true);setSelectedDate(initialFocus.date);setNewDate(initialFocus.date);setVisibleMonth(dateFromKey(initialFocus.date));setViewMode(initialFocus.sourceType==='goal'?'goals':'day');}},[initialFocus?.id,initialFocus?.date]);
   const [taskMenu, setTaskMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [viewMode, setViewMode] = useState<PlannerViewMode>(initialFocus?.sourceType==='goal'?'goals':'day');
   const reduceMotion = useReducedMotion();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [mobileSupportOpen, setMobileSupportOpen] = useState(false);
-  usePanelRegistration(detailsOpen, () => setDetailsOpen((open) => !open), isDesktop);
+  usePanelRegistration(detailsOpen, () => setDetailsOpen((open) => !open), isDesktop && workspaceOpen);
   const [detailsMounted, setDetailsMounted] = useState(false);
   const detailsAnimation = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -696,6 +698,17 @@ export function PlannerScreen({
     {mobileSupportOpen ? <CalmSupport date={selectedDate} items={items} onAddItem={onAddItem} onOpenSection={onOpenSection} onThemeChange={onThemeChange} onToggleItem={onToggleItem} themeId={themeId} /> : null}
   </View> : null;
 
+  if(!workspaceOpen) {
+    const pending=selectedItems.filter(item=>!item.done&&!item.failed);
+    const open=(mode:PlannerViewMode='day')=>{setViewMode(mode);setWorkspaceOpen(true);};
+    return <SectionOverview title="Планнер" tiles={[
+      {key:'day',title:'Выбранный день',value:formatFullDate(selectedDate),detail:`${selectedOpenCount} открытых · ${selectedDoneCount} выполнено`,action:'Открыть дела дня',tone:'lime',onPress:()=>open()},
+      {key:'next',title:'Отдельные дела',value:pending[0]?.title||'Нет отдельных дел',detail:pending[0]?.time||'Действия из целей доступны в отдельном виджете',action:'Открыть планнер',onPress:()=>open()},
+      {key:'calendar',title:'Календарь',value:'Обзор месяца',detail:'Даты, задачи и встречи в одном календаре',action:'Открыть календарь месяца',onPress:()=>open('month')},
+      {key:'goals',title:'Цели',value:`${goals.filter(goal=>!goal.archivedAt&&goal.status==='active').length} в работе`,detail:'Запланированные действия из твоих целей',action:'Открыть действия целей',tone:'dark',onPress:()=>open('goals')},
+    ]}/>;
+  }
+
   return (
     <View style={[styles.plannerScreenRoot, isDesktop && styles.plannerDesktopRoot]}>
       <ScrollView
@@ -708,6 +721,7 @@ export function PlannerScreen({
         showsVerticalScrollIndicator={false}
         style={isDesktop ? styles.desktopScreenScroll : undefined}
       >
+      <Pressable accessibilityRole="button" onPress={()=>setWorkspaceOpen(false)} style={{minHeight:44,justifyContent:'center',alignSelf:'flex-start'}}><Text style={{color:accent,fontSize:13,fontWeight:'600'}}>К обзору планнера</Text></Pressable>
       {isDesktop&&<View style={{gap:8,paddingHorizontal:4}}>{plannerHeader}{plannerModeControl}</View>}
       {!isDesktop ? <View style={{ gap: 10, marginBottom: 0 }}>
         {plannerHeader}{plannerModeControl}{plannerDateSelector}

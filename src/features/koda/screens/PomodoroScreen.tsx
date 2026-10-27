@@ -1,3 +1,4 @@
+import { SectionSheet } from '../components/SectionOverview';
 import { usePomodoroController } from '../usePomodoroTimer';
 import { RightPanel } from '../components/RightPanel';
 import { BentoCard, BentoGrid, MetricCard, bentoWidths } from '../components/Bento';
@@ -41,6 +42,7 @@ export function PomodoroScreen({
   const timer = usePomodoroController();
   const { mode, status, remainingSeconds, completedWorkSessions, pause: pauseTimer, reset: resetTimer } = timer;
   const [soundReady, setSoundReady] = useState(false);
+  const [openPanel,setOpenPanel]=useState<'settings'|'sounds'|null>(null);
   const [soundMenuOpen, setSoundMenuOpen] = useState(false);
   const totalSeconds = getModeMinutes(mode, settings) * 60;
   const progress = Math.min(100, Math.max(0, Math.round((totalSeconds - remainingSeconds) / totalSeconds * 100)));
@@ -129,8 +131,8 @@ export function PomodoroScreen({
 
   return (
     <>
-    <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll, { alignSelf: 'center', maxWidth: bentoWidths.timer, width: '100%' }]} showsVerticalScrollIndicator={false}>
-      <View style={{gap:24}}>
+    <ScrollView style={{flex:1}} contentContainerStyle={{flexGrow:1,justifyContent:'center',alignItems:'center',paddingVertical:16}} showsVerticalScrollIndicator={false}>
+      <View style={{gap:12,width:'100%',maxWidth:640}}>
         <View style={isDesktop ? local.mainColumn : undefined}>
           <SectionTitle title="Таймер" subtitle="Помодоро без лишнего шума" />
           <BentoCard tone="dark" style={local.hero}>
@@ -178,13 +180,13 @@ export function PomodoroScreen({
           </BentoCard>
         </View>
 
-        <BentoGrid columns={2} style={{marginTop:24}}>
-          <MetricCard label="Завершено фокус-сессий" value={completedWorkSessions} detail="Завершённые рабочие интервалы" tone="soft"/>
-          {settingsPanel}
-          {soundsPanel}
-        </BentoGrid>
+        <View style={{flexDirection:'row',gap:12}}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Открыть настройки таймера" onPress={()=>setOpenPanel('settings')} style={{flex:1,padding:16,borderRadius:24,backgroundColor:panel,minHeight:94,gap:8}}><Text style={{color:text,fontSize:14,fontWeight:'600'}}>Настройки</Text><Text style={local.hint}>{settings.workMinutes} мин работы · {settings.breakMinutes} мин отдыха</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Открыть звуки таймера" onPress={()=>setOpenPanel('sounds')} style={{flex:1,padding:16,borderRadius:24,backgroundColor:panelSoft,minHeight:94,gap:8}}><Text style={{color:text,fontSize:14,fontWeight:'600'}}>Звук</Text><Text style={local.hint}>{selectedSound.label} · {completedWorkSessions} сессий</Text></Pressable>
+        </View>
       </View>
     </ScrollView>
+    <SectionSheet title={openPanel==='sounds'?'Звук таймера':'Настройки таймера'} visible={openPanel!==null} onClose={()=>setOpenPanel(null)}>{openPanel==='sounds'?soundsPanel:settingsPanel}</SectionSheet>
     </>
   );
 }
@@ -469,10 +471,10 @@ const local: Record<string, any> = {
   hero: {
     backgroundColor: ink,
     borderRadius: 28,
-    gap: 24,
-    minHeight: 380,
+    gap: 14,
+    minHeight: 320,
     justifyContent: 'space-between',
-    padding: 30,
+    padding: 20,
   },
   heroTop: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' },
   hint: { color: muted, fontSize: 12, lineHeight: 18 },
@@ -484,7 +486,7 @@ const local: Record<string, any> = {
     borderRadius: 999,
     borderWidth: 1,
     flex: 1,
-    minHeight: 38,
+    minHeight: 44,
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
@@ -544,7 +546,7 @@ const local: Record<string, any> = {
   soundTitleActive: { color: accent },
   textButton: { alignItems: 'center', flexDirection: 'row', gap: 6, minHeight: 34, outlineStyle: 'none' },
   textButtonText: { color: accent, fontSize: 12, fontWeight: '800' },
-  timerFace: { alignItems: 'center', justifyContent: 'center', paddingVertical: 28 },
+  timerFace: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
   timerField: {
     backgroundColor: panelSoft,
     borderColor: line,

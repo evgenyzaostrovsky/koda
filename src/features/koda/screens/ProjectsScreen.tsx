@@ -3,7 +3,7 @@ import { Archive, Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SectionTitle } from '../components';
-import { BentoCard, BentoGrid, MetricCard, bentoWidths } from '../components/Bento';
+import { BentoCard, BentoGrid } from '../components/Bento';
 import { accent, accentBorder, activeBg, activeText, faint, line, muted, panel, panelSoft, readingWidths, text } from '../theme';
 import type { Project, ProjectTask } from '../types';
 import { uid } from '../utils';
@@ -42,7 +42,10 @@ export function ProjectsScreen({
   const { setOpen: setRightPanelOpen } = useRightPanel();
   const [detailOpen,setDetailOpen]=useState(false);
   const [projectListMode, setProjectListMode] = useState<'active' | 'archived'>('active');
+  const [showAllProjects, setShowAllProjects] = useState(false);
   const displayedProjects = projectListMode === 'archived' ? archivedProjects : sortedProjects;
+  const previewLimit = isDesktop ? 3 : 1;
+  const previewProjects = showAllProjects ? displayedProjects : displayedProjects.slice(0, previewLimit);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(sortedProjects[0]?.id ?? null);
   const selectedProject = sortedProjects.find((project) => project.id === selectedProjectId) ?? sortedProjects[0] ?? null;
   const [projectDraft, setProjectDraft] = useState<ProjectDraft>(emptyProjectDraft);
@@ -195,7 +198,7 @@ export function ProjectsScreen({
 
   return (
     <View style={local.screen}>
-      <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll, { alignSelf: 'center', maxWidth: bentoWidths.projects, width: '100%' }]} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll, { alignSelf: 'center', flexGrow: 1, justifyContent: detailOpen?'flex-start':'center', maxWidth: 1040, width: '100%', paddingVertical:16,paddingBottom:16 }]} showsVerticalScrollIndicator={false}>
         <View style={local.header}>
           <SectionTitle title="Проекты" subtitle="Вещи, которые состоят из нескольких дел" />
           <View style={local.headerActions}>
@@ -211,8 +214,9 @@ export function ProjectsScreen({
 
         {!detailOpen?<View style={{gap:14}}>
           <Text style={local.meta}>{sortedProjects.length} активных проектов · {sortedProjects.reduce((n,p)=>n+p.tasks.filter(t=>!t.deletedAt&&t.status!=='done').length,0)} задач впереди</Text>
-          <View style={local.listTabs}><Pressable accessibilityRole="button" onPress={()=>setProjectListMode('active')} style={[local.listTab,projectListMode==='active'&&local.projectCardActive]}><Text style={local.ghostText}>Активные</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>setProjectListMode('archived')} style={[local.listTab,projectListMode==='archived'&&local.projectCardActive]}><Text style={local.ghostText}>Архив</Text></Pressable></View>
-          <BentoGrid columns={2} style={local.projectLibraryGrid}>{displayedProjects.map((project,index)=>{const tasks=project.tasks.filter(task=>!task.deletedAt),done=tasks.filter(task=>task.status==='done').length,pending=tasks.filter(task=>task.status!=='done').sort((a,b)=>(a.plannedDate||'9999').localeCompare(b.plannedDate||'9999'));const nextTask=pending[0];return <BentoCard key={project.id} tone={index===0&&projectListMode==='active'?'soft':'light'} style={[local.projectLibraryCard,displayedProjects.length===1&&isDesktop&&local.singleProjectCard]}><Text style={local.projectTitle}>{project.title}</Text>{project.description&&<Text numberOfLines={2} style={local.meta}>{project.description}</Text>}{tasks.length?<><View style={local.progressTrack}><View style={[local.progressFill,{width:`${done/tasks.length*100}%`}]}/></View><Text style={local.meta}>{done} из {tasks.length} задач закрыто</Text></>:<Text style={local.meta}>Задачи пока не добавлены.</Text>}{projectListMode==='active'&&nextTask?<View style={local.projectNextTask}><Text style={local.meta}>Следующее действие</Text><Text style={local.nextTaskTitle}>{nextTask.title}</Text>{nextTask.plannedDate?<Text style={local.meta}>{nextTask.plannedDate}{nextTask.plannedTime?` · ${nextTask.plannedTime}`:''}</Text>:null}</View>:null}<Pressable accessibilityRole="button" accessibilityLabel={projectListMode==='archived'?`Вернуть проект «${project.title}»`:`Открыть проект «${project.title}»`} onPress={()=>{if(projectListMode==='archived')restoreProject(project.id);else{setSelectedProjectId(project.id);setDetailOpen(true)}}} style={local.inlineAdd}><Text style={local.inlineAddText}>{projectListMode==='archived'?'Вернуть в активные':'Открыть проект'}</Text></Pressable></BentoCard>})}</BentoGrid>
+          <View style={local.listTabs}><Pressable accessibilityRole="button" accessibilityState={{selected:projectListMode==='active'}} aria-pressed={projectListMode==='active'} onPress={()=>{setProjectListMode('active');setShowAllProjects(false)}} style={[local.listTab,projectListMode==='active'&&local.projectCardActive]}><Text style={local.ghostText}>Активные</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{selected:projectListMode==='archived'}} aria-pressed={projectListMode==='archived'} onPress={()=>{setProjectListMode('archived');setShowAllProjects(false)}} style={[local.listTab,projectListMode==='archived'&&local.projectCardActive]}><Text style={local.ghostText}>Архив</Text></Pressable></View>
+          <BentoGrid columns={2} style={local.projectLibraryGrid}>{previewProjects.map((project,index)=>{const tasks=project.tasks.filter(task=>!task.deletedAt),done=tasks.filter(task=>task.status==='done').length,pending=tasks.filter(task=>task.status!=='done').sort((a,b)=>(a.plannedDate||'9999').localeCompare(b.plannedDate||'9999'));const nextTask=pending[0];return <BentoCard key={project.id} tone={index===0&&projectListMode==='active'?'soft':'light'} style={[local.projectLibraryCard,previewProjects.length===1&&isDesktop&&local.singleProjectCard]}><Text style={local.projectTitle}>{project.title}</Text>{project.description&&<Text numberOfLines={2} style={local.meta}>{project.description}</Text>}{tasks.length?<><View style={local.progressTrack}><View style={[local.progressFill,{width:`${done/tasks.length*100}%`}]}/></View><Text style={local.meta}>{done} из {tasks.length} задач закрыто</Text></>:<Text style={local.meta}>Задачи пока не добавлены.</Text>}{projectListMode==='active'&&nextTask?<View style={local.projectNextTask}><Text style={local.meta}>Следующее действие</Text><Text style={local.nextTaskTitle}>{nextTask.title}</Text>{nextTask.plannedDate?<Text style={local.meta}>{nextTask.plannedDate}{nextTask.plannedTime?` · ${nextTask.plannedTime}`:''}</Text>:null}</View>:null}<Pressable accessibilityRole="button" accessibilityLabel={projectListMode==='archived'?`Вернуть проект «${project.title}»`:`Открыть проект «${project.title}»`} onPress={()=>{if(projectListMode==='archived')restoreProject(project.id);else{setSelectedProjectId(project.id);setDetailOpen(true)}}} style={local.inlineAdd}><Text style={local.inlineAddText}>{projectListMode==='archived'?'Вернуть в активные':'Открыть проект'}</Text></Pressable></BentoCard>})}</BentoGrid>
+          {displayedProjects.length>previewLimit?<Pressable accessibilityRole="button" accessibilityState={{expanded:showAllProjects}} aria-expanded={showAllProjects} onPress={()=>setShowAllProjects(value=>!value)} style={local.showAllButton}><Text style={local.showAllText}>{showAllProjects?'Свернуть список':`Все ${projectListMode==='archived'?'архивные':'активные'} проекты · ${displayedProjects.length}`}</Text></Pressable>:null}
           {displayedProjects.length===0&&<BentoCard><Text style={local.meta}>{projectListMode==='archived'?'Архив пока пуст.':'Пока нет активных проектов. Начни с одного понятного результата.'}</Text></BentoCard>}
         </View>:<View><Pressable accessibilityRole="button" accessibilityLabel="К списку проектов" onPress={()=>setDetailOpen(false)} style={local.inlineAdd}><Text style={local.inlineAddText}>Все проекты</Text></Pressable>
         <View style={isDesktop ? local.desktopLayout : local.mobileLayout} testID={isDesktop ? 'desktop-page-columns' : undefined}>
@@ -522,6 +526,8 @@ const local = StyleSheet.create({
   desktopLayout: { alignItems: 'flex-start', alignSelf: 'center', flexDirection: 'row-reverse', gap: 24, maxWidth: readingWidths.projects, width: '100%' },
   mobileLayout: { gap: 14 },
   projectLibraryGrid: { alignItems: 'flex-start' },
+  showAllButton: { alignSelf: 'flex-start', justifyContent: 'center', minHeight: 44, paddingHorizontal: 10 },
+  showAllText: { color: accent, fontSize: 13, fontWeight: '700' },
   projectLibraryCard: { alignSelf: 'flex-start', gap: 7, maxWidth: '100%', padding: 16, width: '100%' },
   singleProjectCard: { maxWidth: 520 },
   projectNextTask: { borderTopColor: line, borderTopWidth: 1, gap: 3, marginTop: 2, paddingTop: 8 },

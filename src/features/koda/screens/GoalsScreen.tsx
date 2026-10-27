@@ -65,7 +65,8 @@ const workDays = [1, 2, 3, 4, 5];
 const weekendDays = [6, 7];
 
 export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline, userId, hasCloudSync = Boolean(userId), initialGoalId }: { goals: Goal[]; onGoalsChange: GoalsChange; isDesktop?: boolean; isOnline: boolean; hasCloudSync?: boolean; userId?: string | null; initialGoalId?: string | null }) {
-  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(() => goals.find((goal) => goal.status === 'active' || goal.status === 'paused')?.id ?? null);
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const lastInitialGoalId = useRef<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
@@ -132,7 +133,7 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline,
   if (selectedGoal) {
     return (
       <>
-        <GoalDetails goal={selectedGoal} goals={sortedGoals} hasCloudSync={hasCloudSync} isDesktop={isDesktop} isOnline={isOnline} onBack={() => setSelectedGoalId(null)} onCreate={() => setCreateOpen(true)} onGoalsChange={onGoalsChange} onSelect={setSelectedGoalId} />
+        <GoalDetails goal={selectedGoal} goals={sortedGoals} hasCloudSync={hasCloudSync} isDesktop={isDesktop} isOnline={isOnline} onBack={() => { setSelectedGoalId(null); setLibraryOpen(true); }} onCreate={() => setCreateOpen(true)} onGoalsChange={onGoalsChange} onSelect={setSelectedGoalId} />
         <GoalWizard open={createOpen} userId={userId} onClose={() => setCreateOpen(false)} onSave={saveWizardGoal} />
         <CreateGoalFlow open={legacyCreateOpen} onClose={() => setLegacyCreateOpen(false)} onSave={saveGoal} />
         <ConfirmSheet title="Сделать цель главной?" text="Предыдущая главная цель станет важной. Одновременно активной главной может быть только одна." visible={Boolean(confirmMainGoal)} onCancel={() => setConfirmMainGoal(null)} onConfirm={confirmMainGoalSave} />
@@ -140,12 +141,44 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline,
     );
   }
 
+  if (!libraryOpen) {
+    const previewGoals = sortedGoals.slice(0, 2);
+    return (
+      <BentoPage maxWidth={960} scroll={false} style={local.screen} contentStyle={local.pageContent}>
+        <View style={local.overviewWrap}>
+          <SectionHeader title="Цели" subtitle={!hasCloudSync ? 'Сохранено на устройстве' : isOnline ? 'Синхронизируется с аккаунтом' : 'Офлайн: изменения сохранятся локально'} action={<Pressable accessibilityRole="button" accessibilityLabel="Создать цель" onPress={() => setCreateOpen(true)} style={local.roundAccentButton}><Plus color={activeText} size={20} strokeWidth={3} /></Pressable>} />
+          {previewGoals.length ? <BentoCard tone={previewGoals[0].priority === 'main' ? 'lime' : 'light'} style={local.overviewCard}>
+            <View style={local.overviewStats}>
+              <View><Text style={local.goalMeta}>Активные</Text><Text style={local.overviewValue}>{activeGoals.length}</Text></View>
+              <View><Text style={local.goalMeta}>Средний прогресс</Text><Text style={local.overviewValue}>{activeGoals.length ? `${averageProgress}%` : '—'}</Text></View>
+            </View>
+            <View style={local.divider} />
+            <Text style={local.miniLabel}>{showCompleted ? 'Завершённые цели' : 'Ближайшие цели'}</Text>
+            {previewGoals.map((goal) => <Pressable accessibilityRole="button" accessibilityLabel={`Открыть цель: ${goal.title}`} key={goal.id} onPress={() => setSelectedGoalId(goal.id)} style={local.overviewGoalRow}>
+              <View style={local.flexText}><Text numberOfLines={1} style={local.goalTitle}>{goal.title}</Text><Text numberOfLines={1} style={local.goalMeta}>{nextAvailableGoalAction(goal)?.title ?? 'Следующий шаг не задан'}</Text></View>
+              <Text style={local.overviewProgress}>{calculateGoalProgress(goal)}%</Text>
+            </Pressable>)}
+            <View style={local.overviewActions}>
+              <Pressable accessibilityRole="button" onPress={() => setSelectedGoalId(previewGoals[0].id)} style={local.primaryButton}><Text style={local.primaryButtonText}>{showCompleted ? 'Открыть цель' : 'Продолжить цель'}</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => setLibraryOpen(true)} style={local.overviewTextButton}><Text style={local.secondaryButtonText}>{showCompleted ? 'Список целей' : `Все цели${sortedGoals.length > 2 ? ` · ${sortedGoals.length}` : ''}`}</Text></Pressable>
+            </View>
+            {!showCompleted && goals.some(goal => goal.status === 'completed') ? <Pressable accessibilityRole="button" onPress={() => setShowCompleted(true)} style={local.overviewTextButton}><Text style={local.secondaryButtonText}>Завершённые · {goals.filter(goal => goal.status === 'completed').length}</Text></Pressable> : null}
+          </BentoCard> : goals.some(goal => goal.status === 'completed') ? <EmptyStateCard title="Сейчас нет активных целей" description="Завершённые цели доступны в списке." action={<Pressable accessibilityRole="button" onPress={() => setShowCompleted(true)} style={local.primaryButton}><Text style={local.primaryButtonText}>Завершённые цели</Text></Pressable>} /> : <EmptyStateCard title="Куда ты хочешь прийти?" description="Создай первую цель и добавь действия, которые будут двигать тебя к ней." action={<Pressable accessibilityRole="button" onPress={() => setCreateOpen(true)} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать цель</Text></Pressable>} />}
+        </View>
+        <GoalWizard open={createOpen} userId={userId} onClose={() => setCreateOpen(false)} onSave={saveWizardGoal} />
+        <CreateGoalFlow open={legacyCreateOpen} onClose={() => setLegacyCreateOpen(false)} onSave={saveGoal} />
+        <ConfirmSheet title="Сделать цель главной?" text="Предыдущая главная цель станет важной. Одновременно активной главной может быть только одна." visible={Boolean(confirmMainGoal)} onCancel={() => setConfirmMainGoal(null)} onConfirm={confirmMainGoalSave} />
+      </BentoPage>
+    );
+  }
+
   return (
     <BentoPage maxWidth={960} scroll={false} style={local.screen} contentStyle={local.pageContent}>
       <View style={local.topRow}>
-        <SectionHeader title="Цели" subtitle={!hasCloudSync ? 'Сохранено на устройстве' : isOnline ? 'Синхронизируется с аккаунтом' : 'Офлайн: изменения сохранятся локально'} action={<Pressable accessibilityRole="button" accessibilityLabel="Создать цель" onPress={() => setCreateOpen(true)} style={local.roundAccentButton}>
-          <Plus color={activeText} size={20} strokeWidth={3} />
-        </Pressable>} />
+        <SectionHeader title="Цели" subtitle={!hasCloudSync ? 'Сохранено на устройстве' : isOnline ? 'Синхронизируется с аккаунтом' : 'Офлайн: изменения сохранятся локально'} action={<View style={local.overviewActions}>
+          <Pressable accessibilityRole="button" onPress={() => setLibraryOpen(false)} style={local.overviewTextButton}><Text style={local.secondaryButtonText}>Обзор</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Создать цель" onPress={() => setCreateOpen(true)} style={local.roundAccentButton}><Plus color={activeText} size={20} strokeWidth={3} /></Pressable>
+        </View>} />
       </View>
       <Pressable accessibilityRole="button" onPress={() => setLegacyCreateOpen(true)} style={local.legacyFormButton}>
         <Text style={local.secondaryButtonText}>Классическая форма</Text>
@@ -1223,6 +1256,14 @@ const local = StyleSheet.create({
   factLabel: { color: muted, fontSize: 12, lineHeight: 17 },
   factValue: { color: text, fontSize: 15, fontWeight: '600', lineHeight: 20 },
   scrollContent: { gap: 10, paddingBottom: 90 },
+  overviewWrap: { alignSelf: 'center', flex: 1, gap: 16, justifyContent: 'center', maxWidth: 640, paddingHorizontal: 16, width: '100%' },
+  overviewCard: { gap: 14 },
+  overviewStats: { flexDirection: 'row', gap: 28 },
+  overviewValue: { color: text, fontSize: 24, fontWeight: '600', lineHeight: 30 },
+  overviewGoalRow: { alignItems: 'center', borderTopColor: line, borderTopWidth: 1, flexDirection: 'row', gap: 12, minHeight: 56, paddingTop: 8 },
+  overviewProgress: { color: text, fontSize: 16, fontWeight: '600' },
+  overviewActions: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  overviewTextButton: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: 12 },
   desktopScrollContent: { paddingBottom: 36, width: '100%' },
   desktopLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 0, width: '100%' },
   desktopDetailsLayout: { alignItems: 'flex-start', flexDirection: 'row', gap: 0, width: '100%' },

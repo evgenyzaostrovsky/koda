@@ -1,3 +1,4 @@
+import { SectionOverview } from '../components/SectionOverview';
 import { RightPanel } from '../components/RightPanel';
 ﻿import { useEffect, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
@@ -36,6 +37,7 @@ export function ProfileScreen({
   plannerItems: PlannerItem[];
   profile: ProfileState;
 }) {
+  const [profileSection,setProfileSection]=useState<'account'|'theme'|'services'|'feed'|null>(null);
   const habitPreview = habits.slice(0, 3);
   const widgetItems = getWidgetPlannerItems(plannerItems);
   const [pushStatus, setPushStatus] = useState(getPushStatus);
@@ -172,9 +174,17 @@ export function ProfileScreen({
     }
   }
 
+  if(!profileSection) return <SectionOverview title="Профиль" tiles={[
+    {key:'account',title:'Аккаунт',value:accountInfo?.name||'Мой профиль',detail:accountInfo?.username?`@${accountInfo.username}`:'Личные настройки аккаунта',action:'Открыть аккаунт',tone:'lime',onPress:()=>setProfileSection('account')},
+    {key:'theme',title:'Оформление',value:getThemeName(profile.themeId),detail:'Цветовая схема приложения',action:'Выбрать оформление',onPress:()=>setProfileSection('theme')},
+    {key:'services',title:'Подключения',value:calendarSync.status==='synced'?'Календарь подключён':'Календарь и уведомления',detail:pushStatus==='enabled'?'Уведомления включены':'Настройки уведомлений и установки',action:'Открыть подключения',tone:'dark',onPress:()=>setProfileSection('services')},
+    {key:'feed',title:'Виджетная лента',value:`${widgetItems.length} ближайших дел`,detail:'Превью дел и привычек',action:'Открыть виджетную ленту',onPress:()=>setProfileSection('feed')},
+  ]}/>;
+
   return (
     <>
     <ScrollView contentContainerStyle={[styles.profileScrollContent, isDesktop && styles.desktopPageScroll, { alignSelf: 'center', maxWidth: bentoWidths.settings, width: '100%' }]} showsVerticalScrollIndicator={false}>
+      <Pressable accessibilityRole="button" onPress={()=>setProfileSection(null)} style={{minHeight:44,justifyContent:'center'}}><Text style={styles.rowTitle}>К обзору профиля</Text></Pressable>
       {!isDesktop ? <View style={styles.profileHeader}>
         <View style={styles.profileTitleRow}>
           <Text style={styles.screenTitle}>Профиль</Text>
@@ -197,7 +207,7 @@ export function ProfileScreen({
           <Text style={styles.subtitle}>Твоя будущая версия</Text>
         </View>
       ) : null}
-      <BentoCard tone="soft" style={[styles.profileAccountBox, !isDesktop && styles.profileAccountBoxMobile]}>
+      {profileSection==='account'&&<BentoCard tone="soft" style={[styles.profileAccountBox, !isDesktop && styles.profileAccountBoxMobile]}>
         <View style={styles.profileAccountMain}>
           <Text style={styles.cardLabel}>АККАУНТ</Text>
           <Text numberOfLines={1} style={styles.profileAccountName}>{accountInfo?.name || 'Пользователь KODA'}</Text>
@@ -209,8 +219,8 @@ export function ProfileScreen({
             <Text style={styles.profilePasswordButtonText}>Сменить пароль</Text>
           </Pressable>
         </View>
-      </BentoCard>
-      <View style={[styles.profileThemeBox, { backgroundColor: 'transparent', borderWidth: 0, padding: 0 }]}>
+      </BentoCard>}
+      {profileSection==='theme'&&<View style={[styles.profileThemeBox, { backgroundColor: 'transparent', borderWidth: 0, padding: 0 }]}>
         <View style={styles.rowBetween}>
           <View style={styles.profileThemeTitleRow}>
             <Palette color={accent} size={15} />
@@ -245,7 +255,8 @@ export function ProfileScreen({
         </BentoGrid>
         <Text style={styles.rowMeta}>{themeOptions.find(theme => theme.id === resolveKodaThemeId(profile.themeId))?.description ?? ''}</Text>
       </View>
-      <Text style={styles.cardLabel}>НАСТРОЙКИ</Text>
+      }
+      {profileSection==='services'&&<><Text style={styles.cardLabel}>НАСТРОЙКИ</Text>
       <BentoCard tone="light" style={[styles.profileSettingsList, { padding: 0 }]}>
         <SettingRow
           disabled={pushBusy || pushStatus === 'unsupported'}
@@ -268,10 +279,10 @@ export function ProfileScreen({
           title="Установить на компьютер"
           value={isInstalled}
         />
-      </BentoCard>
+      </BentoCard></>}
         </View>
 
-        <RightPanel enabled={isDesktop}><View style={isDesktop ? styles.profileDesktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
+        {profileSection==='feed'&&<RightPanel enabled={false}><View style={isDesktop ? styles.profileDesktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
       <Card>
         <View style={styles.rowBetween}>
           <Text style={styles.cardLabel}>ВИДЖЕТНАЯ ЛЕНТА</Text>
@@ -321,7 +332,7 @@ export function ProfileScreen({
           <EmptyProfilePlus minHeight={92} />
         )}
       </Card>
-        </View></RightPanel>
+        </View></RightPanel>}
       </View>
     </ScrollView>
     <Modal animationType="fade" transparent visible={passwordSheetOpen} onRequestClose={() => setPasswordSheetOpen(false)}>

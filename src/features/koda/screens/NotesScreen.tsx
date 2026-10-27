@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SectionTitle } from '../components';
 import { DesktopPageLayout } from '../components/DesktopShell';
-import { BentoCard, BentoGrid, BentoPage } from '../components/Bento';
+import { BentoCard, BentoGrid, BentoPage, SectionHeader } from '../components/Bento';
 import { accent, activeBg, activeText, faint, line, muted, panel, panelSoft, readingWidths, surfaceElevated, text } from '../theme';
 import type { Note, NoteBlock, NoteBlockType, NoteDocument } from '../types';
 import { uid } from '../utils';
@@ -57,9 +57,10 @@ export function NotesScreen({
   const [titleSize, setTitleSize] = useState({ key: '', height: 48 });
   const [blockMenu, setBlockMenu] = useState<{ blockId: string; childOf?: string | null } | null>(null);
   const [deleteNoteId, setDeleteNoteId] = useState<string | null>(null);
+  const [overviewOpen, setOverviewOpen] = useState(!initialNoteId);
   const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
   const [desktopEditorOpen, setDesktopEditorOpen] = useState(false);
-  useEffect(() => { if (initialNoteId && notes.some(note=>note.id===initialNoteId&&!note.deletedAt)) { setSelectedNoteId(initialNoteId); setMobileEditorOpen(true); setDesktopEditorOpen(true); } }, [initialNoteId]);
+  useEffect(() => { if (initialNoteId && notes.some(note=>note.id===initialNoteId&&!note.deletedAt)) { setSelectedNoteId(initialNoteId); setMobileEditorOpen(true); setDesktopEditorOpen(true); setOverviewOpen(false); } }, [initialNoteId]);
   const selectedNote = sortedNotes.find((note) => note.id === selectedNoteId) ?? sortedNotes[0] ?? null;
   const titleSizeKey = `${selectedNote?.id ?? ''}:${isDesktop ? 'desktop' : 'mobile'}`;
   const filteredNotes = useMemo(() => {
@@ -88,6 +89,7 @@ export function NotesScreen({
     };
     onNotesChange((items) => [note, ...items]);
     setSelectedNoteId(note.id);
+    setOverviewOpen(false);
     setMobileEditorOpen(true);
     setDesktopEditorOpen(true);
   }
@@ -158,6 +160,7 @@ export function NotesScreen({
   }
 
   function openNote(note: Note) {
+    setOverviewOpen(false);
     setSelectedNoteId(note.id);
     setMobileEditorOpen(true);
     setDesktopEditorOpen(true);
@@ -167,9 +170,10 @@ export function NotesScreen({
     <View style={[local.notesListPanel, isDesktop && local.desktopNotesListPanel]}>
       <View style={local.notesListHeader}>
         {isDesktop ? <View style={local.desktopContextGroup}><Text style={local.desktopContextTitle}>Заметки</Text><Text style={local.desktopContextCount}>{filteredNotes.length}</Text></View> : <SectionTitle title="Заметки" subtitle="Сохрани и найди потом" />}
-        <Pressable accessibilityLabel="Создать заметку" accessibilityRole="button" onPress={createNote} style={[local.roundAddButton, isDesktop && local.desktopAddButton]}>
-          <Plus color={text} size={isDesktop ? 17 : 19} strokeWidth={3} />
-        </Pressable>
+        <View style={local.libraryActions}>
+          <Pressable accessibilityRole="button" onPress={() => setOverviewOpen(true)} style={local.overviewLink}><Text style={local.overviewLinkText}>Обзор</Text></Pressable>
+          <Pressable accessibilityLabel="Создать заметку" accessibilityRole="button" onPress={createNote} style={[local.roundAddButton, isDesktop && local.desktopAddButton]}><Plus color={text} size={isDesktop ? 17 : 19} strokeWidth={3} /></Pressable>
+        </View>
       </View>
 
       <View style={local.searchBox}>
@@ -282,10 +286,8 @@ export function NotesScreen({
   const desktopLibrary = (
     <BentoPage maxWidth={840}>
       <View style={local.notesListHeader}>
-        <SectionTitle title="Заметки" subtitle="Закреплённые и недавние" />
-        <Pressable accessibilityLabel="Создать заметку" accessibilityRole="button" onPress={createNote} style={local.roundAddButton}>
-          <Plus color={text} size={19} strokeWidth={3} />
-        </Pressable>
+        <View style={local.libraryHeading}><SectionTitle title="Заметки" subtitle="Закреплённые и недавние" /><Pressable accessibilityRole="button" onPress={() => setOverviewOpen(true)} style={local.overviewLink}><Text style={local.overviewLinkText}>Обзор</Text></Pressable></View>
+        <Pressable accessibilityLabel="Создать заметку" accessibilityRole="button" onPress={createNote} style={local.roundAddButton}><Plus color={text} size={19} strokeWidth={3} /></Pressable>
       </View>
       <View style={local.searchBox}>
         <Search color={muted} size={16} />
@@ -306,9 +308,31 @@ export function NotesScreen({
     </BentoPage>
   );
 
+  const overviewNotes = sortedNotes.slice(0, 3);
+  const overview = (
+    <BentoPage maxWidth={840} scroll={false} style={local.screen} contentStyle={local.overviewPage}>
+      <View style={local.overviewWrap}>
+        <SectionHeader title="Заметки" subtitle="Недавнее и закреплённое" action={<Pressable accessibilityRole="button" accessibilityLabel="Создать заметку" onPress={createNote} style={local.roundAddButton}><Plus color={text} size={19} strokeWidth={3} /></Pressable>} />
+        <BentoCard tone="light" style={local.overviewCard}>
+          {overviewNotes.length ? <>
+            <View style={local.overviewListHeader}><Text style={local.groupTitle}>{overviewNotes.some(note => note.pinned) ? 'Из заметок' : 'Недавние'}</Text><Text style={local.overviewCount}>{sortedNotes.length}</Text></View>
+            {overviewNotes.map(note => <Pressable accessibilityRole="button" accessibilityLabel={`Открыть заметку: ${note.title.trim() || 'Без названия'}`} key={note.id} onPress={() => openNote(note)} style={local.overviewNoteRow}>
+              <View style={local.noteRowTop}><Text numberOfLines={1} style={local.noteTitle}>{note.title.trim() || 'Без названия'}</Text>{note.pinned ? <Pin color={accent} size={13} /> : null}</View>
+              <Text numberOfLines={1} style={local.notePreview}>{notePlainText(note) || 'Пустая заметка'}</Text>
+            </Pressable>)}
+          </> : <View style={local.overviewEmpty}><Text style={local.emptyTitle}>Заметок пока нет</Text><Text style={local.meta}>Сохраняй здесь информацию, к которой захочешь вернуться.</Text></View>}
+          <View style={local.overviewActions}>
+            <Pressable accessibilityRole="button" onPress={() => setOverviewOpen(false)} style={local.primaryButton}><Text style={local.primaryButtonText}>Открыть библиотеку{sortedNotes.length ? ` · ${sortedNotes.length}` : ''}</Text></Pressable>
+            {!overviewNotes.length ? <Pressable accessibilityRole="button" onPress={createNote} style={local.secondaryButton}><Text style={local.secondaryButtonText}>Создать заметку</Text></Pressable> : null}
+          </View>
+        </BentoCard>
+      </View>
+    </BentoPage>
+  );
+
   return (
     <View style={local.screen}>
-      {isDesktop ? (
+      {overviewOpen ? overview : isDesktop ? (
         <View style={{ flex: 1, minHeight: 0 }}>
           <View style={{ display: desktopEditorOpen ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
             <View style={local.desktopEditorHeader}>
@@ -897,6 +921,18 @@ const local: Record<string, any> = {
   noteTime: { color: faint, fontSize: 12, lineHeight: 14 },
   noteTitle: { color: text, flex: 1, fontSize: 15, fontWeight: '700' as const, lineHeight: 20 },
   notesListHeader: { alignItems: 'flex-start', flexDirection: 'row' as const, justifyContent: 'space-between', gap: 12 },
+  overviewPage: { justifyContent: 'center', padding: 20 },
+  overviewWrap: { alignSelf: 'center', flex: 1, gap: 16, justifyContent: 'center', maxWidth: 620, paddingHorizontal: 16, width: '100%' },
+  overviewCard: { gap: 12 },
+  overviewListHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  overviewCount: { color: muted, fontSize: 12, lineHeight: 16 },
+  overviewNoteRow: { borderTopColor: line, borderTopWidth: 1, gap: 4, minHeight: 52, justifyContent: 'center', paddingVertical: 6 },
+  overviewEmpty: { gap: 5, paddingVertical: 8 },
+  overviewActions: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 4 },
+  libraryHeading: { flex: 1, alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  libraryActions: { alignItems: 'center', flexDirection: 'row', gap: 4 },
+  overviewLink: { justifyContent: 'center', minHeight: 44, paddingHorizontal: 8 },
+  overviewLinkText: { color: muted, fontSize: 13, lineHeight: 18 },
   notesListPanel: {
     backgroundColor: panel,
     borderColor: line,

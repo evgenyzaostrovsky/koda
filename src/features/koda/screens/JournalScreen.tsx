@@ -4,20 +4,30 @@ import { RightPanel } from '../components/RightPanel';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Clock, Plus, Smile, Tags, Trash2, X } from 'lucide-react-native';
 import type { JournalEntry, JournalMood } from '../types';
 import { dayTagOptions, defaultJournalEntry } from '../constants';
 import { sleepDurationMinutes } from '../utils';
 import { SectionTitle } from '../components';
-import { BentoCard, bentoWidths } from '../components/Bento';
-import { accent, activeText, faint, muted, panel } from '../theme';
+import { BentoCard, bentoWidths, SectionHeader } from '../components/Bento';
+import { accent, activeText, faint, muted, text as textColor } from '../theme';
 import { styles } from '../styles';
 
 const hours = Array.from({ length: 24 }, (_, index) => index);
 const compactJournalCard = { padding: 16, gap: 12 } as const;
 const minutes = Array.from({ length: 60 }, (_, index) => index);
 const sleepWheelItemStep = 38;
+const journalOverviewStyles = StyleSheet.create({
+  scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 20 },
+  wrap: { alignSelf: 'center', gap: 16, maxWidth: 620, width: '100%' },
+  actions: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  card: { gap: 12 },
+  text: { color: textColor, fontSize: 15, lineHeight: 22 },
+  meta: { gap: 6 },
+  metaText: { color: muted, fontSize: 13, lineHeight: 18 },
+  footer: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingTop: 4 },
+});
 
 function sleepDurationLabel(sleepStart: string, wakeTime: string) {
   const duration = sleepDurationMinutes(sleepStart, wakeTime);
@@ -94,6 +104,7 @@ export function JournalScreen({
   const [deleteEntryId, setDeleteEntryId] = useState<string | null>(null);
   const [hoveredDeleteEntryId, setHoveredDeleteEntryId] = useState<string | null>(null);
   const [previewEntryId, setPreviewEntryId] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [sleepOpen, setSleepOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [moodOpen, setMoodOpen] = useState(false);
@@ -130,10 +141,31 @@ export function JournalScreen({
 
   if (emotionalMode) return <EmotionJournal isDesktop={isDesktop} entries={emotionEntries} onSave={onSaveEmotion} onBack={() => setEmotionalMode(false)} />;
   return (
-    <ScrollView contentContainerStyle={[styles.scrollContent, isDesktop && styles.desktopPageScroll, { alignSelf: 'center', maxWidth: bentoWidths.journal, width: '100%' }]} showsVerticalScrollIndicator={false}>
-      {!isDesktop ? <View style={styles.journalHeader}>
+    <ScrollView contentContainerStyle={[styles.scrollContent, isDesktop && styles.desktopPageScroll, !editorOpen && journalOverviewStyles.scroll, { alignSelf: 'center', maxWidth: bentoWidths.journal, width: '100%' }]} showsVerticalScrollIndicator={false}>
+      {!editorOpen ? <View style={journalOverviewStyles.wrap}>
+        <SectionHeader title="Дневник" subtitle={journalEntryDateLabel(entry)} action={<View style={journalOverviewStyles.actions}>
+          <Pressable accessibilityRole="button" onPress={() => setHistoryOpen(true)} style={styles.journalHistoryButton}><Text style={styles.journalHistoryText}>История</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => setEmotionalMode(true)} style={styles.journalHistoryButton}><Text style={styles.journalHistoryText}>Эмоции</Text></Pressable>
+        </View>} />
+        <BentoCard tone="light" style={journalOverviewStyles.card}>
+          <Text style={styles.cardLabel}>МЫСЛИ ДНЯ</Text>
+          <Text numberOfLines={3} style={journalOverviewStyles.text}>{entry.text.trim() || 'Запись пока пустая.'}</Text>
+          {(hasSleepData || hasMoodData || hasTags) ? <View style={journalOverviewStyles.meta}>
+            {hasSleepData ? <Text style={journalOverviewStyles.metaText}>Сон {entry.sleepStart} – {entry.wakeTime} · {sleepDuration}</Text> : null}
+            {hasMoodData ? <Text style={journalOverviewStyles.metaText}>Настроение {entry.mood} / 5</Text> : null}
+            {hasTags ? <Text numberOfLines={1} style={journalOverviewStyles.metaText}>Метки: {entry.tags.join(', ')}</Text> : null}
+          </View> : <Text style={styles.rowMeta}>Сон, метки и настроение можно добавить в записи.</Text>}
+          <View style={journalOverviewStyles.footer}>
+            <Pressable accessibilityRole="button" onPress={() => setEditorOpen(true)} style={styles.saveButton}><Text style={styles.saveButtonText}>{entry.text.trim() ? 'Открыть дневник' : 'Заполнить запись'}</Text></Pressable>
+            {!isCurrentEntry ? <Pressable accessibilityRole="button" onPress={() => { onSelectEntry(entries[0]?.id ?? activeEntryId); setEditorOpen(true); }} style={styles.journalHistoryButton}><Text style={styles.journalHistoryText}>Сегодня</Text></Pressable> : null}
+          </View>
+        </BentoCard>
+        {historyEntries.length ? <Text style={styles.rowMeta}>Записей в истории: {historyEntries.length}</Text> : null}
+      </View> : null}
+      {editorOpen && !isDesktop ? <View style={styles.journalHeader}>
         <SectionTitle title="Дневник" subtitle="Сон, настроение, мысли" />
         <View style={styles.journalHeaderActions}>
+          <Pressable accessibilityRole="button" onPress={() => setEditorOpen(false)} style={styles.journalHistoryButton}><Text style={styles.journalHistoryText}>Обзор</Text></Pressable>
           {!isCurrentEntry ? (
             <Pressable accessibilityRole="button" onPress={() => onSelectEntry(entries[0]?.id ?? activeEntryId)} style={styles.journalReturnButton}>
               <Text style={styles.journalReturnText}>Новая запись</Text>
@@ -244,6 +276,7 @@ export function JournalScreen({
                 <Pressable accessibilityRole="button"
                   onPress={() => {
                     onSelectEntry(previewEntry.id);
+                    setEditorOpen(true);
                     setPreviewEntryId(null);
                     setHistoryOpen(false);
                   }}
@@ -280,12 +313,13 @@ export function JournalScreen({
           </View>
         </View>
       </Modal>
-      <View style={isDesktop ? [styles.journalDesktopLayout, { alignSelf: 'center', gap: 24, maxWidth: bentoWidths.journal, width: '100%' }] : undefined} testID={isDesktop ? 'desktop-page-columns' : undefined}>
+      {editorOpen ? <View style={isDesktop ? [styles.journalDesktopLayout, { alignSelf: 'center', gap: 24, maxWidth: bentoWidths.journal, width: '100%' }] : undefined} testID={isDesktop ? 'desktop-page-columns' : undefined}>
         <View style={isDesktop ? [styles.journalDesktopMain, { maxWidth: bentoWidths.journal, width: '100%', gap:12 }] : {gap:12}} testID={isDesktop ? 'desktop-main-column' : undefined}>
       {isDesktop ? (
         <View style={styles.journalHeader}>
           <SectionTitle title="Дневник" subtitle="Сон, настроение, мысли" />
           <View style={styles.journalHeaderActions}>
+            <Pressable accessibilityRole="button" onPress={() => setEditorOpen(false)} style={styles.journalHistoryButton}><Text style={styles.journalHistoryText}>Обзор</Text></Pressable>
             {!isCurrentEntry ? (
               <Pressable accessibilityRole="button" onPress={() => onSelectEntry(entries[0]?.id ?? activeEntryId)} style={styles.journalReturnButton}>
                 <Text style={styles.journalReturnText}>Новая запись</Text>
@@ -430,7 +464,7 @@ export function JournalScreen({
             </ScrollView>
           </View></RightPanel>
         ) : null}
-      </View>
+      </View> : null}
     </ScrollView>
   );
 }
