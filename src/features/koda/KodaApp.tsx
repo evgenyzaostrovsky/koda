@@ -1,6 +1,7 @@
 import { habitIsDue, habitDoneOn } from './habitModel';
 import { adoptPet, customizePet, feedPet, getPetView, rebirthPet, recordPetSourceChanges, type PetAccessory, type PetSpecies, type PetState } from './petState';
-import { PetCompanion, type PetPose } from './components/PetCompanion';
+import { type PetPose } from './components/PetCompanion';
+import { PetWanderer } from './components/PetWanderer';
 import { PetRoom } from './screens/PetRoom';
 import { WidgetDesktop } from './screens/WidgetDesktop';
 import { HabitsScreen } from './screens/HabitsScreen';
@@ -1631,9 +1632,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       <WidgetShell key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults}>
         {activeTab==='habits'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
       </WidgetShell>
-      {!petRoomOpen && activeTab === 'habits' && !quickAddOpen && <View style={{position:'absolute',right:14,bottom:32,zIndex:20}}>
-        <PetCompanion name={petView.name} state={petLife === 'egg' ? 'alive' : petLife} pose={petPose} size={68} accessibilityLabel={petLife === 'egg' ? 'Познакомиться с питомцем' : 'Открыть домик питомца'} onPress={()=>setPetRoomOpen(true)} />
-      </View>}
+      {!petRoomOpen && !quickAddOpen && <PetWanderer name={petView.name} state={petLife} pose={petPose} onPress={()=>setPetRoomOpen(true)} />}
       <Modal visible={petRoomOpen} animationType="fade" onRequestClose={()=>setPetRoomOpen(false)}>
         <SafeAreaView style={styles.safe}>
           <PetRoom pet={{name:petView.name,state:petLife,hunger:100-petView.hunger,pose:petPose}} food={petView.food} canFeed={petView.canFeed} lifeDeadline={petView.diesAt ?? undefined} earnedActions={petView.lifetimeEarned} nextUnlockText={nextPetUnlock ? `Следующее: ${nextPetUnlock.name} · ${petView.lifetimeEarned} из ${nextPetUnlock.at} действий` : undefined} artifacts={petArtifacts} cosmetics={petLooks} roomUpgrades={petRoomItems} equippedCosmeticId={petView.species} equippedUpgradeIds={[petView.accessory]}

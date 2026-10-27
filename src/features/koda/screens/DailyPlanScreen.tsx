@@ -32,6 +32,7 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
   const day = kodaDays.find(item => item.localDate === date);
   const recent = [...kodaDays].sort((a,b) => b.localDate.localeCompare(a.localDate)).find(item => item.plan);
   const [available, setAvailable] = useState(() => recent?.plan ? getCurrentPlanVersion(recent.plan).availableMinutes : 120);
+  const [availableInput, setAvailableInput] = useState(() => String(recent?.plan ? getCurrentPlanVersion(recent.plan).availableMinutes : 120));
   const proposal = useMemo(() => suggestDayPlan(goals, plannerItems, date, { availableMinutes: available }), [goals, plannerItems, date, available]);
   const [editor, setEditor] = useState<'proposal' | 'revision' | null>(null);
   const [draft, setDraft] = useState<DayPlanProposal>(proposal);
@@ -126,6 +127,7 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
   }
   const maxMinutes = shown.items.reduce((sum,item)=>sum+item.estimatedMinutes,0);
   const notSelected = plannerItems.filter(item=>!item.done&&!item.deletedAt&&item.date<=date&&!shown.items.some(i=>i.source.id===item.id));
+  const otherItems = suggestDayPlan(goals,plannerItems,date,{availableMinutes:10000,maxItems:100,maxActionsPerGoal:8}).items.filter(item=>!draft.items.some(selected=>selected.sourceKey===item.sourceKey)).slice(0,20);
   const selectedDay=kodaDays.find(item=>item.localDate===selectedDate);
   const selectedItems=plannerItems.filter(item=>!item.deletedAt&&item.date===selectedDate);
   const leadTitle=completed?'День завершён':plan?'Один шаг ближе':'День в твоём темпе';
@@ -136,7 +138,7 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
     {!plan && !completed ? <View style={s.hero}>
       <Text style={s.heading}>Вот посильный план на сегодня</Text>
       <Text style={s.meta}>Из активных целей и дел на сегодня. Вы решаете, что принять.</Text>
-      <View style={s.inline}><Text style={s.meta}>Доступно времени, мин</Text><TextInput accessibilityLabel="Доступное время в минутах" keyboardType="number-pad" value={String(available)} onChangeText={v=>{ setAvailable(Math.max(0,Math.min(600,Number(v.replace(/\D/g,''))||0))); setCustomDraft(null); }} style={[s.input,s.number]} /></View>
+      <View style={s.inline}><Text style={s.meta}>Доступно времени, мин</Text><TextInput accessibilityLabel="Доступное время в минутах" keyboardType="number-pad" value={availableInput} onChangeText={v=>{ setAvailableInput(v); setAvailable(Math.max(0,Math.min(600,Number(v.replace(/\D/g,''))||0))); setCustomDraft(null); }} onBlur={()=>setAvailableInput(String(available))} style={[s.input,s.number]} /></View>
       {shown.items.map(item=><View key={item.sourceKey} style={s.planTrack}><View style={s.inline}><View style={s.grow}><Text style={s.label}>{item.goalTitle || 'Текущие дела'}</Text><Text style={s.body}>{item.title}</Text></View><Text style={s.timePill}>{item.estimatedMinutes} мин</Text></View><View accessibilityLabel={`Запланировано около ${item.estimatedMinutes} минут`} style={s.budgetTrack}><View style={[s.budgetFill,{width:`${Math.min(100,item.estimatedMinutes/Math.max(1,maxMinutes)*100)}%`}]} /></View></View>)}
       {!shown.items.length ? <Text style={s.meta}>Пока нечего предложить в выбранное время. Добавьте небольшой шаг или увеличьте доступное время.</Text> : <Text style={s.meta}>Примерно {maxMinutes} мин · оставляем резерв времени</Text>}
       {shown.minimum ? <Text style={s.minimum}>Минимум: {shown.minimum.label}{shown.items.find(i=>i.sourceKey===shown.minimum?.sourceKey)?.metric==='minutes'?` · ${shown.minimum.targetValue} мин`:''}</Text> : null}
@@ -218,7 +220,7 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
       <Text style={s.heading}>{editor==='revision'?'Пересмотреть план':'Подстроить предложение'}</Text>
       <Text style={s.meta}>{editor==='revision'?'Исходный план и его SCORE сохранятся. Для нового плана будет отдельный процент выполнения.':'Уберите лишнее, выберите другое действие или уточните объём.'}</Text>
       {draft.items.map(item=><View style={s.row} key={item.sourceKey}><View style={s.grow}><Text style={s.body}>{item.title}</Text>{item.metric!=='binary'?<TextInput accessibilityLabel={`Плановый объём: ${item.title}`} keyboardType="decimal-pad" value={String(item.targetValue)} onChangeText={v=>setDraft(d=>({...d,items:d.items.map(i=>i.sourceKey===item.sourceKey?{...i,targetValue:Math.max(1,Number(v.replace(',','.'))||1),estimatedMinutes:i.metric==='minutes'?Math.max(1,Number(v)||1):i.estimatedMinutes}:i)}))} style={s.input}/>:null}<Action title="Сделать минимумом" onPress={()=>setDraft(d=>({...d,minimum:{sourceKey:item.sourceKey,label:item.title,targetValue:item.metric==='minutes'?Math.min(10,item.targetValue):1}}))}/></View><Action title="Убрать" label={`Убрать из плана ${item.title}`} onPress={()=>setDraft(d=>({...d,items:d.items.filter(i=>i.sourceKey!==item.sourceKey)}))}/></View>)}
-      <Text style={s.label}>Другие действия</Text>{suggestDayPlan(goals,plannerItems,date,{availableMinutes:10000,maxItems:100,maxActionsPerGoal:8}).items.filter(i=>!draft.items.some(j=>j.sourceKey===i.sourceKey)).slice(0,20).map(item=><Action key={item.sourceKey} title={`Добавить: ${item.title}`} onPress={()=>setDraft(d=>({...d,items:[...d.items,item]}))}/>)}
+      <Text style={s.label}>Другие действия</Text>{otherItems.map(item=><Action key={item.sourceKey} title={`Добавить: ${item.title}`} onPress={()=>setDraft(d=>({...d,items:[...d.items,item]}))}/>)}{!otherItems.length?<Text style={s.meta}>Других доступных действий сейчас нет. Можно добавить своё дело ниже.</Text>:null}
       <Text style={s.label}>Своё дело</Text><TextInput accessibilityLabel="Новое дело для плана" value={newTask} onChangeText={setNewTask} onSubmitEditing={addOwnTask} placeholder="Например, записаться к врачу" placeholderTextColor={faint} style={s.input}/><Action title="Добавить своё дело" disabled={!newTask.trim()} onPress={addOwnTask}/><Text style={s.meta}>Дело сохранится в планнере. В оцениваемый план оно войдёт после подтверждения изменений.</Text>
       {editor==='revision'?<><Text style={s.label}>Причина пересмотра</Text><TextInput accessibilityLabel="Причина пересмотра" value={reason} onChangeText={setReason} style={s.input}/></>:null}
       {draft.items.reduce((sum,i)=>sum+i.estimatedMinutes,0)>draft.availableMinutes*(1-draft.reserveRatio)?<Text style={s.minimum}>План выходит за доступное время с резервом. Можно убрать действие или уменьшить объём.</Text>:null}

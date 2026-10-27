@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 import { Platform, View } from 'react-native';
-import { GripVertical } from 'lucide-react-native';
 import type { WidgetId } from '../widgetDesktop';
 
-type Item = { id: WidgetId; label: string; content: ReactNode; placement: CSSProperties };
+type Item = { id: WidgetId; label: string; content: ReactNode; placement: CSSProperties; onOpen: () => void };
 type Props = { items: Item[]; columns: boolean | number; gap: number; enabled: boolean; masonry?: boolean; onMove: (source: WidgetId, target: WidgetId) => void };
 type Gesture = { id: WidgetId; pointer: number; x: number; y: number; active: boolean; target: WidgetId; node: HTMLDivElement };
 
-/** Mouse gestures only. Touch keeps native page scrolling; layout controls also work by keyboard. */
+/** Click opens a widget, movement reorders it, and keyboard controls remain available. */
 export function WidgetDragGrid({ items, columns, gap, enabled, masonry=false, onMove }: Props) {
   const nodes = useRef(new Map<WidgetId, HTMLDivElement>());
   const gesture = useRef<Gesture | null>(null);
@@ -46,18 +45,18 @@ export function WidgetDragGrid({ items, columns, gap, enabled, masonry=false, on
   if (Platform.OS !== 'web') return <View style={{ gap }}>{items.map(item => <View key={item.id}>{item.content}</View>)}</View>;
 
   function begin(event: ReactPointerEvent<HTMLDivElement>, id: WidgetId) {
-    if (!enabled || event.button !== 0 || event.pointerType !== 'mouse') return;
+    if (!enabled || event.button !== 0 || !['mouse', 'touch'].includes(event.pointerType)) return;
     const target = event.target as HTMLElement;
-    if (!target.closest('[data-widget-drag-handle]') && target.closest('button,a,input,textarea,select,[role="button"],[role="checkbox"],[role="switch"],[contenteditable="true"]')) return;
+    const interactive = target.closest('button,a,input,textarea,select,[role="button"],[role="checkbox"],[role="switch"],[contenteditable="true"],[tabindex]:not([tabindex="-1"])');
+    if (interactive && interactive !== event.currentTarget) return;
     gesture.current = { id, pointer: event.pointerId, x: event.clientX, y: event.clientY, active: false, target: id, node: event.currentTarget };
     event.currentTarget.setPointerCapture(event.pointerId);
-    event.preventDefault();
   }
   function move(event: ReactPointerEvent<HTMLDivElement>) {
     const current = gesture.current;
     if (!current || current.pointer !== event.pointerId) return;
     const dx = event.clientX - current.x, dy = event.clientY - current.y;
-    if (!current.active && Math.hypot(dx, dy) < 6) return;
+    if (!current.active && Math.hypot(dx, dy) < 8) return;
     current.active = true;
     let nearest = current.id, distance = Infinity;
     for (const [id, node] of nodes.current) {
@@ -95,27 +94,33 @@ export function WidgetDragGrid({ items, columns, gap, enabled, masonry=false, on
     }
   }
   return <>
-    <style>{`.koda-widget-slot .koda-widget-grip{opacity:0;transition:opacity 120ms ease}.koda-widget-slot:hover .koda-widget-grip,.koda-widget-slot:focus-within .koda-widget-grip{opacity:1}.koda-widget-grip:focus-visible{outline:2px solid #426528;outline-offset:2px}@media(hover:none){.koda-widget-slot .koda-widget-grip{display:none}}@media(prefers-reduced-motion:reduce){.koda-widget-grip{transition:none!important}}`}</style>
     <div data-testid="widget-drag-grid" data-drag-active={drag ? "true" : "false"} style={{ display: 'grid', gridTemplateColumns: columns ? `repeat(${typeof columns === 'number' ? columns : 12},minmax(0,1fr))` : 'minmax(0,1fr)', columnGap:gap, rowGap:masonry?0:gap, gridAutoRows:masonry?'1px':undefined, gridAutoFlow:masonry?'row dense':undefined, alignItems: 'stretch', minWidth: 0 }}>
       {items.map(item => <div key={item.id} ref={node => { if (node) nodes.current.set(item.id, node); else nodes.current.delete(item.id); }}
         className="koda-widget-slot" data-widget-slot={item.id}
         onPointerDown={event => begin(event, item.id)} onPointerMove={move}
         onPointerUp={event => finish(event)} onPointerCancel={event => finish(event, true)}
         onLostPointerCapture={event => { if (gesture.current) finish(event, true); }}
-        onClickCapture={event => { if (Date.now() < suppressClickUntil.current) { event.preventDefault(); event.stopPropagation(); } }}
-        style={{ ...item.placement, ...(masonry?{gridRowEnd:`span ${(heights[item.id]??320)+gap}`,alignSelf:'start'}:{}), position: 'relative', minWidth: 0, display: 'flex', cursor: enabled ? 'grab' : undefined,
+        role="group" tabIndex={0} aria-label={`${item.label}. Нажмите Enter, чтобы открыть. Стрелками можно изменить порядок.`}
+        onClick={event => {
+          if (Date.now() < suppressClickUntil.current) { event.preventDefault(); event.stopPropagation(); return; }
+          const target = event.target as HTMLElement;
+          const interactive = target.closest('button,a,input,textarea,select,[role="button"],[role="checkbox"],[role="switch"],[contenteditable="true"],[tabindex]:not([tabindex="-1"])');
+          if (interactive && interactive !== event.currentTarget) return;
+          item.onOpen();
+        }}
+        onKeyDown={event => {
+          if (event.target !== event.currentTarget) return;
+          if (['Enter', ' '].includes(event.key)) { event.preventDefault(); item.onOpen(); return; }
+          if (!enabled || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+          event.preventDefault();
+          const index = items.findIndex(candidate => candidate.id === item.id);
+          const target = items[index + (event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1)];
+          if (target) { onMove(item.id, target.id); setAnnouncement(`Виджет «${item.label}» перемещён.`); }
+        }}
+        style={{ ...item.placement, ...(masonry?{gridRowEnd:`span ${(heights[item.id]??320)+gap}`,alignSelf:'start'}:{}), position: 'relative', minWidth: 0, display: 'flex', touchAction: 'pan-y', cursor: enabled ? 'grab' : undefined,
           ...(drag?.id === item.id ? { transform: `translate(${drag.dx}px,${drag.dy}px)`, opacity: .78, zIndex: 30, cursor: 'grabbing', userSelect: 'none' } : {}),
           ...(drag && drag.target === item.id && drag.id !== item.id ? { outline: '2px dashed #426528', outlineOffset: 5, borderRadius: 28 } : {}) }}>
         {item.content}
-        {enabled && <button type="button" className="koda-widget-grip" data-widget-drag-handle aria-label={`Переместить виджет: ${item.label}`} title="Зажми и перетащи. Стрелки клавиатуры меняют порядок."
-          onKeyDown={event => {
-            if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-            event.preventDefault(); event.stopPropagation();
-            const index = items.findIndex(candidate => candidate.id === item.id);
-            const target = items[index + (event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1)];
-            if (target) { onMove(item.id, target.id); setAnnouncement(`Виджет «${item.label}» перемещён.`); }
-          }}
-          style={{ position: 'absolute', top: 5, left: 'calc(50% - 16px)', padding: 3, width: 32, height: 24, border: 0, borderRadius: 8, background: '#edf1e5', color: '#425832', cursor: 'grab', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4 }}><GripVertical size={17} color="#425832" /></button>}
       </div>)}
     </div>
     <span aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }}>{announcement}</span>
