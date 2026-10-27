@@ -168,7 +168,7 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
     {error && !editor?<Text accessibilityRole="alert" style={s.meta}>{error}</Text>:null}
 </View>;
   return <View style={{flex:1,minHeight:0}}>
-    <ScrollView style={{flex:1,minHeight:0}} contentContainerStyle={{paddingBottom:4}} keyboardShouldPersistTaps="handled">
+    <ScrollView style={{flex:1,minHeight:0}} contentContainerStyle={{flexGrow:1,justifyContent:'center',alignItems:'center',paddingVertical:16}} keyboardShouldPersistTaps="handled">
     <DailyPlanOverview
       date={date} status={completed?'completed':plan?'active':'proposal'} leadTitle={leadTitle} leadStep={leadStep}
       items={(completed&&!current?[]:current?.items??shown.items).map(item=>({key:item.sourceKey,title:item.title,minutes:item.estimatedMinutes,done:(activeScores?.items.find(score=>score.sourceKey===item.sourceKey)?.completionRatio??0)>=1}))}

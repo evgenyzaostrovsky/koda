@@ -63,7 +63,7 @@ export function DailyPlanOverview(props: DailyPlanOverviewProps) {
               <View style={[s.statusDot, props.hasConflicts && s.conflictDot]} />
               <Text numberOfLines={1} style={s.statusText}>{getStatusText(props.status, props.hasConflicts)}</Text>
             </View>
-            <Action label="Открыть полный план" title="План" onPress={props.onOpenPlan} tone="lime" />
+            <Action label="Открыть полный план" title="Открыть план" onPress={props.onOpenPlan} tone="primary" />
           </View>
           <Text numberOfLines={1} style={[s.leadTitle, compact && s.leadTitleCompact]}>{props.leadTitle}</Text>
           <Text numberOfLines={1} style={[s.leadStep, compact && s.leadStepCompact]}>{props.leadStep}</Text>
@@ -244,7 +244,7 @@ function pluralCount(count: number, one = 'дело', few = 'дела', many = '
 }
 
 const s = StyleSheet.create({
-  root: { width: '100%', minWidth: 0, gap: 10 },
+  root: { width: '100%', maxWidth: 1040, alignSelf: 'center', minWidth: 0, gap: 10 },
   header: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   pageTitle: { color: text, fontSize: 24, lineHeight: 30, letterSpacing: -0.7, fontWeight: '600' },
   date: { color: muted, fontSize: 13, lineHeight: 18, flexShrink: 1, textAlign: 'right' },
