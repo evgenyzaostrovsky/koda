@@ -133,7 +133,7 @@ export function PetRoom({
       </View>
     </View>
 
-    <Pressable accessibilityRole="button" accessibilityState={{expanded:collectionOpen}} onPress={()=>setCollectionOpen(value=>!value)} style={s.collectionToggle}><Text style={s.sectionTitle}>{collectionOpen ? 'Скрыть вещи' : 'Украшения и находки'}</Text><Text style={s.unlockAction}>{collectionOpen ? 'Свернуть' : 'Открыть →'}</Text></Pressable>
+    <Pressable accessibilityRole="button" accessibilityState={{expanded:collectionOpen}} onPress={()=>setCollectionOpen(value=>!value)} style={s.collectionToggle}><Text style={s.sectionTitle}>{collectionOpen ? 'Скрыть вещи' : 'Украшения и находки'}</Text><Text style={s.collectionToggleAction}>{collectionOpen ? 'Свернуть' : 'Открыть →'}</Text></Pressable>
     {collectionOpen && <View style={s.collection}>
       <View style={s.collectionHeader}>
         <Text style={s.sectionTitle}>Сделать домик своим</Text>
@@ -293,6 +293,7 @@ const s = StyleSheet.create({
   pressed: { opacity: .84, transform: [{ scale: .985 }] },
   collection: { borderRadius: 24, backgroundColor: panel, borderWidth: 1, borderColor: line, padding: 18, gap: 8 },
   collectionToggle: {minHeight:52,borderRadius:20,backgroundColor:panel,paddingHorizontal:16,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
+  collectionToggleAction: {color:accent,fontSize:12,lineHeight:18,fontWeight:'700'},
   nameEditor: {flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:6},
   nameInput: {minHeight:44,minWidth:130,flexGrow:1,borderRadius:14,borderWidth:1,borderColor:line,backgroundColor:panel,paddingHorizontal:12,color:text,fontSize:14},
   nameButton: {minHeight:44,justifyContent:'center',paddingHorizontal:12},
