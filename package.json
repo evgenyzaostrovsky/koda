@@ -50,7 +50,7 @@
     "test:timer": "tsx scripts/test-pomodoro-timer.ts",
     "test:offline": "node scripts/test-offline-shell.cjs",
     "typecheck": "node --stack-size=8192 node_modules/typescript/bin/tsc --noEmit",
-    "test": "npm run test:score && npm run test:day-plan && npm run test:open-window && npm run test:goal-ai && npm run test:koda-day-sync && npm run test:emotions && npm run test:timer && npm run test:offline && npm run test:sync && npm run test:themes && npm run test:chat-history && npm run test:chat-sync && npm run test:chat-offline && npm run test:widgets",
+    "test": "npm run test:score && npm run test:day-plan && npm run test:open-window && npm run test:goal-ai && npm run test:koda-day-sync && npm run test:emotions && npm run test:timer && npm run test:offline && npm run test:sync && npm run test:themes && npm run test:chat-history && npm run test:chat-sync && npm run test:chat-offline && npm run test:widgets && npm run test:pet",
     "test:day-plan": "tsx scripts/test-day-plan.ts && tsx scripts/test-koda2-integration.ts",
     "test:open-window": "tsx scripts/test-open-window.ts && tsx scripts/test-goal-structure.ts",
     "test:goal-context": "tsx scripts/test-goal-context.ts",
@@ -60,7 +60,8 @@
     "test:chat-history": "tsx scripts/test-chat-history.ts",
     "test:chat-sync": "tsx scripts/test-chat-sync.ts && tsx scripts/test-chat-cloud-state.ts && tsx scripts/test-chat-rls.ts",
     "test:chat-offline": "tsx scripts/test-auth-offline.ts && tsx scripts/test-chat-offline-hook.ts",
-    "test:widgets": "tsx scripts/test-widget-desktop.ts && tsx scripts/test-widget-habits.ts && tsx scripts/test-refinement41-data.ts && tsx scripts/test-refinement41-planner.ts && tsx scripts/test-dashboard-metrics.ts && tsx scripts/test-routine-schedule.ts && tsx scripts/test-note-formatting.ts"
+    "test:widgets": "tsx scripts/test-widget-desktop.ts && tsx scripts/test-widget-habits.ts && tsx scripts/test-refinement41-data.ts && tsx scripts/test-refinement41-planner.ts && tsx scripts/test-dashboard-metrics.ts && tsx scripts/test-routine-schedule.ts && tsx scripts/test-note-formatting.ts",
+    "test:pet": "tsx scripts/test-pet-state.ts"
   },
   "private": true
 }

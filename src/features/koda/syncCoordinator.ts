@@ -1,5 +1,6 @@
 import { mergeEmotionEntries } from './emotionJournal';
 import { mergeProjects, mergeStoredKodaState, normalizeStoredKodaState, type StoredKodaState } from './persistence';
+import { mergePetState, parsePetState } from './petState';
 
 /** Serializes snapshots and prevents an old acknowledgement from clearing newer edits. */
 export class SyncCoordinator {
@@ -17,6 +18,7 @@ export class SyncCoordinator {
 
 /** Merge against the latest row, retrying when another device wins the write. */
 export async function writeAppStateSnapshot(client: any, userId: string, state: StoredKodaState) {
+  if (state.profile.pet && state.profile.pet.ownerId !== userId) throw new Error('Pet belongs to another account');
   for (let attempt = 0; attempt < 4; attempt += 1) {
     // Selecting * also works on installations predating projects/koda_days.
     const current = await client.from('user_app_state').select('*').eq('user_id', userId).maybeSingle();
@@ -35,6 +37,7 @@ export async function writeAppStateSnapshot(client: any, userId: string, state: 
         ...existingProfile,
         ...state.profile,
         emotionEntries: mergeEmotionEntries(existingProfile.emotionEntries, state.profile.emotionEntries),
+        pet: mergePetState(parsePetState(existingProfile.pet, userId), state.profile.pet),
         __kodaPomodoro: state.pomodoro,
         __kodaProjects: projects,
         __kodaDays: merged.kodaDays,

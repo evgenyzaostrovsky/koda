@@ -6,6 +6,7 @@ import { mergeRoadmapClarifications } from './goalRoadmapClarifications';
 import { mergeDayPlans, parseDayPlanState } from './dayPlanSync';
 import { mergeHabits } from './habitSync';
 import { normalizeHabitMetadata } from './habitModel';
+import { mergePetState, parsePetState } from './petState';
 import type { Goal, Habit, JournalEntry, KodaDay, Note, NoteBlock, NoteDocument, PlannerItem, PomodoroSettings, ProfileState, Project, ThemeId } from './types';
 import { todayDateKey } from './utils';
 
@@ -113,13 +114,15 @@ export function mergeNotes(remoteNotes: Note[], localNotes: Note[]) {
 
 export function mergeStoredKodaState(remoteState: StoredKodaState, localState: StoredKodaState | null): StoredKodaState {
   if (!localState) return remoteState;
+  const { pet: _selectedPet, ...profile } = isProfileEmpty(localState.profile) ? remoteState.profile : localState.profile;
+  const pet = mergePetState(parsePetState(remoteState.profile.pet), parsePetState(localState.profile.pet));
 
   return {
     goals: mergeGoals(remoteState.goals, localState.goals),
     habits: mergeHabits(remoteState.habits, localState.habits),
     kodaDays: mergeKodaDays(remoteState.kodaDays, localState.kodaDays),
     pomodoro: isDefaultPomodoroSettings(localState.pomodoro) ? remoteState.pomodoro : localState.pomodoro,
-    profile: { ...(isProfileEmpty(localState.profile) ? remoteState.profile : localState.profile), emotionEntries: mergeEmotionEntries(remoteState.profile.emotionEntries, localState.profile.emotionEntries) },
+    profile: { ...profile, emotionEntries: mergeEmotionEntries(remoteState.profile.emotionEntries, localState.profile.emotionEntries), ...(pet ? { pet } : {}) },
     projects: mergeProjects(remoteState.projects, localState.projects),
   };
 }
@@ -158,7 +161,7 @@ export function parseStoredKodaState(value: string | null) {
 export function normalizeStoredKodaState(value: unknown): StoredKodaState | null {
   if (!value || typeof value !== 'object') return null;
 
-  const state = value as Partial<StoredKodaState> & { koda_days?: unknown };
+  const state = value as Partial<StoredKodaState> & { koda_days?: unknown; user_id?: unknown };
   const goals = normalizeGoalList(state.goals) ?? initialGoals;
   const habits = normalizeHabitList(state.habits);
   const embeddedDays = state.profile && typeof state.profile === 'object' ? (state.profile as { __kodaDays?: unknown }).__kodaDays : undefined;
@@ -167,6 +170,8 @@ export function normalizeStoredKodaState(value: unknown): StoredKodaState | null
   const rawProfile = state.profile;
   const pomodoro = normalizePomodoroSettings(state.pomodoro ?? getEmbeddedPomodoroSettings(rawProfile));
   const profile = normalizeProfileState(state.profile);
+  // Cloud rows carry their account boundary; a foreign embedded pet must not cross it.
+  if (profile.pet && typeof state.user_id === 'string' && profile.pet.ownerId !== state.user_id) delete profile.pet;
   // Keep the compatibility copy readable after the projects column is added.
   const embeddedProjects = rawProfile && typeof rawProfile === 'object'
     ? (rawProfile as { __kodaProjects?: unknown }).__kodaProjects : undefined;
@@ -340,7 +345,9 @@ function clampPomodoroMinutes(value: unknown, fallback: number, min: number, max
 
 function normalizeProfileState(value: unknown): ProfileState {
   if (!isProfileState(value)) return defaultProfile;
-  return { ...defaultProfile, ...value, themeId: normalizeThemeId(value.themeId), emotionEntries: parseEmotionEntries(value.emotionEntries) };
+  const { pet: rawPet, ...profile } = value;
+  const pet = parsePetState(rawPet);
+  return { ...defaultProfile, ...profile, themeId: normalizeThemeId(value.themeId), emotionEntries: parseEmotionEntries(value.emotionEntries), ...(pet ? { pet } : {}) };
 }
 
 function normalizeThemeId(value: unknown): ThemeId {

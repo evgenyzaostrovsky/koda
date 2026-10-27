@@ -233,6 +233,7 @@ export type PomodoroSettings = {
   soundId: PomodoroSoundId;
 };
 export type ProfileState = {
+  pet?: import('./petState').PetState;
   emotionEntries?: import('./emotionJournal').EmotionEntry[];
   themeId: ThemeId;
   version: string;

@@ -140,7 +140,7 @@ if (process.argv.includes('--timezone-child')) {
     const end = app.indexOf('  function updatePlannerSources(', start);
     assert.ok(start >= 0 && end > start, 'The integration handler must be available to this regression test');
     const handler = transpileModule(app.slice(start, end), {}).outputText;
-    const makeHandler = new Function('context', `const { editSources, goals, plannerItems, projects, habits, kodaDays,
+    const makeHandler = new Function('context', `const { editSources, goals, plannerItems, projects, habits, kodaDays, profile,
       todayDateKey, buildProjectPlannerItems, buildHabitPlannerItems, syncDayPlanProgress,
       syncExplicitSourceChanges, updateKodaDays } = context; ${handler}; return commitExplicitSources;`);
     const date = '2026-10-20';
@@ -151,7 +151,7 @@ if (process.argv.includes('--timezone-child')) {
     for (const change of ['pause', 'delete', 'undo'] as const) {
       const sources = { goals: [], plannerItems: [], projects: [], habits: [completed] };
       let days = [{ id: 'widget-day', status: 'active', plan: root }];
-      const commit = makeHandler({ ...sources, editSources: { current: sources }, kodaDays: days,
+      const commit = makeHandler({ ...sources, profile: {}, editSources: { current: sources }, kodaDays: days,
         todayDateKey: () => date, buildProjectPlannerItems, buildHabitPlannerItems, syncDayPlanProgress, syncExplicitSourceChanges,
         updateKodaDays: (update: (items: typeof days) => typeof days) => { days = update(days); },
       });

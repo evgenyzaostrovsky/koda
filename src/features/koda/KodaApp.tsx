@@ -1,4 +1,7 @@
 import { habitIsDue, habitDoneOn } from './habitModel';
+import { adoptPet, customizePet, feedPet, getPetView, rebirthPet, recordPetSourceChanges, type PetAccessory, type PetSpecies, type PetState } from './petState';
+import { PetCompanion, type PetPose } from './components/PetCompanion';
+import { PetRoom } from './screens/PetRoom';
 import { WidgetDesktop } from './screens/WidgetDesktop';
 import { HabitsScreen } from './screens/HabitsScreen';
 import { WidgetShell, useWidgetLayout, type DesktopSearchResult } from './components/WidgetShell';
@@ -69,6 +72,20 @@ type SyncDomain = 'planner' | 'journal' | 'appState' | 'notes' | 'kodaDays';
 const starterPlannerItemIds = new Set(['planner-1', 'planner-2', 'planner-3', 'planner-4', 'planner-5']);
 
 export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?: string | null }) {
+  const [petRoomOpen, setPetRoomOpen] = useState(false);
+  const [petClock, setPetClock] = useState(() => Date.now());
+  const [petCelebrating, setPetCelebrating] = useState(false);
+  useEffect(() => {
+    if (!petCelebrating) return;
+    const timeout = setTimeout(() => setPetCelebrating(false), 2500);
+    return () => clearTimeout(timeout);
+  }, [petCelebrating]);
+  useEffect(() => {
+    const refresh = () => setPetClock(Date.now());
+    const timer = setInterval(refresh, 60_000);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', refresh);
+    return () => { clearInterval(timer); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', refresh); };
+  }, []);
   const [activeTab, setActiveTabState] = useState<TabKey>(() => sectionFromHash());
   function setActiveTab(tab: TabKey) {
     setActiveTabState(tab);
@@ -1192,6 +1209,16 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     const next = { ...previous, ...patch };
     editSources.current = next;
     const date = todayDateKey();
+    if (profile.pet && profile.pet.ownerId === (userId ?? null)) {
+      const event = { at: new Date().toISOString(), id: uid('pet-work'), localDate: date };
+      markSyncQueued('appState');
+      setProfile(current => {
+        if (!current.pet || current.pet.ownerId !== (userId ?? null)) return current;
+        const pet = recordPetSourceChanges(current.pet, previous, next, event);
+        return pet === current.pet ? current : { ...current, pet };
+      });
+      setPetClock(Date.now());
+    }
     const before = [...previous.plannerItems,...buildProjectPlannerItems(previous.projects),...buildHabitPlannerItems(previous.habits,date)];
     const after = [...next.plannerItems,...buildProjectPlannerItems(next.projects),...buildHabitPlannerItems(next.habits,date)];
     if (!kodaDays.some(d=>d.status==='active'&&d.plan)) return;
@@ -1557,6 +1584,42 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const visibleSyncQueue = syncReady ? syncQueue : [];
   const hasCloudSync = Boolean(userId) && isSupabaseConfigured();
   const syncText = getSyncText(visibleSyncQueue, isOnline, syncReady, hasCloudSync);
+  const petState = profile.pet?.ownerId === (userId ?? null) ? profile.pet : undefined;
+  const petView = getPetView(petState, petClock);
+  const petLife = petView.status === 'unadopted' ? 'egg' : petView.status === 'dead' ? 'dead' : 'alive';
+  const petPose: PetPose = petView.status === 'dead' ? 'emotions_06' : petCelebrating ? 'celebration_01' : petView.status === 'starving' ? 'care_moods_03' : petView.status === 'hungry' ? 'emotions_07' : petView.species === 'bunny' ? 'celebration_01' : petView.species === 'fox' ? 'poses_04' : 'poses_01';
+  const petLooks = [
+    {id:'cat',name:'Спокойный',description:'Питомец дома'},
+    {id:'fox',name:'Улыбка',description:'Открывается за 5 действий'},
+    {id:'bunny',name:'Радостный',description:'Открывается за 12 действий'},
+  ].filter(item => petView.unlockedSpecies.includes(item.id as PetSpecies));
+  const petRoomItems = [
+    {id:'none',name:'Без украшений',description:'Свободное место'},
+    {id:'scarf',name:'Мягкая подушка',description:'За 3 действия'},
+    {id:'bow',name:'Растение',description:'За 8 действий'},
+    {id:'crown',name:'Фонарик',description:'За 20 действий'},
+  ].filter(item => petView.unlockedAccessories.includes(item.id as PetAccessory));
+  const petArtifacts = [
+    {id:'first',name:'Первый шаг',description:'За первое выполненное действие',at:1},
+    {id:'five',name:'Росток',description:'За 5 выполненных действий',at:5},
+    {id:'fifteen',name:'Звезда пути',description:'За 15 выполненных действий',at:15},
+    {id:'thirty',name:'Дерево заботы',description:'За 30 выполненных действий',at:30},
+  ].filter(item=>petView.lifetimeEarned>=item.at);
+  const nextPetUnlock = [
+    {at:1,name:'Первый шаг'}, {at:3,name:'Мягкая подушка'}, {at:5,name:'Улыбка'},
+    {at:8,name:'Растение'}, {at:12,name:'Радостный образ'}, {at:15,name:'Звезда пути'},
+    {at:20,name:'Фонарик'}, {at:30,name:'Дерево заботы'},
+  ].find(item => petView.lifetimeEarned < item.at);
+  function changePet(change: (state: PetState | undefined, operation: {id:string;at:string}) => PetState | undefined) {
+    const operation = { id: uid('pet-event'), at: new Date().toISOString() };
+    markSyncQueued('appState');
+    setProfile(current => {
+      const existing = current.pet?.ownerId === (userId ?? null) ? current.pet : undefined;
+      const pet = change(existing, operation);
+      return pet === existing ? current : { ...current, pet };
+    });
+    setPetClock(Date.now());
+  }
   const quickAddPreview = parseQuickTaskInput(quickAddText, todayDateKey(), '');
   if (initialStateReadyKey !== scopedStorageKey(kodaStateStorageKey, userId)) {
     return <SafeAreaView style={[styles.safe, { justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color={accent} /></SafeAreaView>;
@@ -1568,6 +1631,16 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       <WidgetShell key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults}>
         {activeTab==='habits'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
       </WidgetShell>
+      {!petRoomOpen && activeTab === 'habits' && !quickAddOpen && <View style={{position:'absolute',right:14,bottom:32,zIndex:20}}>
+        <PetCompanion name={petView.name} state={petLife === 'egg' ? 'alive' : petLife} pose={petPose} size={68} accessibilityLabel={petLife === 'egg' ? 'Познакомиться с питомцем' : 'Открыть домик питомца'} onPress={()=>setPetRoomOpen(true)} />
+      </View>}
+      <Modal visible={petRoomOpen} animationType="fade" onRequestClose={()=>setPetRoomOpen(false)}>
+        <SafeAreaView style={styles.safe}>
+          <PetRoom pet={{name:petView.name,state:petLife,hunger:100-petView.hunger,pose:petPose}} food={petView.food} canFeed={petView.canFeed} lifeDeadline={petView.diesAt ?? undefined} earnedActions={petView.lifetimeEarned} nextUnlockText={nextPetUnlock ? `Следующее: ${nextPetUnlock.name} · ${petView.lifetimeEarned} из ${nextPetUnlock.at} действий` : undefined} artifacts={petArtifacts} cosmetics={petLooks} roomUpgrades={petRoomItems} equippedCosmeticId={petView.species} equippedUpgradeIds={[petView.accessory]}
+            onClose={()=>setPetRoomOpen(false)} onAdopt={()=>changePet((state,op)=>adoptPet(state,userId??null,op))} onFeed={()=>{if(petView.canFeed)setPetCelebrating(true);changePet((state,op)=>state?feedPet(state,op):state);}} onRebirth={()=>changePet((state,op)=>state?rebirthPet(state,op):state)}
+            onRename={name=>changePet((state,op)=>state?customizePet(state,{name},op):state)} onSelectCosmetic={id=>changePet((state,op)=>state?customizePet(state,{species:id as PetSpecies},op):state)} onSelectUpgrade={id=>changePet((state,op)=>state?customizePet(state,{accessory:id as PetAccessory},op):state)} />
+        </SafeAreaView>
+      </Modal>
       <Modal animationType="fade" transparent visible={quickAddOpen} onRequestClose={() => setQuickAddOpen(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.quickAddModalCard}>
