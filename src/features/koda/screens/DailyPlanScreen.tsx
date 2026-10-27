@@ -1,3 +1,5 @@
+import { plannerDateOffset } from '../plannerOverview';
+import { DailyPlanOverview } from '../components/DailyPlanOverview';
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { acceptDayPlan, calculatePlanScore, getCurrentPlanVersion, PLAN_PRIORITY_WEIGHTS, recordPlanProgress, resolveDayPlanConflict, reviseDayPlan, suggestDayPlan, type DayPlanItem, type DayPlanProposal, type PlanScoreResult } from '../dayPlan';
@@ -43,6 +45,8 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
   const [customDraft, setCustomDraft] = useState<DayPlanProposal | null>(null);
   const [selectedDate,setSelectedDate]=useState(date);
   const [calendarOpen,setCalendarOpen]=useState(false);
+  const [planOpen,setPlanOpen]=useState(false);
+  const [historyOpen,setHistoryOpen]=useState(false);
   const shown = customDraft ?? proposal;
   const plan = day?.plan;
   const storedResult = day?.status==='completed' && day.calculationSnapshot && typeof day.calculationSnapshot==='object' && (day.calculationSnapshot as PlanScoreResult).scoreVersion===3 ? day.calculationSnapshot as PlanScoreResult : null;
@@ -71,9 +75,10 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
       const next: KodaDay = { id: day?.id ?? uid('day'), localDate: date, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'local', status: 'active', startedAt: now, finishedAt: null, goalScore: null, plannerScore: 0, totalScore: null, classification: 'unclassified', scoreVersion: 3, summary: '', focusLoss: '', nextRecommendation: '', goalsSnapshot: [], plannerSnapshot: [], calculationSnapshot: null, createdAt: day?.createdAt ?? now, updatedAt: now, plan: accepted };
       return [next, ...days.filter(d => d.localDate !== date)];
     });
-    setError('');
+    setError(''); setPlanOpen(false);
   }
   function openEditor(mode: 'proposal' | 'revision') {
+    setPlanOpen(false);
     setError('');
     if (mode === 'revision' && current) setDraft({ date, items: current.items.map(({ weight, ...item }) => item), minimum: current.minimum, availableMinutes: current.availableMinutes, reserveRatio: current.reserveRatio });
     else setDraft(shown);
@@ -127,28 +132,7 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
   const leadStep=completed?day?.summary||'Сохрани то, что получилось. Остальное можно продолжить позже.':plan?nextItem?.title??'Принятые действия выполнены. Можно завершить день.':shown.minimum?.label??'Выбери один посильный шаг — остальное подстроим.';
   const selectedDateLabel=selectedDate===date?'Сегодня':new Date(`${selectedDate}T12:00:00`).toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
   function discussDay(){const context=[`Помоги разобрать мой день ${date}.`,plan?`Статус: ${completed?'завершён':'в процессе'}. Исходный SCORE: ${result.totalScore===null?'без оценки':Math.round(result.totalScore)}.`:'План пока не принят.',`Доступное время: ${available} мин.`,...((current?.items??shown.items).map(item=>`• ${item.title} (${item.estimatedMinutes} мин)`)),`Следующий шаг: ${leadStep}`,'Предложи посильное продолжение без обязательного ежедневного режима.'].join('\n');if(onDiscussDay)onDiscussDay(context);else onOpenSection('koda');}
-  return <ScrollView contentContainerStyle={[s.page, isDesktop && s.desktop]} keyboardShouldPersistTaps="handled">
-    <SectionTitle title="Сегодня" subtitle={new Date(`${date}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })} />
-    <View style={[s.overview,isDesktop&&s.overviewDesktop]}>
-      <View style={[s.dayBrief,isDesktop&&s.dayBriefDesktop]}>
-        <View style={s.inline}><View style={s.statusPill}><View style={s.statusDot}/><Text style={s.briefMeta}>{completed?'Итог сохранён':plan?'План принят':'Можно начать с малого'}</Text></View><Target size={20} color="#202810"/></View>
-        <Text style={s.briefTitle}>{leadTitle}</Text>
-      </View>
-    </View>
-    <View style={s.calendarSection}>
-      <Pressable accessibilityRole="button" accessibilityState={{expanded:calendarOpen}} onPress={()=>setCalendarOpen(open=>!open)} style={s.calendarToggle}>
-        <Text style={s.calendarToggleTitle}>Календарь</Text>
-        <Text style={s.calendarToggleMeta}>{selectedDateLabel} · {selectedItems.length} дел</Text>
-        <Text style={s.calendarToggleAction}>{calendarOpen?'Свернуть':'Выбрать дату'}</Text>
-      </Pressable>
-      {calendarOpen?<View style={s.calendarCard}>
-        <DateRibbon today={date} value={selectedDate} onChange={setSelectedDate}/>
-        <View style={s.inline}><Text style={[s.body,s.grow]}>{selectedDateLabel} · {selectedItems.length} дел в планнере</Text><Action title="Открыть планнер" onPress={()=>onOpenSection('planner')}/></View>
-        {selectedDay?.status==='completed'?<Action title={`Итог дня · ${selectedDay.totalScore===null?'без оценки':Math.round(selectedDay.totalScore)+' SCORE'}`} onPress={()=>setHistory(selectedDay)}/>:<Text style={s.meta}>{selectedItems[0]?.title??'Свободное место для важных дел и отдыха.'}</Text>}
-      </View>:null}
-    </View>
-    <View style={[s.workGrid,isDesktop&&s.workGridDesktop]}><View style={s.workMain}>
-    {returning && !plan ? <Text style={s.meta}>Рады видеть вас снова. Прошлые достижения сохранены; начнём с посильного шага.</Text> : null}
+  const planContent = <View style={s.section}>    {returning && !plan ? <Text style={s.meta}>Рады видеть вас снова. Прошлые достижения сохранены; начнём с посильного шага.</Text> : null}
     {!plan && !completed ? <View style={s.hero}>
       <Text style={s.heading}>Вот посильный план на сегодня</Text>
       <Text style={s.meta}>Из активных целей и дел на сегодня. Вы решаете, что принять.</Text>
@@ -167,7 +151,7 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
       {!completed ? <Text style={s.body}>{nextItem?.title ?? 'Принятые действия выполнены'}</Text> : <Text style={s.body}>{day?.summary}</Text>}
       {!completed&&nextItem?<Action title={nextItem.metric==='minutes'?'Начать шаг с таймером':'Открыть следующий шаг'} onPress={beginNextStep} primary/>:null}
       {!completed?<><View accessibilityLiveRegion="polite"><Text style={s.score}>{result.totalScore === null ? '—' : Math.round(result.totalScore)}<Text style={s.meta}> / 100 SCORE</Text></Text></View><ProgressLine value={result.totalScore??0}/></>:<Text style={s.body}>{plan?`Исходный план: ${result.completedCount} из ${result.totalCount} действий выполнено.`:'Исторический итог сохранён по прежней формуле.'}</Text>}
-      {completed?<Action title="Подробный итог дня" onPress={()=>setHistory(day??null)}/>:null}
+      {completed?<Action title="Подробный итог дня" onPress={()=>{setPlanOpen(false);setHistory(day??null);}}/>:null}
       <Text style={s.meta}>{plan?'Выполнение исходного принятого плана':'Историческая оценка · прежняя версия формулы'}</Text>
       {plan && result.totalScore!==null ? <Text style={s.meta}>Цели: {Math.round(result.goalScore??0)} балл. · текущие дела: {Math.round(result.plannerScore)} балл.</Text> : null}
       {result.minimumCompleted?<Text style={s.minimum}>Минимум дня выполнен</Text>:null}
@@ -177,19 +161,59 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
         <View style={s.grow}><Text style={s.body}>{item.title}</Text><Text style={s.meta}>{item.goalTitle || 'Текущие дела'} · {item.metric==='binary'?(item.completionRatio>=1?'Выполнено':'Не завершено'):`${item.currentValue} / ${item.targetValue} ${item.metric==='minutes'?'мин':'шагов'}`}</Text>{item.goalId?<Action title="Открыть цель" onPress={()=>onOpenGoal(item.goalId!)} />:null}</View>
         {item.metric==='subtasks'?<Action title="Подзадачи" onPress={()=>onOpenSection('planner')} />:item.metric==='binary'?<Action title={item.completionRatio>=1?'Отменить отметку':'Готово'} onPress={()=>progress(item,item.completionRatio>=1?0:item.targetValue)} />:<View style={s.inline}><Action title="−" label={`Уменьшить выполнение ${item.title}`} onPress={()=>progress(item,Math.max(0,item.currentValue-(item.metric==='minutes'?10:1)))} /><Action title={item.metric==='minutes'?'+10 мин':'+1'} label={`Добавить выполнение ${item.title}`} onPress={()=>progress(item,Math.max(item.currentValue,Math.min(item.targetValue,item.currentValue+(item.metric==='minutes'?10:1))))} /></View>}
       </View>)}
-      {!completed && plan?<><Action title="Завершить день" onPress={()=>setFinish(true)} primary={!nextItem} /><Action title="Пересмотреть план" onPress={()=>openEditor('revision')} /></>:null}
+      {!completed && plan?<><Action title="Завершить день" onPress={()=>{setPlanOpen(false);setFinish(true);}} primary={!nextItem} /><Action title="Пересмотреть план" onPress={()=>openEditor('revision')} /></>:null}
       <Action title={details?'Скрыть подробности':'Как считается · версии плана'} onPress={()=>setDetails(!details)} />
       {details && plan?<><Text style={s.meta}>Цели — 75%, текущие дела — 25%. Если категория одна, её вес — 100%. Минимум не даёт дополнительных баллов. Удаление и перенос задач не меняют принятый снимок. Пересмотр меняет актуальный план, но не повышает сам по себе исходный SCORE.</Text>{plan.versions.map(v=><View key={v.id} style={s.row}><View style={s.grow}><Text style={s.body}>{v.parentVersionId?'Пересмотр':'Исходный план'} · {new Date(v.acceptedAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</Text><Text style={s.meta}>{v.reason || 'Принят при начале дня'} · {v.plannedMinutes} мин · {Math.round(calculatePlanScore(plan,v.id).totalScore??0)}%</Text>{v.items.map(i=><Text key={i.sourceKey} style={s.meta}>{i.title} · объём {i.targetValue} · вес {i.weight.toFixed(1)}</Text>)}</View></View>)}</>:null}
     </View>}
     {error && !editor?<Text accessibilityRole="alert" style={s.meta}>{error}</Text>:null}
-    </View><View style={[s.workAside,isDesktop&&{flex:0.7}]}>
-      <ScoreHistoryChart days={kodaDays} compact/>
-      <View style={s.utilityRow}>
-      <View style={s.focusCard}><View style={s.inline}><Clock3 size={18} color={muted}/><Text style={s.body}>Время для фокуса</Text></View><Text style={s.focusNumber}>{current?.availableMinutes??available}<Text style={s.meta}>{' мин доступно'}</Text></Text><Text style={s.meta}>{current ? `В плане ${current.items.reduce((sum, item) => sum + item.estimatedMinutes, 0)} мин. ` : ''}Сессии запускаются по желанию. Перерывы — часть движения.</Text><Action title="Открыть таймер" onPress={()=>onOpenSection('timer')}/></View>
-      <View style={s.utilityTile}><AssistantTile onPress={discussDay}>Подстроить план под силы? Текущий день добавим в черновик сообщения.</AssistantTile></View>
-      </View>
-    </View></View>
-    <View style={[s.section,{maxWidth:920,width:"100%",backgroundColor:panel,borderRadius:24,padding:20}]}><Text style={s.heading}>История дней</Text>{previousDays.slice(0,14).map(d=><Pressable key={d.id} accessibilityRole="button" onPress={()=>setHistory(d)} style={s.row}><View style={{width:48,height:6,borderRadius:4,backgroundColor:panelSoft,overflow:"hidden"}}><View style={{height:6,width:`${Math.max(0,Math.min(100,d.totalScore??0))}%`,backgroundColor:accent}}/></View><Text style={[s.body,{minWidth:100}]}>{new Date(`${d.localDate}T12:00:00`).toLocaleDateString("ru-RU",{day:"numeric",month:"short"})}</Text><Text style={[s.meta,{flexShrink:1}]}>{d.totalScore===null?'Без оценки':`${Math.round(d.totalScore)}/100`} · {d.plan?'план дня':'прежняя формула'}</Text></Pressable>)}{!previousDays.length?<Text style={s.meta}>Здесь появятся завершённые дни и их планы.</Text>:null}</View>
+</View>;
+  return <View style={{flex:1,minHeight:0}}>
+    <ScrollView style={{flex:1,minHeight:0}} contentContainerStyle={{paddingBottom:4}} keyboardShouldPersistTaps="handled">
+    <DailyPlanOverview
+      date={date} status={completed?'completed':plan?'active':'proposal'} leadTitle={leadTitle} leadStep={leadStep}
+      items={(completed&&!current?[]:current?.items??shown.items).map(item=>({key:item.sourceKey,title:item.title,minutes:item.estimatedMinutes,done:(activeScores?.items.find(score=>score.sourceKey===item.sourceKey)?.completionRatio??0)>=1}))}
+      availableMinutes={current?.availableMinutes??available} plannedMinutes={current?.plannedMinutes??maxMinutes}
+      totalCount={current?.items.length??(completed?0:shown.items.length)} completedCount={activeScores?.completedCount??0}
+      score={plan?result.totalScore:day?.totalScore??null} hasConflicts={result.hasConflicts&&!completed}
+      minimumLabel={completed&&!current?undefined:current?.minimum?.label??shown.minimum?.label}
+      days={kodaDays} selectedDate={selectedDate} selectedDateCount={selectedItems.length}
+      timer={{remainingSeconds:timer.remainingSeconds,status:timer.status,mode:timer.mode}}
+      onOpenPlan={()=>setPlanOpen(true)}
+      onPrimary={()=>{if(completed){setHistory(day??null);}else if(!plan){start();}else if(result.hasConflicts){setPlanOpen(true);}else if(nextItem){beginNextStep();}else{setFinish(true);}}}
+      primaryLabel={completed?'Посмотреть итог':!plan?'Начать день':result.hasConflicts?'Выбрать вариант':nextItem?'Следующий шаг':'Завершить день'}
+      primaryDisabled={!plan&&!completed&&!shown.items.length}
+      onEdit={()=>{if(result.hasConflicts&&!completed)setPlanOpen(true);else openEditor(plan?'revision':'proposal');}}
+      onOpenCalendar={()=>setCalendarOpen(true)} onOpenHistory={()=>setHistoryOpen(true)}
+      onOpenTimer={()=>onOpenSection('timer')} onDiscussDay={discussDay} error={error&&!editor?error:undefined}
+    />
+    </ScrollView>
+    <Modal transparent visible={planOpen} animationType="none" onRequestClose={()=>setPlanOpen(false)}>
+      <View style={s.overlay}><View accessibilityViewIsModal style={[s.sheet,{maxWidth:760}]}>
+        <View style={s.inline}><Text accessibilityRole="header" style={[s.heading,{flex:1}]}>План дня</Text><Action title="Закрыть план" onPress={()=>setPlanOpen(false)}/></View>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.section}>{planContent}</ScrollView>
+      </View></View>
+    </Modal>
+    <Modal transparent visible={calendarOpen} animationType="none" onRequestClose={()=>setCalendarOpen(false)}>
+      <View style={s.overlay}><View accessibilityViewIsModal style={s.sheet}>
+        <View style={s.inline}><Text accessibilityRole="header" style={[s.heading,{flex:1}]}>Календарь дня</Text><Action title="Закрыть календарь" onPress={()=>setCalendarOpen(false)}/></View>
+        <View style={s.inline}><Action title="Предыдущая неделя" onPress={()=>setSelectedDate(value=>plannerDateOffset(value,-7))}/><Action title="Сегодня" onPress={()=>setSelectedDate(date)}/><Action title="Следующая неделя" onPress={()=>setSelectedDate(value=>plannerDateOffset(value,7))}/></View>
+        <DateRibbon today={date} center={selectedDate} value={selectedDate} onChange={setSelectedDate}/>
+        <Text style={s.body}>{selectedDateLabel} · {selectedItems.length} дел</Text>
+        <ScrollView contentContainerStyle={s.section}>
+          {selectedItems.length?selectedItems.map(item=><View key={item.id} style={s.row}><Text style={[s.body,{flex:1}]}>{item.title}</Text><Text style={s.meta}>{item.done?'Готово':item.time||'Без времени'}</Text></View>):<Text style={s.meta}>На эту дату дел нет.</Text>}
+          {selectedDay?.status==='completed'&&<Action title="Открыть итог выбранного дня" onPress={()=>{setCalendarOpen(false);setHistory(selectedDay);}}/>}
+        </ScrollView>
+        <Action title="Открыть планнер" onPress={()=>{setCalendarOpen(false);onOpenSection('planner');}}/>
+      </View></View>
+    </Modal>
+    <Modal transparent visible={historyOpen} animationType="none" onRequestClose={()=>setHistoryOpen(false)}>
+      <View style={s.overlay}><View accessibilityViewIsModal style={[s.sheet,{maxWidth:680}]}>
+        <View style={s.inline}><Text accessibilityRole="header" style={[s.heading,{flex:1}]}>История дней</Text><Action title="Закрыть список дней" onPress={()=>setHistoryOpen(false)}/></View>
+        <ScrollView contentContainerStyle={s.section}>
+          {previousDays.length?previousDays.map(item=><Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`Открыть итог ${item.localDate}`} onPress={()=>{setHistoryOpen(false);setHistory(item);}} style={s.row}><Text style={[s.body,{flex:1}]}>{new Date(`${item.localDate}T12:00:00`).toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</Text><Text style={s.meta}>{item.totalScore===null?'Без оценки':`${Math.round(item.totalScore)}/100`}{item.scoreVersion!==3?' · прежняя формула':''}</Text></Pressable>):<Text style={s.meta}>Здесь появятся завершённые дни. История сохраняется.</Text>}
+        </ScrollView>
+      </View></View>
+    </Modal>
     <Modal transparent visible={editor!==null} animationType="none" onRequestClose={()=>setEditor(null)}><View style={s.overlay}><View style={s.sheet}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.section}>
       <Text style={s.heading}>{editor==='revision'?'Пересмотреть план':'Подстроить предложение'}</Text>
       <Text style={s.meta}>{editor==='revision'?'Исходный план и его SCORE сохранятся. Для нового плана будет отдельный процент выполнения.':'Уберите лишнее, выберите другое действие или уточните объём.'}</Text>
@@ -200,9 +224,9 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
       {draft.items.reduce((sum,i)=>sum+i.estimatedMinutes,0)>draft.availableMinutes*(1-draft.reserveRatio)?<Text style={s.minimum}>План выходит за доступное время с резервом. Можно убрать действие или уменьшить объём.</Text>:null}
       {error?<Text accessibilityRole="alert" style={s.meta}>{error}</Text>:null}<Action title={editor==='revision'?'Сохранить пересмотр':'Готово'} onPress={saveDraft} primary/><Action title="Отмена" onPress={()=>{setEditor(null);setError('');}}/>
     </ScrollView></View></View></Modal>
-    <Modal transparent visible={finish} animationType="none" onRequestClose={()=>setFinish(false)}><View style={s.overlay}><View style={s.sheet}><Text style={s.heading}>Завершим день?</Text><Text style={s.score}>{Math.round(result.totalScore??0)}<Text style={s.meta}> / 100</Text></Text><Text style={s.meta}>Исходный план: {result.completedCount} из {result.totalCount} действий · {result.plannedMinutes} мин запланировано.</Text><Text style={s.meta}>{result.minimumCompleted?'Минимум выполнен':'Минимум пока не выполнен'} · пересмотров: {result.revisionCount}</Text><Text style={s.label}>Что получилось · необязательно</Text><TextInput accessibilityLabel="Итог дня" multiline value={note} onChangeText={setNote} style={s.input}/><Action title="Завершить день" onPress={finishDay} primary/><Action title="Вернуться" onPress={()=>setFinish(false)}/></View></View></Modal>
+    <Modal transparent visible={finish} animationType="none" onRequestClose={()=>setFinish(false)}><View style={s.overlay}><View style={s.sheet}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.section}><Text style={s.heading}>Завершим день?</Text><Text style={s.score}>{Math.round(result.totalScore??0)}<Text style={s.meta}> / 100</Text></Text><Text style={s.meta}>Исходный план: {result.completedCount} из {result.totalCount} действий · {result.plannedMinutes} мин запланировано.</Text><Text style={s.meta}>{result.minimumCompleted?'Минимум выполнен':'Минимум пока не выполнен'} · пересмотров: {result.revisionCount}</Text><Text style={s.label}>Что получилось · необязательно</Text><TextInput accessibilityLabel="Итог дня" multiline value={note} onChangeText={setNote} style={s.input}/><Action title="Завершить день" onPress={finishDay} primary/><Action title="Вернуться" onPress={()=>setFinish(false)}/></ScrollView></View></View></Modal>
     <Modal transparent visible={!!history} animationType="none" onRequestClose={()=>setHistory(null)}><View style={s.overlay}><View style={s.sheet}><ScrollView contentContainerStyle={s.section}><Text style={s.heading}>{history?.localDate}</Text><Text style={s.body}>{history?.summary}</Text><Text style={s.meta}>Зафиксированный SCORE: {history?.totalScore===null?'без оценки':Math.round(history?.totalScore??0)}</Text>{history?.plan?.versions.map(v=><View key={v.id} style={s.section}><Text style={s.body}>{v.parentVersionId?'Пересмотр':'Исходный план'} · {v.reason}</Text>{v.items.map(i=><Text key={i.sourceKey} style={s.meta}>{i.title} · объём {i.targetValue}</Text>)}</View>)}<Action title="Закрыть историю" onPress={()=>setHistory(null)} /></ScrollView></View></View></Modal>
-  </ScrollView>;
+  </View>;
 }
 
 function Action({ title, onPress, primary, disabled, label }: { title:string; onPress:()=>void; primary?:boolean; disabled?:boolean; label?:string }) { return <Pressable accessibilityRole="button" accessibilityLabel={label ?? title} accessibilityState={{disabled:!!disabled}} disabled={disabled} onPress={onPress} style={[s.button,primary&&s.primary,disabled&&{opacity:0.45}]}><Text style={[s.buttonText,primary&&s.primaryText]}>{title}</Text></Pressable>; }
