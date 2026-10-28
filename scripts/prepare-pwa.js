@@ -76,27 +76,66 @@ function collectCacheUrls(directory, base = '') {
 }
 
 const precacheUrls = Array.from(new Set(['/', ...collectCacheUrls(outputDir).map((url) => (url === '/index.html' ? '/' : url))]));
+// Expo exports content-addressed assets with an MD5/SHA hash in the basename.
+// Never infer immutability from a hash in a directory or from shell filenames.
+const reusableUrls = precacheUrls.filter((url) =>
+  /^\/(?:assets|_expo\/static)\//.test(url)
+  && /(?:^|[.-])(?:[a-f0-9]{32}|[a-f0-9]{64})\.(?:js|css|json|ico|png)$/i.test(path.posix.basename(url)),
+);
 
 fs.writeFileSync(
   serviceWorkerPath,
   `const CACHE_NAME = 'koda-offline-${Date.now()}';
 const PRECACHE_URLS = ${JSON.stringify(precacheUrls, null, 2)};
+const REUSABLE_URLS = new Set(${JSON.stringify(reusableUrls, null, 2)});
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
-      .then(() => self.skipWaiting()),
-  );
+  event.waitUntil((async () => {
+    try {
+      const cache = await caches.open(CACHE_NAME);
+      const previousKeys = (await caches.keys())
+        .filter((key) => key.startsWith('koda-offline-') && key !== CACHE_NAME).reverse();
+      const entries = await Promise.all(PRECACHE_URLS.map(async (url) => {
+        if (REUSABLE_URLS.has(url)) {
+          for (const cacheName of previousKeys) {
+            try {
+              const response = await caches.match(url, { cacheName });
+              if (response?.ok && response.status !== 206) return { url, response };
+            } catch {
+              // An evicted or unreadable old cache must not prevent network fallback.
+            }
+          }
+        }
+        return { url };
+      }));
+      // Reload mutable resources and new hashes even when the HTTP cache is fresh.
+      const downloads = entries.filter((entry) => !entry.response)
+        .map((entry) => new Request(entry.url, { cache: 'reload' }));
+      if (downloads.length) await cache.addAll(downloads);
+      // Settle every copy before cleanup so a late write cannot recreate a failed cache.
+      const copies = await Promise.allSettled(entries.filter((entry) => entry.response)
+        .map((entry) => cache.put(entry.url, entry.response)));
+      const failure = copies.find((result) => result.status === 'rejected');
+      if (failure) throw failure.reason;
+      await self.skipWaiting();
+    } catch (error) {
+      await caches.delete(CACHE_NAME);
+      throw error;
+    }
+  })());
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key.startsWith('koda-offline-') && key !== CACHE_NAME).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim()),
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const responses = await Promise.all(PRECACHE_URLS.map((url) => cache.match(url)));
+    if (responses.some((response) => !response?.ok)) throw new Error('Incomplete offline cache');
+    await self.clients.claim();
+    const keys = await caches.keys();
+    // Cleanup is best effort after activation is ready; failed cleanup is safe to retry next release.
+    await Promise.allSettled(keys.filter((key) => key.startsWith('koda-offline-') && key !== CACHE_NAME)
+      .map((key) => caches.delete(key)));
+  })());
 });
 
 self.addEventListener('fetch', (event) => {

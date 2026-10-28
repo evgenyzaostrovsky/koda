@@ -1,5 +1,6 @@
 import { NotebookPen, Sparkles, Target } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMemo } from 'react';
 import { calculateGoalProgress } from '../goalLogic';
 import { weeklyScoreSummary } from '../dashboardMetrics';
 import type { Goal, JournalEntry, KodaDay } from '../types';
@@ -20,7 +21,7 @@ export function AssistantWidget({ lastReply, onOpen, onPrompt }: { lastReply?: s
 }
 
 export function JournalWidget({ entries, onOpen }: { entries: JournalEntry[]; onOpen: (id?: string) => void }) {
-  const latest = [...entries].filter(entry => entry.text.trim()).sort((a,b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const latest = useMemo(() => entries.filter(entry => entry.text.trim()).sort((a,b) => b.createdAt.localeCompare(a.createdAt))[0], [entries]);
   const excerpt = latest?.text.trim().replace(/\s+/g, ' ');
   const date = latest ? new Date(latest.createdAt) : null;
   const dateLabel = date && !Number.isNaN(date.getTime())
@@ -43,11 +44,11 @@ export function JournalWidget({ entries, onOpen }: { entries: JournalEntry[]; on
 }
 
 export function ProgressWidget({ days, goals, date, onOpen }: { days: KodaDay[]; goals: Goal[]; date: string; onOpen: () => void }) {
-  const week = weeklyScoreSummary(days, date);
-  const activeGoals = goals.filter(goal => goal.status === 'active' && !goal.archivedAt);
-  const goalProgress = activeGoals.length
+  const week = useMemo(() => weeklyScoreSummary(days, date), [days, date]);
+  const activeGoals = useMemo(() => goals.filter(goal => goal.status === 'active' && !goal.archivedAt), [goals]);
+  const goalProgress = useMemo(() => activeGoals.length
     ? Math.round(activeGoals.reduce((sum, goal) => sum + calculateGoalProgress(goal), 0) / activeGoals.length)
-    : null;
+    : null, [activeGoals]);
   return <View style={s.root}>
     <Pressable accessibilityRole="button" accessibilityLabel="Открыть прогресс за неделю и по активным целям" onPress={onOpen} style={s.heading}>
       <View style={s.icon}><Target size={17} color={accent} /></View>

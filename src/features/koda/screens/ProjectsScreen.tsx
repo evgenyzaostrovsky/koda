@@ -35,10 +35,10 @@ export function ProjectsScreen({
   onProjectsChange: ProjectsChange;
   projects: Project[];
 }) {
-  const visibleProjects = projects.filter((project) => project.status !== 'archived');
-  const sortedProjects = [...visibleProjects].sort((first, second) => second.updatedAt.localeCompare(first.updatedAt));
-  const archivedProjects = projects.filter(project => project.status === 'archived')
-    .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt));
+  const sortedProjects = useMemo(() => projects.filter(project => project.status !== 'archived')
+    .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt)), [projects]);
+  const archivedProjects = useMemo(() => projects.filter(project => project.status === 'archived')
+    .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt)), [projects]);
   const { setOpen: setRightPanelOpen } = useRightPanel();
   const [detailOpen,setDetailOpen]=useState(false);
   const [projectListMode, setProjectListMode] = useState<'active' | 'archived'>('active');
@@ -54,7 +54,10 @@ export function ProjectsScreen({
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null);
-  const visibleSelectedTasks = selectedProject?.tasks.filter((task) => !task.deletedAt) ?? [];
+  const visibleSelectedTasks = useMemo(
+    () => selectedProject?.tasks.filter((task) => !task.deletedAt) ?? [],
+    [selectedProject?.tasks],
+  );
   const totalTasks = visibleSelectedTasks.length;
   const doneTasks = visibleSelectedTasks.filter((task) => task.status === 'done').length;
   const progress = totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0;

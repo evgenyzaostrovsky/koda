@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View, StyleSheet } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react-native';
@@ -16,15 +16,13 @@ export function MonthlyScoreWidget({days,date,onOpen}:{days:KodaDay[];date:strin
   setMonth(selected=>selected===previousMonth?currentMonth:selected);
  },[currentMonth]);
  const gradient=useId().replace(/:/g,'');
- const {average,points}=monthlyScoreSummary(days,month);
+ const {average,points}=useMemo(()=>monthlyScoreSummary(days,month),[days,month]);
  const label=new Date(`${month}-01T12:00:00`).toLocaleDateString('ru-RU',{month:'long'});
  const previous=()=>{const d=new Date(`${month}-01T12:00:00`);d.setMonth(d.getMonth()-1);setMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);};
  const next=()=>{const d=new Date(`${month}-01T12:00:00`);d.setMonth(d.getMonth()+1);setMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);};
- const coords=monthlyScoreCoordinates(points,month);
+ const coords=useMemo(()=>monthlyScoreCoordinates(points,month),[points,month]);
  // Monotone cubic Hermite interpolation: smooth curves without overshooting neighbouring scores.
- const slopes=coords.slice(1).map((p,i)=>(p.y-coords[i].y)/(p.x-coords[i].x));
- const tangents=coords.map((_,i)=>i===0?(slopes[0]??0):i===coords.length-1?(slopes.at(-1)??0):slopes[i-1]*slopes[i]<=0?0:2/(1/slopes[i-1]+1/slopes[i]));
- const path=coords.map((p,i)=>{if(!i)return `M ${p.x} ${p.y}`;const a=coords[i-1],dx=(p.x-a.x)/3;return `C ${a.x+dx} ${a.y+tangents[i-1]*dx} ${p.x-dx} ${p.y-tangents[i]*dx} ${p.x} ${p.y}`;}).join(' ');
+ const path=useMemo(()=>{const slopes=coords.slice(1).map((p,i)=>(p.y-coords[i].y)/(p.x-coords[i].x));const tangents=coords.map((_,i)=>i===0?(slopes[0]??0):i===coords.length-1?(slopes.at(-1)??0):slopes[i-1]*slopes[i]<=0?0:2/(1/slopes[i-1]+1/slopes[i]));return coords.map((p,i)=>{if(!i)return `M ${p.x} ${p.y}`;const a=coords[i-1],dx=(p.x-a.x)/3;return `C ${a.x+dx} ${a.y+tangents[i-1]*dx} ${p.x-dx} ${p.y-tangents[i]*dx} ${p.x} ${p.y}`;}).join(' ');},[coords]);
  const latest=coords.at(-1);
  const marker=latest;
  return <View style={s.root}>
