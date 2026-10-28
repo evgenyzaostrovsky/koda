@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { useReducedMotion } from './RightPanel';
 
@@ -27,6 +27,11 @@ const petImages: Record<PetPose, ImageSourcePropType> = {
   celebration_07: require('../../../../assets/pet/celebration_07.png'), celebration_08: require('../../../../assets/pet/celebration_08.png'),
 };
 
+const WALK_FRAME_COUNT = 4;
+const WALK_FRAME_MS = 120;
+const WALK_FRAME_ASPECT = 543 / 724;
+const walkSheet = require('../../../../assets/pet/kodik-walk-sheet-v1.png') as ImageSourcePropType;
+
 export function PetCompanion({
   name,
   state = 'alive',
@@ -34,7 +39,7 @@ export function PetCompanion({
   size = 84,
   onPress,
   accessibilityLabel,
-  walkPhase,
+  walking = false,
   facing,
 }: {
   name: string;
@@ -43,19 +48,23 @@ export function PetCompanion({
   size?: number;
   onPress?: () => void;
   accessibilityLabel?: string;
-  walkPhase?: Animated.Value;
+  walking?: boolean;
   facing?: Animated.Value;
 }) {
   const reducedMotion = useReducedMotion();
   const bob = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(1)).current;
+  const [walkFrame, setWalkFrame] = useState(0);
+  // The same locomotion cycle is used for every live mood and species; the
+  // current pose is restored as soon as the pass pauses.
+  const isWalking = walking && state === 'alive' && !reducedMotion;
 
   useEffect(() => {
     bob.stopAnimation();
     scale.stopAnimation();
     bob.setValue(0);
     scale.setValue(1);
-    if (reducedMotion || state !== 'alive') return;
+    if (reducedMotion || state !== 'alive' || isWalking) return;
 
     const bobLoop = Animated.loop(Animated.sequence([
       Animated.timing(bob, { toValue: -4, duration: 1150, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
@@ -68,26 +77,36 @@ export function PetCompanion({
     bobLoop.start();
     breathLoop.start();
     return () => { bobLoop.stop(); breathLoop.stop(); };
-  }, [bob, scale, reducedMotion, state]);
+  }, [bob, isWalking, scale, reducedMotion, state]);
+
+  useEffect(() => {
+    setWalkFrame(0);
+    if (!isWalking) return;
+    const interval = setInterval(() => {
+      setWalkFrame((frame) => (frame + 1) % WALK_FRAME_COUNT);
+    }, WALK_FRAME_MS);
+    return () => clearInterval(interval);
+  }, [isWalking]);
 
   const image = state === 'egg' ? null : petImages[pose];
   const accessibleName = name.trim() || 'Кодик';
-  const gaitRange = Array.from({ length: 49 }, (_, index) => index / 48);
-  const gaitY = walkPhase?.interpolate({
-    inputRange: gaitRange,
-    outputRange: gaitRange.map((step) => -4 * (1 - Math.cos(step * Math.PI * 24)) / 2),
-  });
-  const gaitTilt = walkPhase?.interpolate({
-    inputRange: gaitRange,
-    outputRange: gaitRange.map((step) => `${Math.sin(step * Math.PI * 24) * 2}deg`),
-  });
+  const frameWidth = size * WALK_FRAME_ASPECT;
+  const walkArtwork = <View style={[s.walkViewport, { width: frameWidth, height: size }]}>
+    <Animated.Image
+      source={walkSheet}
+      resizeMode="stretch"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{ position: 'absolute', left: -frameWidth * walkFrame, top: 0, width: frameWidth * WALK_FRAME_COUNT, height: size }}
+    />
+  </View>;
   const visual = state === 'egg'
     ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[s.egg, { width: size * .52, height: size * .66, borderRadius: size }]}><View style={s.eggLight} /></View>
-    : <Animated.Image source={image!} resizeMode="contain" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ width: size, height: size, transform: [
-      { translateY: bob }, { scale },
-      ...(gaitY && gaitTilt ? [{ translateY: gaitY }, { rotate: gaitTilt }] : []),
-      ...(facing ? [{ scaleX: facing }] : []),
-    ], opacity: state === 'dead' ? .55 : 1 }} />;
+    : <Animated.View style={[s.artwork, { width: size, height: size, transform: [
+      { translateY: bob }, { scale }, { scaleX: facing ?? 1 },
+    ], opacity: state === 'dead' ? .55 : 1 }]}>
+      {isWalking ? walkArtwork : <Animated.Image source={image!} resizeMode="contain" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ width: size, height: size }} />}
+    </Animated.View>;
 
   if (!onPress) return <View style={[s.artwork, { width: size, height: size }]}>{visual}</View>;
 
@@ -104,6 +123,7 @@ export function PetCompanion({
 
 const s = StyleSheet.create({
   artwork: { alignItems: 'center', justifyContent: 'center' },
+  walkViewport: { overflow: 'hidden' },
   floating: { alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
   pressed: { opacity: .88, transform: [{ scale: .97 }] },
   egg: { backgroundColor: '#f0e7c8', borderWidth: 2, borderColor: '#bdc888', alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-8deg' }] },
