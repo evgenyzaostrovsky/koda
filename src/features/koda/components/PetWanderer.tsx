@@ -31,26 +31,34 @@ export function PetWanderer({ name, state, pose, onPress }: {
     setWalking(false);
     if (reducedMotion || !appActive || state === 'dead' || distance === 0) return;
 
-    const duration = Math.max(5000, Math.min(9500, distance * 5.8));
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let active = true;
+    let currentPosition = 0;
 
-    const runPass = (toValue: number, pause: number, nextToValue: number, nextFacing: number) => {
+    const runPass = () => {
       if (!active) return;
+      // Pick a point anywhere along the available width, excluding a small
+      // area around the current position so that each stroll is visible.
+      const minimumStep = Math.min(80, distance * .35);
+      const leftRange = Math.max(0, currentPosition - minimumStep + distance);
+      const rightRange = Math.max(0, -currentPosition - minimumStep);
+      const choice = Math.random() * (leftRange + rightRange);
+      const destination = choice < leftRange
+        ? -distance + choice
+        : currentPosition + minimumStep + (choice - leftRange);
+      const travel = Math.abs(destination - currentPosition);
+      facing.setValue(destination < currentPosition ? -1 : 1);
       setWalking(true);
-      Animated.timing(position, { toValue, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+      Animated.timing(position, { toValue: destination, duration: Math.max(800, travel / 38 * 1000), easing: Easing.linear, useNativeDriver: true })
         .start(({ finished }) => {
           if (!active || !finished) return;
+          currentPosition = destination;
           setWalking(false);
-          timeout = setTimeout(() => {
-            if (!active) return;
-            facing.setValue(nextFacing);
-            runPass(nextToValue, pause === 14000 ? 16000 : 14000, toValue, nextFacing === -1 ? 1 : -1);
-          }, pause);
+          timeout = setTimeout(runPass, 5000 + Math.random() * 6000);
         });
     };
 
-    timeout = setTimeout(() => runPass(-distance, 14000, 0, 1), 5200);
+    timeout = setTimeout(runPass, 2500 + Math.random() * 2000);
     return () => {
       active = false;
       if (timeout) clearTimeout(timeout);

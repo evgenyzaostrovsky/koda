@@ -28,7 +28,7 @@ const petImages: Record<PetPose, ImageSourcePropType> = {
 };
 
 const WALK_FRAME_COUNT = 4;
-const WALK_FRAME_MS = 120;
+const WALK_FRAME_MS = 240;
 const WALK_FRAME_ASPECT = 543 / 724;
 const walkSheet = require('../../../../assets/pet/kodik-walk-sheet-v1.png') as ImageSourcePropType;
 
