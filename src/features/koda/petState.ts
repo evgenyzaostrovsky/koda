@@ -39,7 +39,7 @@ export const PET_ACCESSORIES: { id: PetAccessory; label: string; unlockAt: numbe
   { id: 'none', label: 'Без украшения', unlockAt: 0 }, { id: 'scarf', label: 'Шарфик', unlockAt: 3 },
   { id: 'bow', label: 'Бантик', unlockAt: 8 }, { id: 'crown', label: 'Корона', unlockAt: 20 },
 ];
-const DEFAULT_APPEARANCE: PetAppearance = { name: 'Кода', species: 'cat', color: 'mint', accessory: 'none' };
+const DEFAULT_APPEARANCE: PetAppearance = { name: 'Кодик', species: 'cat', color: 'mint', accessory: 'none' };
 
 export function createPetState(ownerId: string | null): PetState {
   return { schemaVersion: 1, ownerId, births: [], rewards: [], feeds: [], settings: [] };

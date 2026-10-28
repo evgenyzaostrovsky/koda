@@ -1587,6 +1587,8 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const syncText = getSyncText(visibleSyncQueue, isOnline, syncReady, hasCloudSync);
   const petState = profile.pet?.ownerId === (userId ?? null) ? profile.pet : undefined;
   const petView = getPetView(petState, petClock);
+  // Earlier releases used «Кода» as the default; retain the stored value while displaying the new name.
+  const petDisplayName = petView.name === 'Кода' ? 'Кодик' : petView.name;
   const petLife = petView.status === 'unadopted' ? 'egg' : petView.status === 'dead' ? 'dead' : 'alive';
   const petPose: PetPose = petView.status === 'dead' ? 'emotions_06' : petCelebrating ? 'celebration_01' : petView.status === 'starving' ? 'care_moods_03' : petView.status === 'hungry' ? 'emotions_07' : petView.species === 'bunny' ? 'celebration_01' : petView.species === 'fox' ? 'poses_04' : 'poses_01';
   const petLooks = [
@@ -1632,10 +1634,10 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       <WidgetShell key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults}>
         {activeTab==='habits'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
       </WidgetShell>
-      {!petRoomOpen && !quickAddOpen && <PetWanderer name={petView.name} state={petLife} pose={petPose} onPress={()=>setPetRoomOpen(true)} />}
+      {!petRoomOpen && !quickAddOpen && <PetWanderer name={petDisplayName} state={petLife} pose={petPose} onPress={()=>setPetRoomOpen(true)} />}
       <Modal visible={petRoomOpen} animationType="fade" onRequestClose={()=>setPetRoomOpen(false)}>
         <SafeAreaView style={styles.safe}>
-          <PetRoom pet={{name:petView.name,state:petLife,hunger:100-petView.hunger,pose:petPose}} food={petView.food} canFeed={petView.canFeed} lifeDeadline={petView.diesAt ?? undefined} earnedActions={petView.lifetimeEarned} nextUnlockText={nextPetUnlock ? `Следующее: ${nextPetUnlock.name} · ${petView.lifetimeEarned} из ${nextPetUnlock.at} действий` : undefined} artifacts={petArtifacts} cosmetics={petLooks} roomUpgrades={petRoomItems} equippedCosmeticId={petView.species} equippedUpgradeIds={[petView.accessory]}
+          <PetRoom pet={{name:petDisplayName,state:petLife,hunger:100-petView.hunger,pose:petPose}} food={petView.food} canFeed={petView.canFeed} lifeDeadline={petView.diesAt ?? undefined} earnedActions={petView.lifetimeEarned} nextUnlockText={nextPetUnlock ? `Следующее: ${nextPetUnlock.name} · ${petView.lifetimeEarned} из ${nextPetUnlock.at} действий` : undefined} artifacts={petArtifacts} cosmetics={petLooks} roomUpgrades={petRoomItems} equippedCosmeticId={petView.species} equippedUpgradeIds={[petView.accessory]}
             onClose={()=>setPetRoomOpen(false)} onAdopt={()=>changePet((state,op)=>adoptPet(state,userId??null,op))} onFeed={()=>{if(petView.canFeed)setPetCelebrating(true);changePet((state,op)=>state?feedPet(state,op):state);}} onRebirth={()=>changePet((state,op)=>state?rebirthPet(state,op):state)}
             onRename={name=>changePet((state,op)=>state?customizePet(state,{name},op):state)} onSelectCosmetic={id=>changePet((state,op)=>state?customizePet(state,{species:id as PetSpecies},op):state)} onSelectUpgrade={id=>changePet((state,op)=>state?customizePet(state,{accessory:id as PetAccessory},op):state)} />
         </SafeAreaView>

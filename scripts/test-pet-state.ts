@@ -15,6 +15,19 @@ const sources = (patch: Partial<PetSources> = {}): PetSources => ({ goals: [], p
 
 function testDomain() {
   assert.equal(getPetView(undefined, at()).status, 'unadopted');
+  assert.equal(getPetView(undefined, at()).name, 'Кодик');
+  assert.equal(getPetView(adoptPet(undefined, 'one', op('default-name')), at()).name, 'Кодик');
+  for (const name of ['', '   ']) {
+    assert.equal(getPetView(adoptPet(undefined, 'one', { ...op('blank-name'), name }), at()).name, 'Кодик');
+    assert.equal(getPetView(customizePet(fresh(), { name }, op('clear-name', hour)), at(hour)).name, 'Кодик');
+  }
+  for (const name of ['Кода', 'Луна']) {
+    const saved = adoptPet(undefined, 'one', { ...op('saved-name'), name });
+    const loaded = parseStoredKodaState(JSON.stringify(snapshot(saved)))!.profile.pet!;
+    assert.deepEqual(loaded, saved, 'reload preserves saved names and settings without migration');
+    assert.equal(getPetView(mergePetState(loaded, saved), at()).name, name);
+    assert.equal(getPetView(customizePet(loaded, { color: 'sky' }, op('color-only', hour)), at(hour)).name, name);
+  }
   assert.equal(getPetView(createPetState('one'), at()).status, 'unadopted');
   assert.equal(recordPetSourceChanges(undefined, sources(), sources()), undefined);
   let pet = fresh();

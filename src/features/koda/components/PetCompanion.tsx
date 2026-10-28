@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { useReducedMotion } from './RightPanel';
-import { accent, line, muted, panelSoft, text } from '../theme';
 
 export type PetPose = `poses_${'01'|'02'|'03'|'04'|'05'|'06'|'07'|'08'}`
   | `emotions_${'01'|'02'|'03'|'04'|'05'|'06'|'07'|'08'}`
@@ -79,19 +78,15 @@ export function PetCompanion({
     accessibilityRole="button"
     accessibilityLabel={accessibilityLabel ?? `${stateHint}: ${name}`}
     onPress={onPress}
-    style={({ pressed }) => [s.floating, pressed && s.pressed]}
+    style={({ pressed }) => [s.floating, { width: Math.max(48, size), height: Math.max(48, size) }, pressed && s.pressed]}
   >
-    <View style={s.imageWell}>{visual}</View>
-    <View style={s.nameTag}><Text numberOfLines={1} style={s.name}>{name}</Text></View>
+    {visual}
   </Pressable>;
 }
 
 const s = StyleSheet.create({
   artwork: { alignItems: 'center', justifyContent: 'center' },
-  floating: { width: 82, minHeight: 82, alignItems: 'center', justifyContent: 'center', borderRadius: 27, backgroundColor: panelSoft, borderWidth: 1, borderColor: line, padding: 3, shadowColor: '#28331c', shadowOpacity: .12, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
-  imageWell: { width: 70, height: 58, alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
-  nameTag: { maxWidth: 74, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, backgroundColor: panelSoft, marginTop: -1 },
-  name: { color: text, fontSize: 11, fontWeight: '600', textAlign: 'center' },
+  floating: { alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
   pressed: { opacity: .88, transform: [{ scale: .97 }] },
   egg: { backgroundColor: '#f0e7c8', borderWidth: 2, borderColor: '#bdc888', alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-8deg' }] },
   eggLight: { width: '45%', height: '24%', borderRadius: 999, backgroundColor: '#fff7db', opacity: .9, alignSelf: 'flex-start', marginLeft: '17%', marginTop: '17%' },
