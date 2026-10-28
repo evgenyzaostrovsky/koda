@@ -24,8 +24,11 @@ for (const url of [sharedPet, sharedJs, olderPet, newPet, unreadablePet, invalid
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, 'fixture');
 }
-fs.writeFileSync(path.join(output, 'index.html'), '<html><head></head><body></body></html>');
+fs.writeFileSync(path.join(output, 'index.html'), '<html><head></head><body><div id="root"></div></body></html>');
 execFileSync(process.execPath, ['scripts/prepare-pwa.js', output]);
+const html = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
+assert.match(html, /<div id="root"><div id="koda-boot" role="status"/);
+assert.match(html, /prefers-reduced-motion:reduce/);
 const source = fs.readFileSync(path.join(output, 'sw.js'), 'utf8');
 const currentName = source.match(/const CACHE_NAME = '([^']+)'/)[1];
 const precache = JSON.parse(source.match(/const PRECACHE_URLS = (\[[\s\S]*?\]);/)[1]);

@@ -74,6 +74,8 @@ const starterPlannerItemIds = new Set(['planner-1', 'planner-2', 'planner-3', 'p
 
 export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?: string | null }) {
   const [petRoomOpen, setPetRoomOpen] = useState(false);
+  const [launchFinishedOwner, setLaunchFinishedOwner] = useState<string | null | undefined>(undefined);
+  const launchPending = launchFinishedOwner !== (userId ?? null);
   const [petClock, setPetClock] = useState(() => Date.now());
   const [petCelebrating, setPetCelebrating] = useState(false);
   useEffect(() => {
@@ -1631,10 +1633,10 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     <PomodoroProvider settings={pomodoro} owner={userId ?? 'guest'} onPhase={() => playPomodoroSound(pomodoro.soundId, 'end')}>
     <SafeAreaView style={styles.safe}>
       <StatusBar style={resolveKodaThemeId(profile.themeId).endsWith('dark') ? 'light' : 'dark'} />
-      <WidgetShell key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults}>
+      <WidgetShell key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults} onLaunchFinished={()=>setLaunchFinishedOwner(userId ?? null)}>
         {activeTab==='habits'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
       </WidgetShell>
-      {!petRoomOpen && !quickAddOpen && <PetWanderer name={petDisplayName} state={petLife} pose={petPose} onPress={()=>setPetRoomOpen(true)} />}
+      {!launchPending && !petRoomOpen && !quickAddOpen && <PetWanderer name={petDisplayName} state={petLife} pose={petPose} onPress={()=>setPetRoomOpen(true)} />}
       <Modal visible={petRoomOpen} animationType="fade" onRequestClose={()=>setPetRoomOpen(false)}>
         <SafeAreaView style={styles.safe}>
           <PetRoom pet={{name:petDisplayName,state:petLife,hunger:100-petView.hunger,pose:petPose}} food={petView.food} canFeed={petView.canFeed} lifeDeadline={petView.diesAt ?? undefined} earnedActions={petView.lifetimeEarned} nextUnlockText={nextPetUnlock ? `Следующее: ${nextPetUnlock.name} · ${petView.lifetimeEarned} из ${nextPetUnlock.at} действий` : undefined} artifacts={petArtifacts} cosmetics={petLooks} roomUpgrades={petRoomItems} equippedCosmeticId={petView.species} equippedUpgradeIds={[petView.accessory]}

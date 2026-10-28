@@ -244,6 +244,25 @@ self.addEventListener('notificationclick', (event) => {
 );
 
 let html = fs.readFileSync(indexPath, 'utf8');
+// Render immediately while the application bundle is still downloading. React
+// replaces this content as soon as it mounts; it never simulates progress.
+const bootScreen = `<div id="koda-boot" role="status" aria-label="Загрузка приложения KODA">
+  <div class="koda-boot-mark" aria-hidden="true"><svg viewBox="0 0 80 80" fill="none"><path d="M40 68C39 52 42 35 48 21"/><path class="koda-boot-leaf koda-boot-leaf-a" d="M43 39C24 40 16 30 17 19C29 20 41 27 43 39Z"/><path class="koda-boot-leaf koda-boot-leaf-b" d="M46 29C47 15 55 8 66 7C67 18 58 27 46 29Z"/></svg></div>
+  <div class="koda-boot-brand">KODA <span>LIFE</span></div><div class="koda-boot-caption">Готовим твоё пространство</div>
+  <div class="koda-boot-dots" aria-hidden="true"><i></i><i></i><i></i></div></div>`;
+const bootStyles = `<style id="koda-boot-style">
+  #koda-boot{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:var(--koda-app-bg,#b7c3b5);color:var(--koda-text,#1b241b);font-family:system-ui,sans-serif}
+  .koda-boot-mark{width:76px;height:76px;color:var(--koda-accent,#3e501b)}.koda-boot-mark svg{width:100%;height:100%;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  .koda-boot-leaf{fill:var(--koda-accent-soft,#e8efc3);transform-box:fill-box;transform-origin:bottom center;animation:koda-grow 900ms cubic-bezier(.2,.8,.2,1) both}.koda-boot-leaf-b{animation-delay:140ms}
+  .koda-boot-brand{font-size:25px;font-weight:600;letter-spacing:2.2px}.koda-boot-brand span{font-weight:300}.koda-boot-caption{font-size:14px;color:var(--koda-text-muted,#575e50)}
+  .koda-boot-dots{display:flex;gap:6px;margin-top:8px}.koda-boot-dots i{width:5px;height:5px;border-radius:50%;background:var(--koda-accent,#3e501b);animation:koda-pulse 1.2s ease-in-out infinite}.koda-boot-dots i:nth-child(2){animation-delay:160ms}.koda-boot-dots i:nth-child(3){animation-delay:320ms}
+  @keyframes koda-grow{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:scale(1)}}@keyframes koda-pulse{0%,100%{opacity:.3}50%{opacity:1}}
+  @media(prefers-reduced-motion:reduce){.koda-boot-leaf,.koda-boot-dots i{animation:none}}
+</style>`;
+if (!html.includes('id="koda-boot"')) {
+  html = html.replace(/<div\s+id=["']root["']\s*><\/div>/i, `<div id="root">${bootScreen}</div>`);
+  html = html.replace('</head>', `${bootStyles}\n</head>`);
+}
 // The bootstrap creates the themed icon before the app loads. A later static
 // favicon link would override it and briefly restore the orange icon on reload.
 html = html.replace(/<link\b(?=[^>]*\brel=["'](?:shortcut\s+)?icon["'])[^>]*>/gi, '');

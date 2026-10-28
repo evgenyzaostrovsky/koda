@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { Leaf } from 'lucide-react-native';
 import { AuthScreen } from './src/features/auth/AuthScreen';
 import { KodaApp } from './src/features/koda/KodaApp';
 import { isSupabaseConfigured } from './src/config/env';
@@ -8,7 +9,7 @@ import { registerServiceWorker } from './src/lib/serviceWorker';
 import { supabase, authStorageKey } from './src/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signOutDevice } from './src/lib/signOutDevice';
-import { accent, bg } from './src/features/koda/theme';
+import { accent, bg, muted, text } from './src/features/koda/theme';
 
 export default function App() {
   const uiAuditMode = process.env.EXPO_PUBLIC_KODA_UI_AUDIT === '1';
@@ -73,7 +74,10 @@ export default function App() {
   if (isLoading) {
     return (
       <View style={styles.loadingScreen}>
-        <ActivityIndicator color={accent} />
+        <Leaf size={42} strokeWidth={1.6} color={accent} />
+        <Text style={styles.loadingBrand}>KODA <Text style={styles.loadingBrandLight}>LIFE</Text></Text>
+        <Text style={styles.loadingCaption}>Готовим твоё пространство</Text>
+        <ActivityIndicator accessibilityLabel="Загрузка приложения" color={accent} style={styles.loadingIndicator} />
       </View>
     );
   }
@@ -91,5 +95,10 @@ const styles = StyleSheet.create({
     backgroundColor: bg,
     flex: 1,
     justifyContent: 'center',
+    gap: 12,
   },
+  loadingBrand: { color: text, fontSize: 25, fontWeight: '600', letterSpacing: 2.2 },
+  loadingBrandLight: { fontWeight: '300' },
+  loadingCaption: { color: muted, fontSize: 14 },
+  loadingIndicator: { marginTop: 8 },
 });
