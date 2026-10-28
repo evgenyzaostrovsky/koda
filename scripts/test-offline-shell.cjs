@@ -31,6 +31,7 @@ assert.match(html, /<div id="root"><div id="koda-boot" role="status"/);
 assert.match(html, /prefers-reduced-motion:reduce/);
 const source = fs.readFileSync(path.join(output, 'sw.js'), 'utf8');
 const currentName = source.match(/const CACHE_NAME = '([^']+)'/)[1];
+const buildId = source.match(/const BUILD_ID = '([^']+)'/)[1];
 const precache = JSON.parse(source.match(/const PRECACHE_URLS = (\[[\s\S]*?\]);/)[1]);
 
 // An in-memory CacheStorage double exercises the actual generated worker lifecycle.
@@ -40,15 +41,19 @@ function installationHarness(options = {}) {
   const listeners = {};
   const downloads = [];
   const events = [];
+  const deadlines = [];
   const urlKey = (request) => new URL(typeof request === 'string' ? request : request.url, 'https://koda.test').pathname;
   class WorkerRequest extends Request {
     constructor(url, init) { super(new URL(url, 'https://koda.test'), init); }
   }
-  const network = async (request) => {
+  const network = async (request, init = {}) => {
     const url = urlKey(request);
-    downloads.push({ url, cache: request.cache });
+    downloads.push({ url, cache: init.cache || request.cache });
     if (options.offline || url === options.blocked) throw new Error('Network unavailable');
-    return new Response(`fresh:${url}`, { status: url === options.httpFailure ? 404 : 200 });
+    return new Response(url === '/' ? (options.shell || html) : `fresh:${url}`, {
+      status: url === options.httpFailure ? 404 : 200,
+      headers: url === '/' || url === options.assetHtml ? { 'Content-Type': 'text/html' } : {},
+    });
   };
   function seed(name, entries) { storage.set(name, new Map(entries.map(([url, body, status = 200]) => [url, new Response(body, { status })]))); }
   const oldName = 'koda-offline-previous';
@@ -99,16 +104,25 @@ function installationHarness(options = {}) {
       addEventListener: (name, handler) => listeners[name] = handler,
       location: { origin: 'https://koda.test' },
       skipWaiting: async () => events.push('skipWaiting'),
-      clients: { claim: async () => { if (options.claimFailure) throw new Error('Claim failed'); events.push('claim'); } },
+      clients: {
+        claim: async () => { if (options.claimFailure) throw new Error('Claim failed'); events.push('claim'); },
+        matchAll: async () => options.clients || [],
+      },
     },
-    caches, fetch: network, Request: WorkerRequest, URL, Response, AbortController, setTimeout, clearTimeout,
+    caches, fetch: network, Request: WorkerRequest, URL, Response, AbortController, MessageChannel,
+    setTimeout: (callback, delay) => { deadlines.push(delay); return setTimeout(callback, delay); }, clearTimeout,
   });
   async function run(name) {
     let pending;
     listeners[name]({ waitUntil: (promise) => pending = promise });
     await pending;
   }
-  return { storage, downloads, events, run, oldName };
+  async function request(mode, pathname, method = 'GET') {
+    let result;
+    listeners.fetch({ request: { method, mode, url: `https://koda.test${pathname}` }, respondWith: promise => result = promise });
+    return result;
+  }
+  return { storage, downloads, events, deadlines, run, request, oldName, listeners };
 }
 
 async function testInstallation() {
@@ -118,7 +132,7 @@ async function testInstallation() {
   for (const url of [sharedPet, sharedJs, olderPet]) assert.ok(!downloaded.includes(url), `reused ${url}`);
   for (const url of ['/', '/manifest.webmanifest', '/pwa-icon-192.png', newPet, unreadablePet, invalidPet, unrelatedPet, ...mutableFiles]) {
     assert.ok(downloaded.includes(url), `downloaded ${url}`);
-    assert.equal(await successful.storage.get(currentName).get(url).clone().text(), `fresh:${url}`);
+    assert.equal(await successful.storage.get(currentName).get(url).clone().text(), url === '/' ? html : `fresh:${url}`);
   }
   assert.ok(successful.downloads.every(({ cache }) => cache === 'reload'));
   assert.equal(await successful.storage.get(currentName).get(sharedPet).clone().text(), 'shared pet');
@@ -132,7 +146,7 @@ async function testInstallation() {
   assert.ok(successful.events.indexOf('claim') < successful.events.indexOf(`delete:${successful.oldName}`));
   assert.ok(!precache.includes('/sw.js'), 'worker itself is not precached');
 
-  for (const options of [{ blocked: newPet }, { httpFailure: newPet }, { offline: true }, { copyFailure: true }]) {
+  for (const options of [{ blocked: newPet }, { httpFailure: newPet }, { offline: true }, { copyFailure: true }, { shell: '<html>stale deployment</html>' }, { assetHtml: newPet }]) {
     const failed = installationHarness(options);
     await assert.rejects(failed.run('install'));
     assert.ok(!failed.storage.has(currentName), 'failed cache removed');
@@ -157,32 +171,67 @@ async function testInstallation() {
   await claimFailure.run('install');
   await assert.rejects(claimFailure.run('activate'), /Claim failed/);
   assert.ok(claimFailure.storage.has(claimFailure.oldName));
+  const knownClient = installationHarness({ clients: [{ postMessage: (_message, ports) => ports[0].postMessage({ buildId: 'previous' }) }] });
+  await knownClient.run('install');
+  await knownClient.run('activate');
+  assert.ok(knownClient.storage.has(knownClient.oldName), 'known open build retained');
+  assert.ok(!knownClient.storage.has('koda-offline-older'), 'unused older build cleaned even with open windows');
   console.log('Offline install: hash reuse, fresh mutable resources, network fallback, failed install cleanup, retry and activation guards PASS');
 }
-const handlers = {};
-const cached = new Response('<html>saved KODA</html>', { headers: { 'Content-Type': 'text/html' } });
-let online = false;
-let requests = 0;
-vm.runInNewContext(source, {
-  self: { addEventListener: (name, handler) => handlers[name] = handler, location: { origin: 'https://koda.test' } },
-  caches: { match: async key => key === '/index.html' || typeof key === 'object' ? cached.clone() : undefined, open: async () => ({ put: async () => {} }) },
-  fetch: async () => { requests++; if (!online) throw Error('blocked'); return new Response('fresh', { headers: { 'Content-Type': 'text/html' } }); },
-  URL, Response, AbortController, setTimeout, clearTimeout,
-});
-async function request(mode, pathname) {
-  let result;
-  handlers.fetch({ request: { method: 'GET', mode, url: `https://koda.test${pathname}` }, respondWith: promise => result = promise });
-  return result;
+async function testServing() {
+  const options = { clients: [{ id: 'old-tab' }] };
+  const worker = installationHarness(options);
+  await worker.run('install');
+  await worker.run('activate');
+  assert.ok(worker.storage.has(worker.oldName), 'open old page keeps its lazy chunks');
+  let reportedBuild;
+  worker.listeners.message({ data: { type: 'KODA_GET_BUILD' }, ports: [{ postMessage: value => reportedBuild = value.buildId }] });
+  assert.equal(reportedBuild, buildId);
+
+  options.offline = true;
+  assert.equal(await (await worker.request('navigate', '/?source=pwa')).text(), html, 'fallback belongs to active worker, not older cache');
+  assert.equal(await (await worker.request('cors', '/manifest.webmanifest')).text(), 'fresh:/manifest.webmanifest');
+  const before = worker.downloads.length;
+  assert.equal(await (await worker.request('cors', sharedJs)).text(), 'shared bundle');
+  assert.equal(await (await worker.request('cors', newPet.replace(hash, oldHash))).text(), 'different version', 'old page lazy asset survives activation offline');
+  assert.equal(worker.downloads.length, before, 'hashed assets need no network');
+  const corruptedJs = `/_expo/static/js/web/index-${oldHash}.js`;
+  const corruptedPng = `/assets/old-image.${oldHash}.png`;
+  for (const url of [corruptedJs, corruptedPng]) {
+    worker.storage.get(worker.oldName).set(url, new Response('<html>SPA fallback</html>', { headers: { 'Content-Type': 'text/html' } }));
+    assert.equal((await worker.request('cors', url)).status, 0, 'offline cannot serve cached HTML as JS or image');
+    options.offline = false;
+    assert.equal(await (await worker.request('cors', url)).text(), `fresh:${url}`, 'corrupt old asset falls through to network');
+    options.assetHtml = url;
+    assert.equal((await worker.request('cors', url)).status, 0, 'SPA fallback from network is also rejected for hashed assets');
+    delete options.assetHtml;
+    options.offline = true;
+  }
+  worker.storage.get(currentName).set(sharedJs, new Response('<html>corrupt current asset</html>', { headers: { 'Content-Type': 'text/html' } }));
+  assert.equal(await (await worker.request('cors', sharedJs)).text(), 'shared bundle', 'invalid current asset can fall back to valid old immutable asset');
+
+  options.offline = false;
+  options.shell = '<html>newer build not yet installed</html>';
+  assert.equal(await (await worker.request('navigate', '/')).text(), options.shell);
+  assert.equal(worker.downloads.at(-1).cache, 'no-store', 'navigation bypasses browser HTTP cache');
+  assert.equal(worker.deadlines.at(-1), 8000, 'slow navigation no longer falls back after 1.5 seconds');
+  assert.equal(await worker.storage.get(currentName).get('/').clone().text(), html, 'new shell cannot poison installed offline build');
+  options.offline = true;
+  assert.equal(await (await worker.request('navigate', '/')).text(), html);
+  options.offline = false;
+  options.httpFailure = '/';
+  assert.equal(await (await worker.request('navigate', '/')).text(), html, 'HTTP failure falls back to installed shell');
+  assert.equal(await worker.request('navigate', '/api/account'), undefined, 'API is not cached');
+  assert.equal(await worker.request('navigate', '/', 'POST'), undefined, 'writes are not intercepted');
+  worker.storage.get(currentName).delete('/');
+  options.offline = true;
+  assert.equal((await worker.request('navigate', '/')).status, 503, 'evicted active shell must not silently use unrelated or old HTML');
+  console.log('Offline serving: build isolation, deployment race, retained old chunks, fresh navigation, error fallback PASS');
 }
 (async () => {
   await testInstallation();
-  assert.equal(await (await request('navigate', '/')).text(), '<html>saved KODA</html>');
-  const before = requests;
-  assert.equal(await (await request('cors', '/_expo/static/js/web/bundle.js')).text(), '<html>saved KODA</html>');
-  assert.equal(requests, before);
-  online = true;
-  assert.equal(await (await request('navigate', '/')).text(), 'fresh');
-  console.log('Offline shell: blocked network fallback, index fallback, cached assets and online refresh PASS');
+  await testServing();
+  await require('./test-service-worker.cjs')();
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
   assert.equal(path.dirname(path.resolve(output)), path.resolve(os.tmpdir()));
   assert.ok(path.basename(output).startsWith('koda-offline-test-'));

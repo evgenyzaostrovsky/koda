@@ -34,6 +34,8 @@ export function PetCompanion({
   size = 84,
   onPress,
   accessibilityLabel,
+  walkPhase,
+  facing,
 }: {
   name: string;
   state?: PetLifeState;
@@ -41,6 +43,8 @@ export function PetCompanion({
   size?: number;
   onPress?: () => void;
   accessibilityLabel?: string;
+  walkPhase?: Animated.Value;
+  facing?: Animated.Value;
 }) {
   const reducedMotion = useReducedMotion();
   const bob = useRef(new Animated.Value(0)).current;
@@ -67,16 +71,30 @@ export function PetCompanion({
   }, [bob, scale, reducedMotion, state]);
 
   const image = state === 'egg' ? null : petImages[pose];
+  const accessibleName = name.trim() || 'Кодик';
+  const gaitRange = Array.from({ length: 49 }, (_, index) => index / 48);
+  const gaitY = walkPhase?.interpolate({
+    inputRange: gaitRange,
+    outputRange: gaitRange.map((step) => -4 * (1 - Math.cos(step * Math.PI * 24)) / 2),
+  });
+  const gaitTilt = walkPhase?.interpolate({
+    inputRange: gaitRange,
+    outputRange: gaitRange.map((step) => `${Math.sin(step * Math.PI * 24) * 2}deg`),
+  });
   const visual = state === 'egg'
     ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[s.egg, { width: size * .52, height: size * .66, borderRadius: size }]}><View style={s.eggLight} /></View>
-    : <Animated.Image source={image!} resizeMode="contain" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ width: size, height: size, transform: [{ translateY: bob }, { scale }], opacity: state === 'dead' ? .55 : 1 }} />;
+    : <Animated.Image source={image!} resizeMode="contain" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ width: size, height: size, transform: [
+      { translateY: bob }, { scale },
+      ...(gaitY && gaitTilt ? [{ translateY: gaitY }, { rotate: gaitTilt }] : []),
+      ...(facing ? [{ scaleX: facing }] : []),
+    ], opacity: state === 'dead' ? .55 : 1 }} />;
 
   if (!onPress) return <View style={[s.artwork, { width: size, height: size }]}>{visual}</View>;
 
   const stateHint = state === 'egg' ? 'Яйцо ждёт встречи' : state === 'dead' ? 'Можно начать заново' : 'Открыть домик';
   return <Pressable
     accessibilityRole="button"
-    accessibilityLabel={accessibilityLabel ?? `${stateHint}: ${name}`}
+    accessibilityLabel={accessibilityLabel ?? `${stateHint}: ${accessibleName}`}
     onPress={onPress}
     style={({ pressed }) => [s.floating, { width: Math.max(48, size), height: Math.max(48, size) }, pressed && s.pressed]}
   >

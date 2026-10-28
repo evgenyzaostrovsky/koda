@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { randomUUID } = require('crypto');
 
 const projectRoot = path.resolve(__dirname, '..');
 const outputDir = path.resolve(projectRoot, process.argv[2] || 'dist');
@@ -10,6 +11,7 @@ const icon192 = path.join(outputDir, 'pwa-icon-192.png');
 const icon512 = path.join(outputDir, 'pwa-icon-512.png');
 const manifestPath = path.join(outputDir, 'manifest.webmanifest');
 const serviceWorkerPath = path.join(outputDir, 'sw.js');
+const buildId = randomUUID();
 const themeOptions = require('../src/features/koda/themeOptions.json');
 const { applyKodaFavicon } = require('../src/features/koda/favicon');
 
@@ -85,9 +87,14 @@ const reusableUrls = precacheUrls.filter((url) =>
 
 fs.writeFileSync(
   serviceWorkerPath,
-  `const CACHE_NAME = 'koda-offline-${Date.now()}';
+  `const CACHE_NAME = 'koda-offline-${buildId}';
+const BUILD_ID = '${buildId}';
 const PRECACHE_URLS = ${JSON.stringify(precacheUrls, null, 2)};
 const REUSABLE_URLS = new Set(${JSON.stringify(reusableUrls, null, 2)});
+
+function isReusableResponse(response) {
+  return response?.ok && response.status !== 206 && !response.headers.get('content-type')?.includes('text/html');
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -100,7 +107,7 @@ self.addEventListener('install', (event) => {
           for (const cacheName of previousKeys) {
             try {
               const response = await caches.match(url, { cacheName });
-              if (response?.ok && response.status !== 206) return { url, response };
+              if (isReusableResponse(response)) return { url, response };
             } catch {
               // An evicted or unreadable old cache must not prevent network fallback.
             }
@@ -117,6 +124,17 @@ self.addEventListener('install', (event) => {
         .map((entry) => cache.put(entry.url, entry.response)));
       const failure = copies.find((result) => result.status === 'rejected');
       if (failure) throw failure.reason;
+      for (const url of PRECACHE_URLS.filter((url) => url !== '/' && !url.endsWith('.html'))) {
+        const response = await cache.match(url);
+        if (response?.headers.get('content-type')?.includes('text/html')) throw new Error('HTML returned for offline asset: ' + url);
+      }
+      // A deployment can change between downloading sw.js and its shell. Never
+      // activate a worker whose offline HTML belongs to a different deployment.
+      const shell = await cache.match('/');
+      if (!shell?.headers.get('content-type')?.includes('text/html')
+        || !(await shell.text()).includes('<meta name="koda-build" content="' + BUILD_ID + '">')) {
+        throw new Error('Offline shell build mismatch');
+      }
       await self.skipWaiting();
     } catch (error) {
       await caches.delete(CACHE_NAME);
@@ -131,11 +149,36 @@ self.addEventListener('activate', (event) => {
     const responses = await Promise.all(PRECACHE_URLS.map((url) => cache.match(url)));
     if (responses.some((response) => !response?.ok)) throw new Error('Incomplete offline cache');
     await self.clients.claim();
+    // Open pages can still request lazy chunks from their original build. Ask
+    // every page before cleanup; legacy/unresponsive pages preserve all caches.
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const builds = await Promise.all(clients.map((client) => new Promise((resolve) => {
+      const channel = new MessageChannel();
+      let settled = false;
+      const finish = (buildId) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        channel.port1.close();
+        channel.port2.close();
+        resolve(typeof buildId === 'string' && buildId ? buildId : null);
+      };
+      const timeout = setTimeout(() => finish(null), 1000);
+      channel.port1.onmessage = (event) => finish(event.data?.buildId);
+      try { client.postMessage({ type: 'KODA_GET_PAGE_BUILD' }, [channel.port2]); }
+      catch { finish(null); }
+    })));
+    if (builds.includes(null)) return;
+    const retained = new Set([CACHE_NAME, ...builds.map((buildId) => 'koda-offline-' + buildId)]);
     const keys = await caches.keys();
     // Cleanup is best effort after activation is ready; failed cleanup is safe to retry next release.
-    await Promise.allSettled(keys.filter((key) => key.startsWith('koda-offline-') && key !== CACHE_NAME)
+    await Promise.allSettled(keys.filter((key) => key.startsWith('koda-offline-') && !retained.has(key))
       .map((key) => caches.delete(key)));
   })());
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'KODA_GET_BUILD') event.ports[0]?.postMessage({ buildId: BUILD_ID });
 });
 
 self.addEventListener('fetch', (event) => {
@@ -149,14 +192,15 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
-      const cached = await caches.match('/') || await caches.match('/index.html');
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match('/') || await cache.match('/index.html');
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), cached ? 1500 : 8000);
+      const timeout = setTimeout(() => controller.abort(), 8000);
       try {
-        const response = await fetch(request, { signal: controller.signal });
+        const response = await fetch(request, { signal: controller.signal, cache: 'no-store' });
         if (!response.ok || !response.headers.get('content-type')?.includes('text/html')) throw new Error('Unavailable');
-        const cache = await caches.open(CACHE_NAME);
-        await cache.put('/', response.clone());
+        // Only install may replace the offline shell, after all its assets are
+        // downloaded. A newer online document must not poison this build's cache.
         return response;
       } catch {
         return cached || new Response('KODA: для первого запуска нужен доступ к интернету.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
@@ -165,37 +209,33 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (url.pathname.startsWith('/_expo/static/')) {
-    event.respondWith(caches.match(request).then(cached => cached || fetch(request)));
-    return;
-  }
-
-  if (/\\.(js|css|json|webmanifest)$/i.test(url.pathname)) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          }
-
-          return response;
-        })
-        .catch(() => caches.match(request)),
-    );
-    return;
-  }
-
-  event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      if (response.ok) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    let cached = await cache.match(request);
+    const immutable = /^\\/(?:assets|_expo\\/static)\\//.test(url.pathname)
+      && /(?:^|[.-])(?:[a-f0-9]{32}|[a-f0-9]{64})\\.(?:js|css|json|ico|png)$/i.test(url.pathname.split('/').pop());
+    if (immutable) {
+      if (isReusableResponse(cached)) return cached;
+      cached = undefined;
+      // Only content-addressed files may cross build boundaries, and only from
+      // KODA caches. In particular, never pick another build's HTML or manifest.
+      for (const cacheName of (await caches.keys()).filter((key) => key.startsWith('koda-offline-') && key !== CACHE_NAME).reverse()) {
+        try {
+          const previous = await caches.match(request, { cacheName });
+          if (isReusableResponse(previous)) return previous;
+        } catch {
+          // An unreadable old cache must not prevent fetching the requested file.
+        }
       }
-
-      return response;
-    })),
-  );
+    }
+    try {
+      const response = await fetch(request, immutable ? undefined : { cache: 'no-cache' });
+      if (immutable && response.headers.get('content-type')?.includes('text/html')) return Response.error();
+      return response.ok ? response : cached || response;
+    } catch {
+      return cached || Response.error();
+    }
+  })());
 });
 
 self.addEventListener('push', (event) => {
@@ -244,6 +284,8 @@ self.addEventListener('notificationclick', (event) => {
 );
 
 let html = fs.readFileSync(indexPath, 'utf8');
+html = html.replace(/<meta\s+name=["']koda-build["'][^>]*>/gi, '');
+html = html.replace('<head>', `<head>\n<meta name="koda-build" content="${buildId}">`);
 // Render immediately while the application bundle is still downloading. React
 // replaces this content as soon as it mounts; it never simulates progress.
 const bootScreen = `<div id="koda-boot" role="status" aria-label="Загрузка приложения KODA">
