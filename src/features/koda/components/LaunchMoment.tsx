@@ -52,18 +52,18 @@ export function LaunchMoment({ onFinished }: { onFinished: () => void }) {
 
     Animated.sequence([
       Animated.parallel([
-        Animated.timing(sprout, { toValue: 1, duration: 620, easing: Easing.out(Easing.back(1.12)), useNativeDriver: true }),
+        Animated.timing(sprout, { toValue: 1, duration: 760, easing: Easing.out(Easing.back(1.12)), useNativeDriver: true }),
         Animated.sequence([
           Animated.delay(100),
-          Animated.timing(leafLeft, { toValue: 1, duration: 420, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(leafLeft, { toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
         ]),
         Animated.sequence([
           Animated.delay(210),
-          Animated.timing(leafRight, { toValue: 1, duration: 420, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(leafRight, { toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
         ]),
       ]),
-      Animated.delay(560),
-      Animated.timing(veil, { toValue: 0, duration: 220, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.delay(1200),
+      Animated.timing(veil, { toValue: 0, duration: 260, easing: Easing.out(Easing.quad), useNativeDriver: true }),
     ]).start(() => setVisible(false));
 
     return () => {
