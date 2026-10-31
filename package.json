@@ -61,7 +61,7 @@
     "test:chat-sync": "tsx scripts/test-chat-sync.ts && tsx scripts/test-chat-cloud-state.ts && tsx scripts/test-chat-rls.ts",
     "test:chat-offline": "tsx scripts/test-auth-offline.ts && tsx scripts/test-chat-offline-hook.ts",
     "test:widgets": "tsx scripts/test-widget-desktop.ts && tsx scripts/test-widget-habits.ts && tsx scripts/test-refinement41-data.ts && tsx scripts/test-refinement41-planner.ts && tsx scripts/test-dashboard-metrics.ts && tsx scripts/test-routine-schedule.ts && tsx scripts/test-note-formatting.ts",
-    "test:pet": "tsx scripts/test-pet-state.ts"
+    "test:pet": "tsx scripts/test-pet-state.ts && tsx src/features/koda/components/PetWandererGeometry.test.ts"
   },
   "private": true
 }
