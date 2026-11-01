@@ -2,6 +2,8 @@ const DEFAULT_TIMEZONE = 'Europe/Moscow';
 const DEFAULT_DAYS = 30;
 const DEFAULT_PAST_DAYS = 14;
 const { createClient } = require('@supabase/supabase-js');
+const { escapeIcs } = require('../src/server/ics');
+const { calendarOwnerFromToken } = require('./_calendarTokens');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -13,10 +15,25 @@ module.exports = async function handler(req, res) {
   const timezone = normalizeTimezone(cleanText(query.tz) || DEFAULT_TIMEZONE);
   const days = clampNumber(Number(query.days || DEFAULT_DAYS), 1, 90);
   const pastDays = clampNumber(Number(query.pastDays || DEFAULT_PAST_DAYS), 0, 30);
-  const key = cleanText(query.key);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  if (!process.env.CALENDAR_TOKEN_SECRET) {
+    res.status(503).json({ error: 'Календарь временно недоступен.' });
+    return;
+  }
+  const key = calendarOwnerFromToken(cleanText(query.key), process.env.CALENDAR_TOKEN_SECRET);
+  if (!key) {
+    res.status(403).json({ error: 'Ссылка недействительна. Подключите календарь заново в профиле KODA.' });
+    return;
+  }
   const startDate = addDays(startOfToday(timezone), -pastDays);
   const events = [];
-  const plannerItems = key ? await loadPlannerItems(key, startDate, days + pastDays) : [];
+  let plannerItems;
+  try {
+    plannerItems = await loadPlannerItems(key, startDate, days + pastDays);
+  } catch {
+    res.status(503).json({ error: 'Календарь временно недоступен.' });
+    return;
+  }
 
   for (const item of plannerItems) {
     const date = parseDateKey(item.date);
@@ -64,7 +81,7 @@ module.exports = async function handler(req, res) {
 async function loadPlannerItems(key, startDate, days) {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !supabaseKey) return [];
+  if (!supabaseUrl || !supabaseKey) throw new Error('Calendar backend not configured');
 
   const client = createClient(supabaseUrl, supabaseKey);
   const start = formatIsoDate(startDate);
@@ -78,7 +95,7 @@ async function loadPlannerItems(key, startDate, days) {
     .order('event_date', { ascending: true })
     .order('event_time', { ascending: true });
 
-  if (error || !Array.isArray(data)) return [];
+  if (error || !Array.isArray(data)) throw new Error('Calendar backend unavailable');
 
   return data.map((item) => ({
     id: String(item.id),
@@ -197,14 +214,6 @@ function normalizeTimezone(value) {
 function clampNumber(value, min, max) {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, Math.round(value)));
-}
-
-function escapeIcs(value) {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/\n/g, '\\n')
-    .replace(/,/g, '\\,')
-    .replace(/;/g, '\\;');
 }
 
 function safeUid(value) {

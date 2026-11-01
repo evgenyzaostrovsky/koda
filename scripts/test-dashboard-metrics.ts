@@ -27,6 +27,11 @@ const weekdays = habit('weekdays', { frequency: 'weekdays', weekdays: [1,2,3,4,5
 } });
 assert.equal(aggregateHabitStreak([weekdays], '2026-10-26'), 2); // Saturday/Sunday are rest days, not completions
 assert.equal(aggregateHabitStreak([habit('new', { createdDate: '2026-10-24' })], '2026-10-23'), 0);
+assert.equal(aggregateHabitStreak([], '2026-10-24'), 0);
+assert.equal(aggregateHabitStreak([habit('no-schedule', { frequency: 'weekdays', weekdays: [] })], '2026-10-24'), 0);
+assert.equal(aggregateHabitStreak([habit('archived', { archivedAt: '2026-10-24' })], '2026-10-24'), 0);
+const legacyNoDate = habit('legacy', { createdDate: undefined, dayEdits: { '2026-10-23': { done: true, at: '2026-10-23T12:00:00Z', id: 'old' } } });
+assert.equal(aggregateHabitStreak([legacyNoDate], '2026-10-24'), 1);
 console.log('Dashboard metrics tests passed.');
 
 const monthlyDays = [

@@ -2,29 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { useReducedMotion } from './RightPanel';
 
-export type PetPose = `poses_${'01'|'02'|'03'|'04'|'05'|'06'|'07'|'08'}`
-  | `emotions_${'01'|'02'|'03'|'04'|'05'|'06'|'07'|'08'}`
-  | `care_moods_${'01'|'02'|'03'|'04'|'05'|'06'|'07'|'08'}`
-  | `celebration_${'01'|'02'|'03'|'04'|'05'|'06'|'07'|'08'}`;
+export type PetPose = 'poses_01' | 'poses_04' | 'emotions_01' | 'emotions_06' | 'emotions_07' | 'care_moods_03' | 'celebration_01';
 export type PetLifeState = 'egg' | 'alive' | 'dead';
 
 const petImages: Record<PetPose, ImageSourcePropType> = {
-  poses_01: require('../../../../assets/pet/poses_01.png'), poses_02: require('../../../../assets/pet/poses_02.png'),
-  poses_03: require('../../../../assets/pet/poses_03.png'), poses_04: require('../../../../assets/pet/poses_04.png'),
-  poses_05: require('../../../../assets/pet/poses_05.png'), poses_06: require('../../../../assets/pet/poses_06.png'),
-  poses_07: require('../../../../assets/pet/poses_07.png'), poses_08: require('../../../../assets/pet/poses_08.png'),
-  emotions_01: require('../../../../assets/pet/emotions_01.png'), emotions_02: require('../../../../assets/pet/emotions_02.png'),
-  emotions_03: require('../../../../assets/pet/emotions_03.png'), emotions_04: require('../../../../assets/pet/emotions_04.png'),
-  emotions_05: require('../../../../assets/pet/emotions_05.png'), emotions_06: require('../../../../assets/pet/emotions_06.png'),
-  emotions_07: require('../../../../assets/pet/emotions_07.png'), emotions_08: require('../../../../assets/pet/emotions_08.png'),
-  care_moods_01: require('../../../../assets/pet/care_moods_01.png'), care_moods_02: require('../../../../assets/pet/care_moods_02.png'),
-  care_moods_03: require('../../../../assets/pet/care_moods_03.png'), care_moods_04: require('../../../../assets/pet/care_moods_04.png'),
-  care_moods_05: require('../../../../assets/pet/care_moods_05.png'), care_moods_06: require('../../../../assets/pet/care_moods_06.png'),
-  care_moods_07: require('../../../../assets/pet/care_moods_07.png'), care_moods_08: require('../../../../assets/pet/care_moods_08.png'),
-  celebration_01: require('../../../../assets/pet/celebration_01.png'), celebration_02: require('../../../../assets/pet/celebration_02.png'),
-  celebration_03: require('../../../../assets/pet/celebration_03.png'), celebration_04: require('../../../../assets/pet/celebration_04.png'),
-  celebration_05: require('../../../../assets/pet/celebration_05.png'), celebration_06: require('../../../../assets/pet/celebration_06.png'),
-  celebration_07: require('../../../../assets/pet/celebration_07.png'), celebration_08: require('../../../../assets/pet/celebration_08.png'),
+  poses_01: require('../../../../assets/pet/poses_01.png'),
+  poses_04: require('../../../../assets/pet/poses_04.png'),
+  emotions_01: require('../../../../assets/pet/emotions_01.png'),
+  emotions_06: require('../../../../assets/pet/emotions_06.png'),
+  emotions_07: require('../../../../assets/pet/emotions_07.png'),
+  care_moods_03: require('../../../../assets/pet/care_moods_03.png'),
+  celebration_01: require('../../../../assets/pet/celebration_01.png'),
 };
 
 const WALK_FRAME_COUNT = 4;

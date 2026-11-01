@@ -8,6 +8,7 @@ import type { KodaAiInput } from './src/types/koda';
 import { createGoalPlanGenerator } from './src/ai/goalPlanProvider';
 import { normalizeGoalPlanInput } from './src/ai/goalPlanContract';
 const { authorizeAiRequest } = require('./src/server/aiSecurity');
+const { escapeIcs } = require('./src/server/ics');
 
 const app = express();
 const port = Number(process.env.PORT || process.env.KODA_API_PORT || 3333);
@@ -176,12 +177,4 @@ function normalizeTimezone(value: string) {
 function clampNumber(value: number, min: number, max: number) {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, Math.round(value)));
-}
-
-function escapeIcs(value: string) {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/\n/g, '\\n')
-    .replace(/,/g, '\\,')
-    .replace(/;/g, '\\;');
 }

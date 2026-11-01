@@ -10,6 +10,7 @@ import { accent, faint, muted, resolveKodaThemeId, themeOptions } from '../theme
 import { styles } from '../styles';
 import { enablePushNotifications, getPushStatus } from '../../../lib/pushNotifications';
 import { env } from '../../../config/env';
+import { supabase } from '../../../lib/supabase';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -42,6 +43,8 @@ export function ProfileScreen({
   const widgetItems = getWidgetPlannerItems(plannerItems);
   const [pushStatus, setPushStatus] = useState(getPushStatus);
   const [pushBusy, setPushBusy] = useState(false);
+  const [calendarBusy, setCalendarBusy] = useState(false);
+  const [calendarMessage, setCalendarMessage] = useState('');
   const [passwordSheetOpen, setPasswordSheetOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [newPasswordRepeat, setNewPasswordRepeat] = useState('');
@@ -51,8 +54,26 @@ export function ProfileScreen({
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
-  const calendarUrl = calendarKey ? getCalendarUrl(calendarKey) : '';
-  const calendarSubscribeUrl = calendarUrl.replace(/^https?:\/\//, 'webcal://');
+
+  async function openSecureCalendar() {
+    if (calendarBusy) return;
+    setCalendarBusy(true);
+    setCalendarMessage('');
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session?.access_token) throw new Error('Войдите в аккаунт, чтобы подключить календарь.');
+      const response = await fetch(`${getApiBaseUrl()}/api/calendar-link`, {
+        method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || typeof result.token !== 'string') throw new Error('Не удалось получить ссылку календаря. Попробуйте позже.');
+      await Linking.openURL(getCalendarUrl(result.token).replace(/^https?:\/\//, 'webcal://'));
+    } catch (error) {
+      setCalendarMessage(error instanceof Error ? error.message : 'Не удалось подключить календарь.');
+    } finally {
+      setCalendarBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -130,13 +151,7 @@ export function ProfileScreen({
             : 'Включить уведомления';
 
   async function changePassword() {
-    const username = accountInfo?.username?.trim();
     const password = newPassword.trim();
-
-    if (!username) {
-      setPasswordMessage('Логин аккаунта пока не загружен.');
-      return;
-    }
 
     if (password.length < 6) {
       setPasswordMessage('Пароль минимум 6 символов.');
@@ -150,15 +165,9 @@ export function ProfileScreen({
 
     setPasswordBusy(true);
     try {
-      const response = await fetch(`${getApiBaseUrl()}/api/auth-reset-password`, {
-        body: JSON.stringify({ password, username }),
-        headers: { 'Content-Type': 'application/json' },
-        method: 'POST',
-      });
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        setPasswordMessage(String(data.error || 'Не удалось сменить пароль.'));
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) {
+        setPasswordMessage('Не удалось сменить пароль. Проверьте подключение и войдите снова.');
         return;
       }
 
@@ -266,11 +275,11 @@ export function ProfileScreen({
           value={pushStatus === 'enabled'}
         />
         <SettingRow
-          disabled={!calendarSubscribeUrl}
-          meta={calendarSync.status === 'synced' ? 'готов' : calendarSync.status === 'error' ? 'ошибка' : 'подписка'}
-          onPress={() => Linking.openURL(calendarSubscribeUrl)}
+          disabled={!calendarKey || calendarBusy}
+          meta={calendarBusy ? 'подключаю...' : calendarSync.status === 'synced' ? 'готов' : calendarSync.status === 'error' ? 'ошибка' : 'подписка'}
+          onPress={openSecureCalendar}
           title="Календарь iPhone"
-          value={Boolean(calendarSubscribeUrl)}
+          value={Boolean(calendarKey)}
         />
         <SettingRow
           disabled={isInstalled}
@@ -279,7 +288,7 @@ export function ProfileScreen({
           title="Установить на компьютер"
           value={isInstalled}
         />
-      </BentoCard></>}
+      </BentoCard>{calendarMessage ? <Text accessibilityRole="alert" style={styles.rowMeta}>{calendarMessage}</Text> : null}</>}
         </View>
 
         {profileSection==='feed'&&<RightPanel enabled={false}><View style={isDesktop ? styles.profileDesktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>

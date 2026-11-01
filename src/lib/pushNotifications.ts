@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { env } from '../config/env';
 import { registerServiceWorker } from './serviceWorker';
+import { supabase } from './supabase';
 
 type PushStatus = 'unsupported' | 'blocked' | 'enabled' | 'default';
 
@@ -29,6 +30,10 @@ export async function enablePushNotifications() {
   if (getPushStatus() === 'unsupported') {
     throw new Error('Push notifications are not supported in this browser.');
   }
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session?.access_token) {
+    throw new Error('Для включения уведомлений войди в аккаунт.');
+  }
 
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') {
@@ -53,7 +58,7 @@ export async function enablePushNotifications() {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       reminderTime: '14:00',
     }),
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
     method: 'POST',
   });
 

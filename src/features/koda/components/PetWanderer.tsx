@@ -31,6 +31,7 @@ export function PetWanderer({ name, state, pose, onPress }: {
       setOverControl(false);
       return;
     }
+    let frame = 0;
     const measure = () => {
       const pet = document.querySelector<HTMLElement>('[data-testid="pet-wanderer"]');
       if (!pet) return;
@@ -44,10 +45,49 @@ export function PetWanderer({ name, state, pose, onPress }: {
       });
       setOverControl(previous => previous === overlaps ? previous : overlaps);
     };
+    const scheduleMeasure = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
     measure();
-    const interval = setInterval(measure, 80);
-    return () => clearInterval(interval);
-  }, [appActive]);
+    // The pet only changes screen position while walking or jumping. Keep the
+    // fast check during those animations, and use layout/scroll events at rest.
+    const interval = walking || jumping ? setInterval(measure, 80) : undefined;
+    const onMutations = (records: MutationRecord[]) => {
+      const pet = document.querySelector<HTMLElement>('[data-testid="pet-wanderer"]');
+      if (records.some(record => !pet?.contains(record.target))) scheduleMeasure();
+    };
+    const observer = typeof MutationObserver !== 'undefined' && document.body
+      ? new MutationObserver(onMutations)
+      : null;
+    observer?.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'hidden', 'disabled', 'aria-hidden', 'role', 'tabindex'],
+    });
+    window.addEventListener('resize', scheduleMeasure);
+    window.addEventListener('scroll', scheduleMeasure, true);
+    // Layout may change after an image finishes loading or a CSS transition
+    // completes even when no element was inserted or removed.
+    window.addEventListener('load', scheduleMeasure, true);
+    window.addEventListener('transitionend', scheduleMeasure, true);
+    window.addEventListener('animationend', scheduleMeasure, true);
+    return () => {
+      if (interval !== undefined) clearInterval(interval);
+      observer?.disconnect();
+      window.removeEventListener('resize', scheduleMeasure);
+      window.removeEventListener('scroll', scheduleMeasure, true);
+      window.removeEventListener('load', scheduleMeasure, true);
+      window.removeEventListener('transitionend', scheduleMeasure, true);
+      window.removeEventListener('animationend', scheduleMeasure, true);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [appActive, jumping, walking]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => setAppActive(nextState === 'active'));

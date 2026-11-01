@@ -1,5 +1,6 @@
 const webpush = require('web-push');
 const { getSupabaseAdmin } = require('./_supabaseAdmin');
+const { isAllowedPushEndpoint } = require('./_pushSecurity');
 
 function getLocalParts(timezone) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -32,12 +33,14 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  if (process.env.CRON_SECRET) {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    if (token !== process.env.CRON_SECRET) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
+  if (!process.env.CRON_SECRET) {
+    res.status(503).json({ error: 'Cron authentication is not configured.' });
+    return;
+  }
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (token !== process.env.CRON_SECRET) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
   }
 
   const publicKey = process.env.VAPID_PUBLIC_KEY || process.env.EXPO_PUBLIC_VAPID_PUBLIC_KEY;
@@ -64,7 +67,18 @@ module.exports = async function handler(req, res) {
     let disabled = 0;
 
     for (const item of data || []) {
-      if (!isDue(item)) {
+      if (!isAllowedPushEndpoint(item.subscription?.endpoint) || item.subscription.endpoint !== item.endpoint) {
+        skipped += 1;
+        continue;
+      }
+      let due;
+      try {
+        due = isDue(item);
+      } catch {
+        skipped += 1;
+        continue;
+      }
+      if (!due) {
         skipped += 1;
         continue;
       }

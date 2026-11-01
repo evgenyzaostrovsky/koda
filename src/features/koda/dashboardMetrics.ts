@@ -26,16 +26,24 @@ export function weeklyScoreSummary(days: KodaDay[], date: string) {
 
 /** Consecutive scheduled days where every due active habit is done. Rest days are skipped. */
 export function aggregateHabitStreak(habits: Habit[], date: string) {
+  const scheduled = habits.flatMap(habit => {
+    if (habit.deletedAt || habit.archivedAt) return [];
+    const metadata = habitMetadata(habit);
+    if ((!metadata.isActive && !Object.keys(normalizeHabitPauseEdits(habit.pauseEdits)).length) ||
+        (metadata.frequency === 'weekdays' && !metadata.weekdays.length)) return [];
+    return [{ habit, metadata }];
+  });
+  if (!scheduled.length) return 0;
+  const creationDates = scheduled.map(({ metadata }) => metadata.createdDate);
+  const firstCreated = creationDates.every(Boolean) ? creationDates.reduce((first, current) => current! < first! ? current : first) : undefined;
   let streak = 0;
   for (let offset = 0; offset < 3660; offset++) {
     const key = plannerDateOffset(date, -offset);
-    const due = habits.filter(habit => {
-      const metadata = habitMetadata(habit);
-      if (habit.deletedAt || habit.archivedAt || (metadata.createdDate && key < metadata.createdDate)) return false;
-      // Current inactivity must not erase dates before a recorded pause.
-      if (!metadata.isActive && !Object.keys(normalizeHabitPauseEdits(habit.pauseEdits)).length) return false;
+    if (firstCreated && key < firstCreated) break;
+    const due = scheduled.filter(({ habit, metadata }) => {
+      if (metadata.createdDate && key < metadata.createdDate) return false;
       return !habitPausedOn(habit, key) && (metadata.frequency === 'daily' || metadata.weekdays.includes(new Date(`${key}T12:00:00Z`).getUTCDay()));
-    });
+    }).map(({ habit }) => habit);
     if (!due.length) continue;
     if (offset === 0 && due.some(habit => !habitDoneOn(habit, key))) continue; // today's unfinished routine has not broken yesterday yet
     if (due.some(habit => !habitDoneOn(habit, key))) break;

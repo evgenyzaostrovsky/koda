@@ -3,7 +3,9 @@ const path = require('path');
 
 const ROOT = process.cwd();
 const INCLUDE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.sql', '.md', '.html', '.css']);
-const SKIP_DIRS = new Set(['.git', '.expo', '.vercel', 'dist', 'node_modules']);
+// Generated exports and visual audit artifacts are not source files and can be
+// many times larger than the application. Never scan old bundles during builds.
+const SKIP_DIRS = new Set(['.git', '.expo', '.vercel', '.tmp', '.impeccable-runtime', 'dist', 'dist-audit', 'exports', 'node_modules']);
 
 const mojibakePattern =
   /\u0420[\u00a0-\u00bf\u0402-\u040f\u0452-\u045f]|\u0421[\u00a0-\u00bf\u0402-\u040f\u0452-\u045f]|\u00d0[\u0080-\u00bf]|\u00d1[\u0080-\u00bf]|\?{3,}/g;
