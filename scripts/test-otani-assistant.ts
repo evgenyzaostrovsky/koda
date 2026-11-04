@@ -25,6 +25,7 @@ assert.deepEqual(preserved.directions[0].actions,['Готово','Ежеднев
 assert.equal(constrainOtaniPlan({desiredResult:'Короткая цель',directions:[{title:'Фактор',actions:['Действие']}]},{wish:'Короткая цель',planningMethod:'otani'}).directions.length,1,'Sparse matrices are valid; no padding is required');
 
 const originalFetch=globalThis.fetch;
+const queuedReplies:Record<string,unknown>[]=[];
 const requests:Array<{system:string;user:Record<string,unknown>}>=[];
 let response:Record<string,unknown>={desiredResult:'Выступление готово',directions:[{slotIndex:2,title:'Практика навыка',actions:['Записать вступление на пять предложений','Проговорить вступление и отметить время']} ]};
 globalThis.fetch=async(input,init)=>{
@@ -32,7 +33,7 @@ globalThis.fetch=async(input,init)=>{
   const messages=request.messages??request.input!.map(item=>({role:item.role,content:typeof item.content==='string'?item.content:item.content.map(part=>part.text).join('')}));
   requests.push({system:messages[0].content,user:JSON.parse(messages[1].content)});
   const reply=String(input).includes('api.openai.com')&&messages[0].content.includes('Проведи независимую короткую проверку')
-    ?{issues:[],missingQuestions:[],conflicting:false}:response;
+    ?{issues:[],missingQuestions:[],conflicting:false}:(queuedReplies.shift()??response);
   const body=String(input).includes('api.openai.com')
     ?{output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(reply)}]}]}
     :{choices:[{message:{content:JSON.stringify(reply)},finish_reason:'stop'}]};
@@ -64,6 +65,23 @@ try{
   await createGoalPlanGenerator({openAiApiKey:'test-key',preferredProvider:'openai'})({wish:'Подготовить и опубликовать отчёт по теме X',desiredResult:'Отчёт опубликован',planningMethod:'roadmap',planScope:'full-map',clarifyRoadmap:true,clarifications:[{question:'Где опубликовать?',answer:'В личном блоге'}],currentState:'Есть исходные данные: поле А'},accountContext);
   assert.equal(requests[3].user.assistantContextData,accountContext,'Initial roadmap generation uses the approved context');
   assert.equal((requests[4].user.facts as Record<string,unknown>).assistantContextData,accountContext,'The independent roadmap review receives the same approved context');
+  const followUp={wish:'Стать Дата аналитиком',planningMethod:'otani' as const,clarifications:[{question:'Опыт?',answer:'Учусь на karpov.courses, Python, исследование данных и создание метрик'}]};
+  queuedReplies.push({desiredResult:'Оффер',directions:[],clarificationQuestions:['Какой у вас опыт?']},{desiredResult:'Оффер',directions:[{slotIndex:0,title:'Исследование данных',actions:['Проверить пропуски в данных урока']} ]});
+  const before=requests.length;
+  const repaired=await createGoalPlanGenerator({openAiApiKey:'test-key',preferredProvider:'openai'})(followUp,accountContext);
+  assert.equal(requests.length-before,2,'Invalid follow-up gets one repair instead of failing immediately');
+  assert.equal(repaired.directions[0].title,'Исследование данных');
+  assert.equal(repaired.clarificationQuestions,undefined);
+  assert.equal(requests.at(-1)!.user.assistantContextData,accountContext,'Repair keeps the same authorized account context');
+  assert.deepEqual(requests.at(-1)!.user.clarifications,followUp.clarifications,'Repair preserves user answers');
+  queuedReplies.push({directions:[]},{desiredResult:'Оффер',directions:[],clarificationQuestions:['Какая стартовая точка?']});
+  const initialRepair=await createGoalPlanGenerator({openAiApiKey:'test-key',preferredProvider:'openai'})({wish:'Стать аналитиком',planningMethod:'otani'});
+  assert.deepEqual(initialRepair.clarificationQuestions,['Какая стартовая точка?'],'Initial repair may still clarify missing facts');
+  assert.match(requests.at(-1)!.system,/можно вернуть 1–2 уточняющих вопроса/);
+  response={desiredResult:'Оффер',directions:[],clarificationQuestions:['Опыт?']};
+  const beforeFailure=requests.length;
+  await assert.rejects(createGoalPlanGenerator({openAiApiKey:'test-key',preferredProvider:'openai'})(followUp),/повторять уточняющий круг/);
+  assert.equal(requests.length-beforeFailure,2,'Repeated invalid output fails safely after exactly one repair');
 }finally{globalThis.fetch=originalFetch;}
 
 console.log('OTANI assistant: mode-specific prompt, sparse output, clarification limits, and protected progress passed');
