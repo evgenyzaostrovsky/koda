@@ -26,7 +26,7 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
   const [selectedDirectionId, setSelectedDirectionId] = useState<string | null>(null);
   useEffect(()=>{if(initialDirectionId)setSelectedDirectionId(initialDirectionId);},[initialDirectionId]);
   const [gridMode, setGridMode] = useState<'compact' | 'full'>('compact');
-  const [zoom, setZoom] = useState(1);
+  const [expandedGrid, setExpandedGrid] = useState(false);
   const [notice, setNotice] = useState('');
   const [newActionTitle, setNewActionTitle] = useState('');
   const [newRoutineTitle, setNewRoutineTitle] = useState('');
@@ -46,7 +46,7 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
   useEffect(() => {
     setSelectedDirectionId(null);
     setGridMode('compact');
-    setZoom(1);
+    setExpandedGrid(false);
     setNotice('');
     setNewActionTitle('');
     setNewRoutineTitle('');
@@ -184,8 +184,9 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
     const direction = cell.kind !== 'goal' ? directions.find((item) => item.id === cell.directionId) : undefined;
     const action = cell.kind === 'action' && cell.actionId ? goal.actions.find((item) => item.id === cell.actionId) : undefined;
     const routine = cell.kind === 'action' && cell.actionId ? goal.routines.find((item) => item.id === cell.actionId) : undefined;
-    const cellLabel = isGoal ? goal.title : cell.kind === 'direction' ? direction?.title || '+ направление' : action?.title ?? routine?.title ?? 'Пустой слот';
+    const cellLabel = isGoal ? goal.title : cell.kind === 'direction' ? direction?.title || '+ направление' : action?.title ?? routine?.title ?? '+ действие';
     const status = action ? actionStatusLabel(goal, action) : routine ? routineLogValue(goal, routine.id) >= routine.targetValue ? 'Сегодня выполнено' : 'Регулярное' : '';
+    const visibleStatus = status === 'Следующий шаг' ? '' : status;
     const actionCount = direction ? activeActions(direction).length + activeRoutines(direction).length : 0;
     const completedCount = direction ? activeActions(direction).filter((item) => item.status === 'completed').length + activeRoutines(direction).filter((item) => routineLogValue(goal, item.id) >= item.targetValue).length : 0;
     return (
@@ -194,11 +195,11 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
         if (action) { setEditingActionId(action.id); return; }
         if (routine) { toggleRoutine(routine); setNotice(`Обновлён статус «${routine.title}».`); return; }
         if (direction) { setSelectedDirectionId(direction.id); setDirectionTitleDraft(direction.title ?? ''); return; }
-      }} style={[styles.cell, selectedDirection?.id===direction?.id && {borderWidth:2}, isGoal && styles.goalCell, cell.kind === 'direction' && styles.directionCell, cell.kind === 'action' && (action || routine) && styles.filledCell, cell.kind === 'action' && !action && !routine && styles.emptyCell, gridMode === 'full' && (isDesktop || overviewGrid) ? { borderTopWidth: [3,6].includes(Math.floor(cell.index/9)) ? 2 : 1, borderLeftWidth: [3,6].includes(cell.index%9) ? 2 : 1, width: (isDesktop ? 102 : 74) * zoom, height: Math.max(60,(isDesktop ? 96 : 66) * zoom), flexBasis: (isDesktop ? 102 : 74) * zoom, flexGrow: 0, flexShrink: 0 } : styles.mobileCell]}>
-        {isGoal ? <><Text numberOfLines={2} style={styles.goalCellText}>{goal.title}</Text><Text style={styles.goalCellStatus}>{onRequestAI ? 'Главная цель' : 'Главная цель'}</Text></> : (
+      }} style={[styles.cell, selectedDirection?.id===direction?.id && {borderWidth:2}, isGoal && styles.goalCell, cell.kind === 'direction' && styles.directionCell, cell.kind === 'action' && (action || routine) && styles.filledCell, cell.kind === 'action' && !action && !routine && styles.emptyCell, gridMode === 'full' && overviewGrid ? { borderTopWidth: [3,6].includes(Math.floor(cell.index/9)) ? 2 : 1, borderLeftWidth: [3,6].includes(cell.index%9) ? 2 : 1, flexBasis: isDesktop ? '10%' : 154, flexGrow: isDesktop ? 1 : 0, flexShrink: 0, minHeight: action || routine ? 52 : 38, height: 'auto', padding: isDesktop ? 6 : 5, borderRadius: 7 } : styles.mobileCell]}>
+        {isGoal ? <><Text numberOfLines={gridMode === 'full' ? undefined : 2} style={styles.goalCellText}>{goal.title}</Text><Text style={styles.goalCellStatus}>{onRequestAI ? 'Главная цель' : 'Главная цель'}</Text></> : (
           <>
-            <Text numberOfLines={2} style={[styles.cellTitle, cell.kind === 'direction' && styles.directionTitle]}>{action?.title ?? routine?.title ?? cellLabel}</Text>
-            {cell.kind === 'direction' ? direction?.title ? <Text numberOfLines={1} style={styles.cellStatus}>{completedCount}/{actionCount} · {direction.archivedAt ? 'архив' : 'готово'}</Text> : null : action || routine ? <Text numberOfLines={1} style={styles.cellStatus}>{status}</Text> : <Text numberOfLines={1} style={styles.cellStatus}>+ действие</Text>}
+            <Text numberOfLines={gridMode === 'full' && overviewGrid ? undefined : 2} style={[styles.cellTitle, cell.kind === 'direction' && styles.directionTitle, gridMode === 'full' && overviewGrid && { fontSize: 14, lineHeight: 18 }]}>{action?.title ?? routine?.title ?? cellLabel}</Text>
+            {cell.kind === 'direction' ? direction?.title && actionCount ? <Text numberOfLines={1} style={styles.cellStatus}>{completedCount}/{actionCount}</Text> : null : action || routine ? visibleStatus ? <Text numberOfLines={1} style={styles.cellStatus}>{visibleStatus}</Text> : null : cell.kind === 'action' && !overviewGrid ? <Text numberOfLines={1} style={styles.cellStatus}>+ действие</Text> : null}
           </>
         )}
       </Pressable>
@@ -206,7 +207,7 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
   }
 
   const grid = (items: Cell[], desktopGrid: boolean, overviewGrid = false) => (
-    <View style={[styles.grid, (desktopGrid || overviewGrid) && styles.desktopGrid, desktopGrid && { width: 9 * (102 * zoom) + 8 * 3 }, overviewGrid && { width: 9 * (74 * zoom) + 8 * 3 }, !desktopGrid && !overviewGrid && styles.mobileGrid]}>
+    <View style={[styles.grid, (desktopGrid || overviewGrid) && styles.desktopGrid, desktopGrid && { width: 9 * 102 + 8 * 3 }, overviewGrid && isDesktop && { width: '100%' }, overviewGrid && !isDesktop && { width: 9 * 154 + 8 * 3 }, !desktopGrid && !overviewGrid && styles.mobileGrid]}>
       {items.map((cell, index) => renderMatrixCell(cell, index, overviewGrid))}
     </View>
   );
@@ -215,7 +216,7 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerText}><Text style={styles.title}>Квадраты ОТАНИ</Text><Text style={styles.subtitle}>Цель в центре · направления вокруг</Text></View>
-        {gridMode === 'full' ? <View style={styles.zoom}><Pressable accessibilityRole="button" accessibilityLabel="Уменьшить матрицу" onPress={() => setZoom((value) => Math.max(0.72, +(value - 0.12).toFixed(2)))} style={styles.zoomButton}><Text style={styles.zoomText}>−</Text></Pressable><Text style={styles.zoomLabel}>{Math.round(zoom * 100)}%</Text><Pressable accessibilityRole="button" accessibilityLabel="Увеличить матрицу" onPress={() => setZoom((value) => Math.min(1.48, +(value + 0.12).toFixed(2)))} style={styles.zoomButton}><Text style={styles.zoomText}>+</Text></Pressable></View> : null}
+        {gridMode === 'full' ? <Pressable accessibilityRole="button" accessibilityLabel="Открыть сетку на весь экран" onPress={() => setExpandedGrid(true)} style={styles.expandButton}><Text style={styles.expandButtonText}>На весь экран</Text></Pressable> : null}
         {onRequestAI ? <Pressable accessibilityRole="button" accessibilityLabel="Попросить AI предложить направления для цели" onPress={onRequestAI} style={styles.aiButton}><Sparkles size={16} color={activeText}/><Text style={styles.aiButtonText}>Собрать с помощником</Text></Pressable> : null}
       </View>
 
@@ -223,10 +224,12 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
 
       {gridMode === 'full' ? (
         <View style={styles.overview}>
-          <Text style={styles.overviewHint}>Полная сетка 9×9. Прокручивай по горизонтали и вертикали, чтобы просматривать все направления и слоты.</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator><ScrollView nestedScrollEnabled showsVerticalScrollIndicator style={styles.mobileOverviewScroll}><View style={styles.mobileOverviewGrid}>{grid(cells, isDesktop, !isDesktop)}</View></ScrollView></ScrollView>
+          <Text style={styles.overviewHint}>Полная сетка 9×9. Названия отображаются целиком.</Text>
+          {isDesktop ? grid(cells, true, true) : <ScrollView horizontal showsHorizontalScrollIndicator><View style={styles.mobileOverviewGrid}>{grid(cells, false, true)}</View></ScrollView>}
         </View>
       ) : <View style={styles.compactGridWrap}><View style={styles.desktopGridWrap}>{grid(compactGridCells, false)}</View></View>}
+
+      {expandedGrid && gridMode === 'full' ? <Modal animationType="fade" onRequestClose={() => setExpandedGrid(false)} visible><View style={{ backgroundColor: panel, flex: 1, gap: 10, padding: 14 }}><View style={{ alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' }}><View style={styles.headerText}><Text accessibilityRole="header" style={styles.title}>Квадраты ОТАНИ · 9×9</Text><Text style={styles.subtitle}>Все названия отображаются целиком</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Закрыть полноэкранную сетку" onPress={() => setExpandedGrid(false)} style={styles.zoomButton}><X color={text} size={18}/></Pressable></View><ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 18 }}>{isDesktop ? grid(cells, true, true) : <ScrollView horizontal showsHorizontalScrollIndicator><View style={styles.mobileOverviewGrid}>{grid(cells, false, true)}</View></ScrollView>}</ScrollView></View></Modal> : null}
 
       {selectedDirection ? <Modal animationType="none" onRequestClose={() => setSelectedDirectionId(null)} transparent visible><View accessibilityViewIsModal accessibilityLabel={`Редактор направления ${selectedDirection.title || selectedDirection.position + 1}`} style={styles.editorOverlay}><ScrollView keyboardShouldPersistTaps="handled" style={styles.directionModalScroll} contentContainerStyle={styles.directionModalContent}><View style={styles.editor}>
           <View style={styles.editorHeader}><Text accessibilityRole="header" style={styles.editorTitle}>Направление {selectedDirection.position + 1}</Text><View style={styles.editorHeaderActions}>{selectedDirection.archivedAt ? <Pressable accessibilityRole="button" onPress={() => restoreDirection(selectedDirection)} style={styles.smallButton}><RotateCcw color={accent} size={14} /><Text style={styles.smallButtonText}>Восстановить</Text></Pressable> : <Pressable accessibilityRole="button" onPress={() => archiveDirection(selectedDirection)} style={styles.smallButton}><X color={muted} size={14} /><Text style={styles.smallButtonText}>В архив</Text></Pressable>}<Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактор направления" onPress={() => setSelectedDirectionId(null)} style={styles.unlinkButton}><X color={muted} size={16} /></Pressable></View></View>
@@ -292,5 +295,7 @@ const styles = StyleSheet.create({
   directionModalScroll: { flexGrow: 0, maxHeight: '92%', width: '94%' },
   directionModalContent: { paddingVertical: 16 },
   editorHeaderActions: { alignItems: 'center', flexDirection: 'row', gap: 4 },
+  expandButton: { borderWidth: 1, borderColor: line, borderRadius: 12, paddingHorizontal: 14, minHeight: 44, justifyContent: 'center' },
+  expandButtonText: { color: text, fontSize: 13, fontWeight: '600' },
   compactGridWrap: { alignItems: 'center', maxWidth: 600, width: '100%' },
 });
