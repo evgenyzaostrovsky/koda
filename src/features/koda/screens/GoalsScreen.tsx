@@ -1,6 +1,5 @@
 import { currentGoalMilestone, nextAvailableGoalAction, nextRoadmapAction } from '../components/goalPresentation';
-import { RightPanel } from '../components/RightPanel';
-import { BentoCard, BentoGrid, BentoPage, FloatingCardAction, EmptyStateCard, SectionHeader } from '../components/Bento';
+import { BentoCard, BentoGrid, BentoPage, EmptyStateCard, SectionHeader } from '../components/Bento';
 import { ArrowLeft, Check, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -125,7 +124,7 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline,
   if (selectedGoal) {
     return (
       <>
-        <GoalDetails goal={selectedGoal} goals={sortedGoals} hasCloudSync={hasCloudSync} isDesktop={isDesktop} isOnline={isOnline} onBack={() => setSelectedGoalId(null)} onCreate={() => setCreateOpen(true)} onGoalsChange={onGoalsChange} onSelect={setSelectedGoalId} />
+        <GoalDetails goal={selectedGoal} hasCloudSync={hasCloudSync} isDesktop={isDesktop} isOnline={isOnline} onBack={() => setSelectedGoalId(null)} onGoalsChange={onGoalsChange} />
         <GoalWizard open={createOpen} userId={userId} onClose={() => setCreateOpen(false)} onSave={saveWizardGoal} />
         <CreateGoalFlow open={legacyCreateOpen} onClose={() => setLegacyCreateOpen(false)} onSave={saveGoal} />
         <ConfirmSheet title="Сделать цель главной?" text="Предыдущая главная цель станет важной. Одновременно активной главной может быть только одна." visible={Boolean(confirmMainGoal)} onCancel={() => setConfirmMainGoal(null)} onConfirm={confirmMainGoalSave} />
@@ -198,8 +197,7 @@ function GoalCard({ desktop, goal, featured, onPress }: { desktop?: boolean; goa
   );
 }
 
-function GoalDetails({ goal, goals, isDesktop = false, isOnline, hasCloudSync = true, onBack, onCreate, onGoalsChange, onSelect }: { goal: Goal; goals: Goal[]; isDesktop?: boolean; isOnline: boolean; hasCloudSync?: boolean; onBack: () => void; onCreate: () => void; onGoalsChange: GoalsChange; onSelect: (id: string) => void }) {
-  const narrow = useWindowDimensions().width < 760;
+function GoalDetails({ goal, isDesktop = false, hasCloudSync = true, onBack, onGoalsChange }: { goal: Goal; isDesktop?: boolean; hasCloudSync?: boolean; isOnline: boolean; onBack: () => void; onGoalsChange: GoalsChange }) {
   const [structureOpen,setStructureOpen]=useState(false);
   const [detailTab, setDetailTab] = useState<'roadmap' | 'actions' | 'matrix' | 'context'>('matrix');
   useEffect(()=>{setStructureOpen(false);setDetailTab('matrix');},[goal.id]);
@@ -278,12 +276,12 @@ function GoalDetails({ goal, goals, isDesktop = false, isOnline, hasCloudSync = 
   }
 
   return (
-    <BentoPage maxWidth={960} scroll={false} style={local.screen} contentStyle={local.detailPage}>
+    <BentoPage maxWidth={1100} scroll={false} style={local.screen} contentStyle={local.detailPage}>
       <View style={local.detailsHeader}>
         <Pressable accessibilityRole="button" accessibilityLabel="К списку целей" onPress={onBack} style={local.iconButton}>
           <ArrowLeft color={text} size={19} />
         </Pressable>
-        <Text style={local.detailsTitle}>Все цели</Text>
+        <Text numberOfLines={2} style={local.detailsTitle}>{goal.title}</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="Действия с целью" accessibilityState={{ expanded: menuOpen }} aria-expanded={menuOpen} onPress={() => setMenuOpen((value) => !value)} style={local.iconButton}>
           <MoreHorizontal color={text} size={19} />
         </Pressable>
@@ -297,28 +295,19 @@ function GoalDetails({ goal, goals, isDesktop = false, isOnline, hasCloudSync = 
         </View>
       ) : null}
 
-      <ScrollView contentContainerStyle={[local.scrollContent, isDesktop && local.desktopScrollContent]} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
-        <View style={isDesktop ? local.desktopDetailsLayout : undefined} testID={isDesktop ? 'desktop-page-columns' : undefined}>
-          <View style={isDesktop ? local.desktopMainColumn : undefined} testID={isDesktop ? 'desktop-main-column' : undefined}>
-            <BentoGrid columns={3} style={[local.goalHeroGrid,narrow&&local.goalHeroGridMobile]}>
-              <BentoCard testID="goal-hero" tone="lime" variant="top-right" action={<FloatingCardAction label="Открыть контекст цели" onPress={()=>setDetailTab('context')}/>} style={[{gridColumn:'span 2'} as any,narrow&&local.goalHeroMobile]}>
-                <Text style={{fontSize:isDesktop?34:28,lineHeight:isDesktop?40:34,fontWeight:'500',letterSpacing:-0.8,color:'#263c19',paddingRight:narrow?0:88}}>{goal.title}</Text>
-                <Text style={{fontSize:14,lineHeight:21,color:'#435b31',paddingRight:narrow?0:88}}>{goal.desiredResult || 'Результат пока не задан'}</Text>
-                {goal.status==='completed'&&<Text style={{fontSize:15,lineHeight:22,color:'#263c19'}}>Цель завершена</Text>}
-                <View style={{flexDirection:'row',alignItems:'center',gap:14}}><View accessibilityRole="progressbar" accessibilityValue={{min:0,max:100,now:progress}} style={{flex:1,height:8,borderRadius:8,backgroundColor:'#f5ffd0',overflow:'hidden'}}><View style={{height:8,width:`${progress}%`,backgroundColor:'#263c19',borderRadius:8}}/></View><Text style={{fontSize:30,lineHeight:38,color:'#263c19'}}>{progress}%</Text></View>
-                {currentStage&&<Text style={{fontSize:15,lineHeight:22,color:'#263c19'}}>Сейчас: {currentStage}</Text>}
-                {nextAction&&<Pressable accessibilityRole="button" accessibilityLabel={`Открыть следующий шаг: ${nextAction.title}`} onPress={()=>{if(actionMilestone){setFocusRoadmapStageId(actionMilestone.id);setDetailTab('roadmap')}else if(actionDirection){setFocusDirectionId(actionDirection.id);setDetailTab('matrix')}else setDetailTab('actions')}} style={{minHeight:48,paddingVertical:10,justifyContent:'center',borderTopWidth:1,borderTopColor:'#adca43',gap:4}}><Text style={{color:'#435b31',fontSize:12}}>{roadmapNext.fromOtherStage?`Шаг из ${nextActionLocation}`:'Следующий шаг'}</Text><Text style={{color:'#263c19',fontSize:16,lineHeight:23}}>{nextAction.title}</Text></Pressable>}
-                {!nextAction&&currentMilestone?<Pressable accessibilityRole="button" onPress={()=>{setDetailTab('actions');setAddKind('action')}} style={{minHeight:48,paddingVertical:10,justifyContent:'center',borderTopWidth:1,borderTopColor:'#adca43'}}><Text style={{color:'#263c19',fontSize:15}}>Добавить действие к этапу «{currentMilestone.title}»</Text></Pressable>:null}
-              </BentoCard>
-              <BentoCard tone="soft" style={[local.factPanel,narrow&&local.factPanelMobile]}>
-                <View style={local.factGrid}>
-                  <View style={local.factCell}><Text style={local.factLabel}>Срок</Text><Text numberOfLines={2} style={local.factValue}>{goal.deadline?formatDateLong(goal.deadline):'Без срока'}</Text></View>
-                  <View style={local.factCell}><Text style={local.factLabel}>Приоритет</Text><Text numberOfLines={1} style={local.factValue}>{priorityLabels[goal.priority]}</Text></View>
-                  <View style={local.factCell}><Text style={local.factLabel}>Статус</Text><Text numberOfLines={1} style={local.factValue}>{goal.status==='completed'?'Завершена':goal.status==='paused'?'Пауза':'Активна'}</Text></View>
-                  <View style={local.factCell}><Text style={local.factLabel}>Этапы</Text><Text numberOfLines={1} style={local.factValue}>{goal.milestones.filter(stage=>calculateMilestoneProgress(stage,goal.actions)===100).length} из {goal.milestones.length}</Text></View>
-                </View>
-              </BentoCard>
-            </BentoGrid>
+      <ScrollView contentContainerStyle={[local.scrollContent, local.detailsContent]} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
+        <BentoCard testID="goal-hero" tone="light" style={local.goalSummaryCard}>
+          <View style={local.goalSummaryRow}>
+            <View style={local.flexText}>
+              <Text style={local.goalMeta}>{goal.desiredResult || 'Результат пока не задан'}</Text>
+              <Text style={local.goalSummaryMeta}>{goal.deadline ? `Срок ${formatDateLong(goal.deadline)}` : 'Без срока'} · {priorityLabels[goal.priority]} · {goal.status === 'completed' ? 'завершена' : goal.status === 'paused' ? 'на паузе' : 'активна'}{goal.milestones.length ? ` · этапы ${goal.milestones.filter(stage=>calculateMilestoneProgress(stage,goal.actions)===100).length}/${goal.milestones.length}` : ''}</Text>
+            </View>
+            <Text style={local.summaryProgress}>{progress}%</Text>
+          </View>
+          <View accessibilityRole="progressbar" accessibilityLabel={`Прогресс цели: ${progress}%`} accessibilityValue={{min:0,max:100,now:progress}} style={local.summaryTrack}><View style={[local.summaryFill,{width:`${progress}%`}]}/></View>
+          {currentStage ? <Text style={local.goalSummaryMeta}>Сейчас: {currentStage}</Text> : null}
+          {nextAction ? <Pressable accessibilityRole="button" accessibilityLabel={`Открыть следующий шаг: ${nextAction.title}`} onPress={()=>{if(actionMilestone){setFocusRoadmapStageId(actionMilestone.id);setDetailTab('roadmap')}else if(actionDirection){setFocusDirectionId(actionDirection.id);setDetailTab('matrix')}else setDetailTab('actions')}} style={local.nextStepStrip}><View style={local.flexText}><Text style={local.nextStepLabel}>{roadmapNext.fromOtherStage ? `Следующий шаг · ${nextActionLocation}` : 'Следующий шаг'}</Text><Text numberOfLines={1} style={local.nextStepTitle}>{nextAction.title}</Text></View><ChevronRight color={muted} size={18}/></Pressable> : currentMilestone ? <Pressable accessibilityRole="button" onPress={()=>{setDetailTab('actions');setAddKind('action')}} style={local.nextStepStrip}><Text style={local.nextStepTitle}>Добавить действие к этапу «{currentMilestone.title}»</Text><ChevronRight color={muted} size={18}/></Pressable> : null}
+        </BentoCard>
 
             <View style={local.detailTabs} accessibilityRole="tablist">
               {([
@@ -385,7 +374,7 @@ function GoalDetails({ goal, goals, isDesktop = false, isOnline, hasCloudSync = 
               </View>
             ) : null}
 
-            {detailTab === 'matrix' ? <View style={local.tabContent}><Text style={local.blockTitle}>Карта цели ОТАНИ</Text><Text style={local.goalMeta}>Цель в центре, вокруг — 8 направлений. Каждое раскрывается в 8 шагов. Начни с нужных тебе квадратов — заполнять все сразу необязательно.</Text><GoalMatrix initialDirectionId={focusDirectionId} goal={goal} isDesktop={isDesktop} onUpdateGoal={updateGoal} onRequestAI={() => setStructureOpen(true)} /></View> : null}
+            {detailTab === 'matrix' ? <View style={local.tabContent}><GoalMatrix initialDirectionId={focusDirectionId} goal={goal} isDesktop={isDesktop} onUpdateGoal={updateGoal} onRequestAI={() => setStructureOpen(true)} /></View> : null}
 
             {detailTab === 'context' ? (
               <View style={local.tabContent}>
@@ -396,24 +385,6 @@ function GoalDetails({ goal, goals, isDesktop = false, isOnline, hasCloudSync = 
                 </View>
               </View>
             ) : null}
-          </View>
-          <RightPanel enabled={isDesktop}><View style={isDesktop ? local.desktopAside : undefined} testID={isDesktop ? 'desktop-right-column' : undefined}>
-            {isDesktop ? (
-              <View style={local.goalNavigation}>
-                <View style={local.navigationHeader}>
-                  <Text style={local.blockTitle}>Цели</Text>
-                  <Pressable accessibilityRole="button" accessibilityLabel="Создать цель" onPress={onCreate} style={local.navigationAdd}><Plus color={accent} size={16} /></Pressable>
-                </View>
-                {goals.map((item) => (
-                  <Pressable accessibilityRole="button" accessibilityLabel={item.title} accessibilityState={{ selected: item.id === goal.id }} aria-current={item.id === goal.id ? 'page' : undefined} key={item.id} onPress={() => onSelect(item.id)} style={[local.navigationRow, item.id === goal.id && local.navigationRowActive]}>
-                    <Text numberOfLines={1} style={[local.navigationText, item.id === goal.id && local.navigationTextActive]}>{item.title}</Text>
-                    <Text style={local.goalMeta}>{calculateGoalProgress(item)}%</Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-          </View></RightPanel>
-        </View>
       </ScrollView>
 
       <AddGoalItemSheet goal={goal} kind={addKind} defaultMilestoneId={currentMilestone?.id} onClose={() => setAddKind(null)} onUpdateGoal={updateGoal} />
@@ -1154,7 +1125,17 @@ function MenuButton({ label, onPress, danger }: { label: string; onPress: () => 
 
 const local = StyleSheet.create({
   screen: { flex: 1, minHeight: 0 },
-  detailPage: { alignSelf: 'center', gap: 12, maxWidth: 960, padding: 20, paddingTop: 0, width: '100%' },
+  detailPage: { alignSelf: 'center', gap: 8, maxWidth: 1100, padding: 20, paddingTop: 8, width: '100%' },
+  detailsContent: { alignSelf: 'center', gap: 12, maxWidth: 1100, paddingBottom: 90, width: '100%' },
+  goalSummaryCard: { gap: 8, padding: 14 },
+  goalSummaryRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
+  goalSummaryMeta: { color: muted, fontSize: 12, lineHeight: 17 },
+  summaryProgress: { color: text, fontSize: 20, fontWeight: '600' },
+  summaryTrack: { backgroundColor: panelSoft, borderRadius: 99, height: 5, overflow: 'hidden', width: '100%' },
+  summaryFill: { backgroundColor: accent, borderRadius: 99, height: 5 },
+  nextStepStrip: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 10, justifyContent: 'space-between', minHeight: 46, paddingHorizontal: 12, paddingVertical: 7 },
+  nextStepLabel: { color: muted, fontSize: 11, lineHeight: 15 },
+  nextStepTitle: { color: text, fontSize: 13, fontWeight: '600', lineHeight: 18 },
   pageContent: { alignSelf: 'center', gap: 12, maxWidth: 1100, padding: 20, paddingTop: 8, width: '100%' },
   goalSummary: { gap: 12 },
   goalHeroGrid: { alignItems: 'flex-start' },
@@ -1205,7 +1186,7 @@ const local = StyleSheet.create({
   cardHeader: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
   flexText: { flex: 1, minWidth: 0 },
   goalTitle: { color: text, fontSize: 16, lineHeight: 22 },
-  detailsTitle: { color: text, flex: 1, fontSize: 18, lineHeight: 24 },
+  detailsTitle: { color: text, flex: 1, fontSize: 22, lineHeight: 28, fontWeight: '600' },
   goalMeta: { color: muted, fontSize: 12, lineHeight: 17 },
   progressNumber: { color: text, fontSize: 22, fontWeight: '300' },
   todayPreview: { borderTopColor: 'rgba(23,32,24,0.16)', borderTopWidth: 1, gap: 5, paddingTop: 9 },
@@ -1238,8 +1219,8 @@ const local = StyleSheet.create({
   summaryText: { flex: 1, gap: 3 },
   block: { gap: 12 },
   blockTitle: { color: text, fontSize: 19, fontWeight: '700', lineHeight: 25, marginTop: 4 },
-  detailTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginVertical: 6 },
-  detailTab: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 999, borderWidth: 1, justifyContent: 'center', minHeight: 42, paddingHorizontal: 14 },
+  detailTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 2 },
+  detailTab: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 999, borderWidth: 1, justifyContent: 'center', minHeight: 38, paddingHorizontal: 12 },
   detailTabActive: { backgroundColor: activeBg, borderColor: activeBg },
   detailTabText: { color: muted, fontSize: 12, fontWeight: '600' },
   detailTabTextActive: { color: activeText, fontWeight: '700' },
