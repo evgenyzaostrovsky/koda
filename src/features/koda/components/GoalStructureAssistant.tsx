@@ -9,8 +9,9 @@ import {getActiveRoadmapClarifications,upsertRoadmapQuestions,updateRoadmapAnswe
 import type {Goal} from '../types';
 import {accent,activeBg,activeText,line,muted,panel,panelSoft,text} from '../theme';
 
-type Props={open:boolean;goal:Goal;onClose:()=>void;onUpdateGoal:(recipe:(current:Goal)=>Goal)=>void};
-export function GoalStructureAssistant({open,goal,onClose,onUpdateGoal}:Props){
+type Props={open:boolean;goal:Goal;planningMethod?:'otani'|'roadmap';onClose:()=>void;onUpdateGoal:(recipe:(current:Goal)=>Goal)=>void};
+export function GoalStructureAssistant({open,goal,planningMethod='roadmap',onClose,onUpdateGoal}:Props){
+  const isOtani=planningMethod==='otani';
   const [planScope,setPlanScope]=useState<'starter'|'full-map'>('starter');
   const context=goal.planningContext??'';
   const [rebuildPending,setRebuildPending]=useState(false);
@@ -20,7 +21,9 @@ export function GoalStructureAssistant({open,goal,onClose,onUpdateGoal}:Props){
   const [error,setError]=useState('');
   const [proposal,setProposal]=useState<GoalPlanSuggestion|null>(null);
   const [proposalSource,setProposalSource]=useState<string|null>(null);
+  const [otaniQuestions,setOtaniQuestions]=useState<Array<{id:string;question:string;answer:string}>>([]);
   const savedClarifications=getActiveRoadmapClarifications(goal);
+  const displayedClarifications=isOtani?otaniQuestions:savedClarifications;
   const [expandedDirections,setExpandedDirections]=useState<number[]>([]);
   const autoContext=buildGoalPlanContext(goal);
   const existingDirections=autoContext.existingDirections??[];
@@ -29,17 +32,17 @@ export function GoalStructureAssistant({open,goal,onClose,onUpdateGoal}:Props){
   const source=JSON.stringify({id:goal.id,title:goal.title,desiredResult:goal.desiredResult,deadline:goal.deadline,status:goal.status,archivedAt:goal.archivedAt,milestones:goal.milestones.map(m=>[m.id,m.title,m.status,m.deadline]),actions:goal.actions.map(a=>[a.id,a.title,a.status,a.archivedAt,a.completedAt,a.milestoneId,a.dueDate]),directions:goal.openWindow?.directions.map(d=>[d.id,d.title,d.archivedAt,d.actionIds,d.routineIds]),routines:goal.routines.map(r=>[r.id,r.title,r.isActive,r.metricType,r.targetValue,r.frequencyType,r.weekdays,r.startDate,r.endDate])});
   const revisionMode=planScope==='full-map'&&rebuildPending?'rebuild-pending':undefined;
   const stepDensity=planScope==='full-map'&&!fillAllSteps?'adaptive':undefined;
-  const basis=JSON.stringify([source,planScope,context.trim().slice(0,2000),minutes,revisionMode,fillAllSteps,stepDensity,autoContext]);
-  const clarifications=savedClarifications.map(({question,answer})=>({question,answer:answer.trim()||'не знаю'}));
+  const basis=JSON.stringify([source,planningMethod,planScope,context.trim().slice(0,2000),minutes,revisionMode,fillAllSteps,stepDensity,autoContext]);
+  const clarifications=displayedClarifications.map(({question,answer})=>({question,answer:answer.trim()||'не знаю'}));
   const requestSource=JSON.stringify([basis,clarifications]);
   const latestSource=useRef(requestSource);latestSource.current=requestSource;
   const staleProposal=Boolean(proposal?.directions.length&&proposalSource!==requestSource);
   const [pendingApply,setPendingApply]=useState<{base:string;changeId:string}|null>(null);
   const requestId=useRef(0);
   useEffect(()=>{
-    requestId.current++;setPlanScope(getActiveRoadmapClarifications(goal).length?'full-map':'starter');setMinutes('20');setRebuildPending(false);setFillAllSteps(false);setProposal(null);setProposalSource(null);setExpandedDirections([]);setPendingApply(null);setError('');setBusy(false);
+    requestId.current++;setPlanScope(getActiveRoadmapClarifications(goal).length?'full-map':'starter');setMinutes('20');setRebuildPending(false);setFillAllSteps(false);setProposal(null);setProposalSource(null);setOtaniQuestions([]);setExpandedDirections([]);setPendingApply(null);setError('');setBusy(false);
     return()=>{requestId.current++;};
-  },[open,goal.id]);
+  },[open,goal.id,planningMethod]);
   useEffect(()=>{
     if(!pendingApply||!open)return;
     if(goal.openWindow?.history.some(change=>change.id===pendingApply.changeId)){
@@ -49,20 +52,25 @@ export function GoalStructureAssistant({open,goal,onClose,onUpdateGoal}:Props){
     }
   },[goal,pendingApply,open,onClose]);
   async function suggest(){
-    if(planScope==='full-map'&&goal.openWindow?.directions.every(d=>Boolean(d.archivedAt))){setError('Все направления в архиве. Сначала восстанови хотя бы одно направление.');return;}
+    if(!isOtani&&planScope==='full-map'&&goal.openWindow?.directions.every(d=>Boolean(d.archivedAt))){setError('Все направления в архиве. Сначала восстанови хотя бы одно направление.');return;}
     const available=Number(minutes);
     if(!Number.isFinite(available)||available<10||available>480){setError('Укажи от 10 до 480 минут на один подход. Это не ежедневное обязательство.');return;}
-    const id=++requestId.current,requestedSource=requestSource,requestedScope=planScope,requestedRevisionMode=revisionMode,requestedStepDensity=stepDensity;setBusy(true);setError('');setProposal(null);setProposalSource(null);
+    const id=++requestId.current,requestedSource=requestSource,requestedScope=planScope,requestedRevisionMode=isOtani?undefined:revisionMode,requestedStepDensity=isOtani?undefined:stepDensity;setBusy(true);setError('');setProposal(null);setProposalSource(null);
     try{
-      const result=await requestGoalPlan({wish:[`Главная цель: ${goal.title.slice(0,400)}`,requestedScope==='full-map'?fillAllSteps?'Подготовь полный роадмап из 8 этапов и заполни все 8 шагов каждого этапа (64 шага): долгосрочные варианты, не ежедневные обязанности.':'Подготовь конкретный роадмап до 8 этапов и предложи только обоснованные известными фактами шаги: долгосрочные варианты, не ежедневные обязанности.':'Предложи ближайшие полезные шаги от текущей точки, не начинай заново.'].join('\n'),desiredResult:goal.desiredResult||undefined,availableMinutes:available,clarifyRoadmap:true,clarifications,planScope:requestedScope,currentState:context.trim().slice(0,2000)||undefined,revisionMode:requestedRevisionMode,stepDensity:requestedStepDensity,goalProgress:autoContext.goalProgress,existingDirections:autoContext.existingDirections});
+      const result=await requestGoalPlan({wish:isOtani?`Главная цель: ${goal.title.slice(0,400)}\nСформируй независимые поддерживающие факторы по методу OTANI, не последовательные этапы.`:[`Главная цель: ${goal.title.slice(0,400)}`,requestedScope==='full-map'?fillAllSteps?'Подготовь полный роадмап из 8 этапов и заполни все 8 шагов каждого этапа (64 шага): долгосрочные варианты, не ежедневные обязанности.':'Подготовь конкретный роадмап до 8 этапов и предложи только обоснованные известными фактами шаги: долгосрочные варианты, не ежедневные обязанности.':'Предложи ближайшие полезные шаги от текущей точки, не начинай заново.'].join('\n'),desiredResult:goal.desiredResult||undefined,availableMinutes:available,...(isOtani?{planningMethod:'otani' as const,clarifyGoal:true,planScope:'full-map' as const,clarifications}:{planningMethod:'roadmap' as const,clarifyRoadmap:true,clarifications,planScope:requestedScope,revisionMode:requestedRevisionMode,stepDensity:requestedStepDensity}),currentState:context.trim().slice(0,2000)||undefined,goalProgress:autoContext.goalProgress,existingDirections:autoContext.existingDirections});
       if(id!==requestId.current)return;
       if(requestedSource!==latestSource.current){setProposal(null);setError('Цель изменилась, пока KODA готовила предложения. Запроси новый вариант для актуальной цели.');return;}
       if(result.clarificationQuestions?.length){
-        const now=new Date().toISOString();
-        onUpdateGoal(current=>upsertRoadmapQuestions(current,result.clarificationQuestions!,now));return;
+        if(isOtani){
+          setOtaniQuestions(current=>result.clarificationQuestions!.map((question,index)=>{const existing=current.find(item=>item.question===question);return {id:existing?.id??`otani-${Date.now()}-${index}`,question,answer:existing?.answer??''};}));
+        }else{
+          const now=new Date().toISOString();
+          onUpdateGoal(current=>upsertRoadmapQuestions(current,result.clarificationQuestions!,now));
+        }
+        return;
       }
-      setProposal(result);setProposalSource(requestedSource);setExpandedDirections(requestedScope==='starter'?result.directions.map((_,index)=>index):[]);
-    }catch{if(id===requestId.current)setError('KODA пока не смогла предложить направления. Попробуй ещё раз или добавь их вручную в карте. Ничего не изменено.');}
+      setProposal(result);setProposalSource(requestedSource);setExpandedDirections(requestedScope==='starter'||isOtani?result.directions.map((_,index)=>index):[]);
+    }catch{if(id===requestId.current)setError(isOtani?'KODA пока не смогла предложить факторы. Попробуй ещё раз или добавь их вручную в матрице. Ничего не изменено.':'KODA пока не смогла предложить направления. Попробуй ещё раз или добавь их вручную в карте. Ничего не изменено.');}
     finally{if(id===requestId.current)setBusy(false);}
   }
   function editDirection(index:number,title:string){setProposal(p=>p?{...p,directions:p.directions.map((d,i)=>i===index?{...d,title}:d)}:p);}
@@ -85,13 +93,14 @@ export function GoalStructureAssistant({open,goal,onClose,onUpdateGoal}:Props){
   }
   if(!open)return null;
   return <Modal transparent visible onRequestClose={onClose} animationType="none">
-    <View style={styles.overlay}><View accessibilityViewIsModal accessibilityLabel="KODA: направления от главной цели" style={styles.sheet}>
-      <View style={styles.header}><Text accessibilityRole="header" style={styles.title}>Направления от цели</Text><Pressable accessibilityRole="button" accessibilityLabel="Закрыть помощь с направлениями" onPress={onClose} style={styles.close}><X size={20} color={text}/></Pressable></View>
+    <View style={styles.overlay}><View accessibilityViewIsModal accessibilityLabel={isOtani?'KODA: квадраты ОТАНИ':'KODA: направления от главной цели'} style={styles.sheet}>
+      <View style={styles.header}><Text accessibilityRole="header" style={styles.title}>{isOtani?'Квадраты ОТАНИ':'Направления от цели'}</Text><Pressable accessibilityRole="button" accessibilityLabel="Закрыть помощь с направлениями" onPress={onClose} style={styles.close}><X size={20} color={text}/></Pressable></View>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
         <Text style={styles.goal}>{goal.title}</Text>
         {!!goal.desiredResult&&<Text style={styles.help}>{goal.desiredResult}</Text>}
-        <Text style={styles.help}>Расскажи, где ты сейчас и чего уже достиг. KODA подготовит следующий план, а ты проверишь его до добавления в цель.</Text>
-        <Text style={styles.label}>Какую карту подготовить?</Text>
+        <Text style={styles.help}>{isOtani?'Расскажи о своей стартовой точке, времени и доступных ресурсах. KODA предложит независимые факторы и наблюдаемые действия; ты проверишь их до добавления в цель.':'Расскажи, где ты сейчас и чего уже достиг. KODA подготовит следующий план, а ты проверишь его до добавления в цель.'}</Text>
+        {!isOtani&&<Text style={styles.label}>Какую карту подготовить?</Text>}
+        {!isOtani&&
         <View style={styles.scopeRow}>
           <Pressable accessibilityRole="radio" accessibilityState={{checked:planScope==='starter'}} onPress={()=>chooseScope('starter')} style={[styles.scopeOption,planScope==='starter'&&styles.scopeOptionActive,pendingApply&&styles.disabled]}>
             <Text style={[styles.scopeTitle,planScope==='starter'&&styles.scopeTitleActive]}>Небольшой старт</Text>
@@ -101,12 +110,12 @@ export function GoalStructureAssistant({open,goal,onClose,onUpdateGoal}:Props){
             <Text style={[styles.scopeTitle,planScope==='full-map'&&styles.scopeTitleActive]}>Полный роадмап</Text>
             <Text style={styles.scopeHelp}>До 8 этапов, только нужные шаги</Text>
           </Pressable>
-        </View>
-        {planScope==='full-map'&&<Text style={styles.help}>KODA свяжет этапы с твоим контекстом. Если данных мало, сначала задаст пару вопросов. Неизвестные части пути можно уточнить позже.</Text>}
-        {planScope==='full-map'&&<View style={styles.rebuildBox}>
+        </View>}
+        {!isOtani&&planScope==='full-map'&&<Text style={styles.help}>KODA свяжет этапы с твоим контекстом. Если данных мало, сначала задаст пару вопросов. Неизвестные части пути можно уточнить позже.</Text>}
+        {!isOtani&&planScope==='full-map'&&<View style={styles.rebuildBox}>
           <Pressable accessibilityRole="checkbox" accessibilityState={{checked:fillAllSteps,disabled:busy||Boolean(pendingApply)}} disabled={busy||Boolean(pendingApply)} onPress={()=>setFillAllSteps(value=>!value)} style={[styles.checkboxRow,(busy||pendingApply)&&styles.disabled]}>
             <View style={[styles.checkbox,fillAllSteps&&styles.checkboxActive]}>{fillAllSteps&&<Check size={14} color={activeText} strokeWidth={3}/>}</View>
-            <Text style={styles.checkboxLabel}>Заполнить все 64 шага</Text>
+          <Text style={styles.checkboxLabel}>Заполнить все 64 шага</Text>
           </Pressable>
           <Text style={styles.help}>Без отметки KODA предложит столько шагов, сколько нужно; пустые слоты можно заполнить позже.</Text>
         </View>}
@@ -118,7 +127,7 @@ export function GoalStructureAssistant({open,goal,onClose,onUpdateGoal}:Props){
         <Text style={styles.label}>Где ты сейчас и что уже есть?</Text>
         <TextInput accessibilityLabel="Где ты сейчас и что уже есть?" editable={!busy} value={context} onChangeText={value=>onUpdateGoal(current=>({...current,planningContext:value.slice(0,2000)}))} maxLength={2000} multiline placeholder="Например: прошёл половину курса, знаю SQL, уже собрал датасет. Хочу научиться анализировать данные и собрать портфолио." placeholderTextColor={muted} style={[styles.input,styles.multiline]}/>
         <Text style={styles.autoNote}>Контекст сохраняется автоматически вместе с целью. Его можно дополнять или очищать. План изменится только после подтверждения.</Text>
-        {planScope==='full-map'&&hasExistingStructure&&<View style={styles.rebuildBox}>
+        {!isOtani&&planScope==='full-map'&&hasExistingStructure&&<View style={styles.rebuildBox}>
           <Pressable accessibilityRole="checkbox" accessibilityState={{checked:rebuildPending,disabled:busy||Boolean(pendingApply)}} disabled={busy||Boolean(pendingApply)} onPress={()=>setRebuildPending(value=>!value)} style={[styles.checkboxRow,(busy||pendingApply)&&styles.disabled]}>
             <View style={[styles.checkbox,rebuildPending&&styles.checkboxActive]}>{rebuildPending&&<Check size={14} color={activeText} strokeWidth={3}/>}</View>
             <Text style={styles.checkboxLabel}>Пересобрать будущие шаги</Text>
@@ -127,21 +136,21 @@ export function GoalStructureAssistant({open,goal,onClose,onUpdateGoal}:Props){
         </View>}
         <Text style={styles.label}>Минут на один подход, когда есть силы</Text>
         <TextInput accessibilityLabel="Минут на один подход" editable={!busy} value={minutes} onChangeText={setMinutes} inputMode="numeric" maxLength={3} style={styles.input}/>
-        {!!savedClarifications.length&&<View style={styles.review}>
-          <Text style={styles.label}>Уточнения к цели</Text>
-          <Text style={styles.help}>Вопросы и ответы сохраняются вместе с целью и передаются KODA при следующем запросе. Можно ответить «не знаю», исправить ответ или удалить уточнение.</Text>
-          {savedClarifications.map(({id,question,answer},index)=><View key={id} style={styles.actionRow}>
-            <View style={styles.row}><Text style={[styles.help,styles.flex]}>{question}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Удалить уточнение ${index+1}`} disabled={busy} onPress={()=>{const now=new Date().toISOString();onUpdateGoal(current=>removeRoadmapClarification(current,id,now));}} style={styles.close}><X size={16} color={muted}/></Pressable></View>
-            <TextInput accessibilityLabel={`Ответ на вопрос о роадмапе ${index+1}`} editable={!busy} value={answer} onChangeText={value=>{const now=new Date().toISOString();onUpdateGoal(current=>updateRoadmapAnswer(current,id,value,now));}} maxLength={400} multiline style={[styles.input,styles.multiline]}/>
+        {!!displayedClarifications.length&&<View style={styles.review}>
+          <Text style={styles.label}>{isOtani?'Уточнения':'Уточнения к роадмапу'}</Text>
+          <Text style={styles.help}>{isOtani?'Ответы передаются при следующем запросе, чтобы KODA учла их и не задавала те же вопросы повторно.':'Вопросы и ответы сохраняются вместе с целью и передаются KODA при следующем запросе. Можно ответить «не знаю», исправить ответ или удалить уточнение.'}</Text>
+          {displayedClarifications.map(({id,question,answer},index)=><View key={id} style={styles.actionRow}>
+            <View style={styles.row}><Text style={[styles.help,styles.flex]}>{question}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Удалить уточнение ${index+1}`} disabled={busy} onPress={()=>{if(isOtani)setOtaniQuestions(current=>current.filter(item=>item.id!==id));else{const now=new Date().toISOString();onUpdateGoal(current=>removeRoadmapClarification(current,id,now));}}} style={styles.close}><X size={16} color={muted}/></Pressable></View>
+            <TextInput accessibilityLabel={`Ответ на вопрос ${index+1}`} editable={!busy} value={answer} onChangeText={value=>{if(isOtani)setOtaniQuestions(current=>current.map(item=>item.id===id?{...item,answer:value}:item));else{const now=new Date().toISOString();onUpdateGoal(current=>updateRoadmapAnswer(current,id,value,now));}}} maxLength={400} multiline style={[styles.input,styles.multiline]}/>
           </View>)}
         </View>}
-        <Pressable accessibilityRole="button" disabled={busy} onPress={()=>void suggest()} style={[styles.secondary,busy&&styles.disabled]}><Sparkles size={17} color={accent}/><Text style={styles.secondaryText}>{busy?'Подбираю направления…':proposal?'Предложить другой вариант':savedClarifications.length?'Построить с учётом ответов':'Предложить направления'}</Text>{busy&&<ActivityIndicator color={accent}/>}</Pressable>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={()=>void suggest()} style={[styles.secondary,busy&&styles.disabled]}><Sparkles size={17} color={accent}/><Text style={styles.secondaryText}>{busy?(isOtani?'Подбираю факторы…':'Подбираю направления…'):proposal?'Предложить другой вариант':displayedClarifications.length?'Построить с учётом ответов':isOtani?'Предложить факторы':'Предложить направления'}</Text>{busy&&<ActivityIndicator color={accent}/>}</Pressable>
         {!!error&&<Text accessibilityRole="alert" style={styles.help}>{error}</Text>}
         {staleProposal&&!pendingApply&&<Text accessibilityRole="alert" style={styles.help}>Условия изменились. Запроси новый вариант перед сохранением.</Text>}
         {!!proposal?.planningNote&&proposalSource===requestSource&&<Text style={styles.help}>{proposal.planningNote}</Text>}
         {proposal&&proposal.directions.length>0&&<View style={styles.review}>
           <Text style={styles.label}>Проверь и поправь предложения</Text>
-          {planScope==='full-map'&&<Text style={styles.count}>{proposal.directions.length} этапов · {proposal.directions.reduce((count,direction)=>count+direction.actions.length,0)} шагов</Text>}
+          {(planScope==='full-map'||isOtani)&&<Text style={styles.count}>{proposal.directions.length} {isOtani?'факторов':'этапов'} · {proposal.directions.reduce((count,direction)=>count+direction.actions.length,0)} {isOtani?'действий':'шагов'}</Text>}
           {revisionMode==='rebuild-pending'&&<Text style={styles.replaceWarning}>Будущие шаги будут заменены или отправлены в архив после подтверждения. Выполненные дела, ритуалы и история карты сохранятся.</Text>}
           <Text style={styles.help}>Можно убрать направления и отдельные шаги. Совпадающие дела не будут созданы повторно.</Text>
           {[...proposal.directions].map((direction,index)=>({direction,index})).sort((a,b)=>(a.direction.slotIndex??a.index)-(b.direction.slotIndex??b.index)).map(({direction,index},displayIndex)=>{
@@ -152,9 +161,9 @@ export function GoalStructureAssistant({open,goal,onClose,onUpdateGoal}:Props){
             return <View key={index} style={styles.direction}>
               <View style={styles.row}>
                 {planScope==='full-map'&&<Pressable accessibilityRole="button" accessibilityLabel={`${expanded?'Свернуть':'Показать'} шаги направления ${index+1}`} onPress={()=>toggleDirection(index)} style={styles.expandButton}>{expanded?<ChevronUp size={17} color={accent}/>:<ChevronDown size={17} color={accent}/>}</Pressable>}
-                {planScope==='full-map'&&<Text style={styles.sequence}>Этап {displayIndex+1}</Text>}
-                <TextInput accessibilityLabel={`Предложенное направление ${displayIndex+1}`} editable={!busy} value={direction.title} onChangeText={v=>editDirection(index,v)} maxLength={200} style={[styles.input,styles.flex]}/>
-                <Pressable accessibilityRole="button" accessibilityLabel={`Убрать предложенное направление ${index+1}`} disabled={busy} onPress={()=>{setProposal(p=>p?{...p,directions:p.directions.filter((_,i)=>i!==index)}:p);setExpandedDirections([]);}} style={styles.close}><X size={18} color={muted}/></Pressable>
+                {planScope==='full-map'&&!isOtani&&<Text style={styles.sequence}>Этап {displayIndex+1}</Text>}
+                <TextInput accessibilityLabel={`Предложенное ${isOtani?'фактор':'направление'} ${displayIndex+1}`} editable={!busy} value={direction.title} onChangeText={v=>editDirection(index,v)} maxLength={200} style={[styles.input,styles.flex]}/>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Убрать предложенное ${isOtani?'фактор':'направление'} ${index+1}`} disabled={busy} onPress={()=>{setProposal(p=>p?{...p,directions:p.directions.filter((_,i)=>i!==index)}:p);setExpandedDirections([]);}} style={styles.close}><X size={18} color={muted}/></Pressable>
               </View>
               {planScope==='full-map'&&!expanded&&<Pressable accessibilityRole="button" onPress={()=>toggleDirection(index)} style={styles.expandSummary}><Text style={styles.expandText}>Показать {direction.actions.length} шагов</Text></Pressable>}
               {expanded&&direction.actions.map((action,actionIndex)=>{
@@ -165,7 +174,7 @@ export function GoalStructureAssistant({open,goal,onClose,onUpdateGoal}:Props){
                 return <View key={actionIndex} style={styles.actionRow}>
                   {isCompleted&&<Text style={styles.protectedLabel}>Уже выполнено</Text>}
                   {isRoutine&&<Text style={styles.protectedLabel}>Привычка сохранится</Text>}
-                  <View style={styles.row}><Text style={styles.stepSequence}>Шаг {actionIndex+1}</Text><TextInput accessibilityLabel={`Шаг ${actionIndex+1} для предложения ${displayIndex+1}`} editable={!busy&&!protectedAction} value={action} onChangeText={v=>editAction(index,actionIndex,v)} maxLength={300} style={[styles.input,styles.flex,protectedAction&&styles.protectedInput]}/>{!protectedAction&&<Pressable accessibilityRole="button" accessibilityLabel={`Убрать шаг ${actionIndex+1} из направления ${displayIndex+1}`} disabled={busy} onPress={()=>setProposal(p=>p?{...p,directions:p.directions.map((d,i)=>i===index?{...d,actions:d.actions.filter((_,j)=>j!==actionIndex)}:d)}:p)} style={styles.close}><X size={16} color={muted}/></Pressable>}</View>
+                  <View style={styles.row}><Text style={styles.stepSequence}>{isOtani?'Действие':'Шаг'} {actionIndex+1}</Text><TextInput accessibilityLabel={`${isOtani?'Действие':'Шаг'} ${actionIndex+1} для предложения ${displayIndex+1}`} editable={!busy&&!protectedAction} value={action} onChangeText={v=>editAction(index,actionIndex,v)} maxLength={300} style={[styles.input,styles.flex,protectedAction&&styles.protectedInput]}/>{!protectedAction&&<Pressable accessibilityRole="button" accessibilityLabel={`Убрать ${isOtani?'действие':'шаг'} ${actionIndex+1} ${isOtani?'из фактора':'из направления'} ${displayIndex+1}`} disabled={busy} onPress={()=>setProposal(p=>p?{...p,directions:p.directions.map((d,i)=>i===index?{...d,actions:d.actions.filter((_,j)=>j!==actionIndex)}:d)}:p)} style={styles.close}><X size={16} color={muted}/></Pressable>}</View>
                 </View>;
               })}
             </View>;

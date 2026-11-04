@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Send } from 'lucide-react-native';
+import { AssistantMemory } from '../components/AssistantMemory';
 import type { ChatMessage } from '../types';
 import { SectionTitle } from '../components';
 import { BentoPage, bentoWidths } from '../components/Bento';
@@ -17,6 +18,9 @@ const providerNames: Record<Exclude<KodaProvider, null>, string> = {
 };
 
 type KodaScreenProps = {
+  userId?: string | null;
+  memorySuggestion?: string | null;
+  onDismissMemorySuggestion?: () => void;
   chat: ChatMessage[];
   isDesktop?: boolean;
   isSending?: boolean;
@@ -36,6 +40,9 @@ type KodaScreenProps = {
 };
 
 export function KodaScreen({
+  userId,
+  memorySuggestion,
+  onDismissMemorySuggestion,
   chat,
   isDesktop = false,
   isSending = false,
@@ -189,6 +196,7 @@ export function KodaScreen({
       <View style={styles.kodaScreen}>
         <BentoPage maxWidth={bentoWidths.assistant} scroll={showWelcome} contentStyle={local.assistantPageContent}>
           <SectionTitle title="Помощник" subtitle={subtitle} />
+          <AssistantMemory key={userId} userId={userId} suggestion={memorySuggestion} onDismissSuggestion={onDismissMemorySuggestion}/>
           {chatPane}
         </BentoPage>
       </View>
@@ -200,6 +208,7 @@ export function KodaScreen({
       <View style={styles.kodaDesktopHeader}>
         <SectionTitle title="Помощник" subtitle={subtitle} />
       </View>
+      <AssistantMemory key={userId} userId={userId} suggestion={memorySuggestion} onDismissSuggestion={onDismissMemorySuggestion}/>
       {chatPane}
     </BentoPage>
   );

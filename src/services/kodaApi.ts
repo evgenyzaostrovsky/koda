@@ -73,7 +73,7 @@ export async function generateKodaState(input: {
   return response.json();
 }
 
-export async function requestChat(messages: Array<{role:'user'|'assistant';content:string}>): Promise<{reply:string;provider:'yandex'|'openrouter'|'gemini'|'openai'}> {
+export async function requestChat(messages: Array<{role:'user'|'assistant';content:string}>): Promise<{reply:string;provider:'yandex'|'openrouter'|'gemini'|'openai';memorySuggestion?:string}> {
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),50000);
   try {

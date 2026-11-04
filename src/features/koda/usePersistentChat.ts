@@ -22,6 +22,7 @@ export function usePersistentChat(userId?:string|null,isActive=true) {
   const [snapshot,setSnapshot]=useState<ChatHistorySnapshot>(empty);
   const current=useRef<ChatHistorySnapshot>(empty());
   const [busy,setBusy]=useState(false);
+  const [memorySuggestion,setMemorySuggestion]=useState<string|null>(null);
   const lock=useRef(false);
   const [error,setError]=useState<string|null>(null);
   const [recovery,setRecovery]=useState<Recovery>(null);
@@ -46,7 +47,7 @@ export function usePersistentChat(userId?:string|null,isActive=true) {
   useEffect(()=>{
     let active=true;
     const epoch=++scope.current.epoch;
-    setLoadedKey(null);setError(null);setRecovery(null);setBusy(false);lock.current=false;setSaveStatus('saved');
+    setMemorySuggestion(null);setLoadedKey(null);setError(null);setRecovery(null);setBusy(false);lock.current=false;setSaveStatus('saved');
     current.current=empty();durableSnapshot.current=null;setSnapshot(empty());cloudBusy.current=false;cloudAgain.current=false;setCloudError(null);setCloudStatus('local');
     store.load(userId).then(value=>{
       if(!active||!isCurrent(epoch))return;
@@ -81,6 +82,7 @@ export function usePersistentChat(userId?:string|null,isActive=true) {
       cloudTrigger.current();
       const result=await requestChat(messages);
       if(!isCurrent(epoch))return;
+      setMemorySuggestion(typeof result.memorySuggestion==='string'?result.memorySuggestion:null);
       const replyId='reply-'+pending.pendingMessageId;
       const alreadyAnswered=current.current.messages.some(m=>m.id===replyId);
       const complete:ChatHistorySnapshot={...current.current,messages:alreadyAnswered?current.current.messages:[...current.current.messages,{id:replyId,role:'koda',text:result.reply,createdAt:new Date().toISOString()}],provider:alreadyAnswered?current.current.provider:result.provider,pendingRequest:null};
@@ -208,7 +210,7 @@ export function usePersistentChat(userId?:string|null,isActive=true) {
   return {
     chat:ready?[greeting,...snapshot.messages]:[greeting],
     provider:ready?snapshot.provider:null,busy:ready&&busy,ready,
-    error,retry,send,cloudError,retrySync:()=>cloudTrigger.current(),
+    memorySuggestion:ready?memorySuggestion:null,clearMemorySuggestion:()=>setMemorySuggestion(null),error,retry,send,cloudError,retrySync:()=>cloudTrigger.current(),
     retryLabel:recovery==='load'?'Повторить загрузку':recovery==='save'?'Повторить сохранение':'Повторить',
     inputDisabled:!ready||recovery==='save'||capacityBlocked,
     historyStatus:!ready?(recovery==='load'?'История не загружена':'Открываю историю…'):saveStatus==='saving'?'Сохраняю историю…':saveStatus==='error'?'Есть несохранённые сообщения':capacityBlocked?'Есть неотправленные сообщения. Подключитесь к сети и дождитесь синхронизации, чтобы продолжить.':`Сохранено на устройстве · последние ${CHAT_HISTORY_MAX_MESSAGES} сообщений${cloudLabel}`,

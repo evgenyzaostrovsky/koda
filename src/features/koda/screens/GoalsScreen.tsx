@@ -418,7 +418,7 @@ function GoalDetails({ goal, goals, isDesktop = false, isOnline, hasCloudSync = 
                 </Pressable>
               ))}
             </View>
-            <GoalStructureAssistant key={goal.id} open={structureOpen} goal={goal} onClose={()=>setStructureOpen(false)} onUpdateGoal={updateGoal}/>
+            <GoalStructureAssistant key={goal.id+detailTab} planningMethod={detailTab==='matrix'?'otani':'roadmap'} open={structureOpen} goal={goal} onClose={()=>setStructureOpen(false)} onUpdateGoal={updateGoal}/>
 
             {detailTab === 'roadmap' ? (
               <View style={local.tabContent}>
