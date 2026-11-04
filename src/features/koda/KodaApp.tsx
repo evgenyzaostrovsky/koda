@@ -1526,7 +1526,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
       return <PlannerScreen onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} initialFocus={focusedPlannerItem} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} />;
     }
     if (activeTab === 'goals') {
-      return <GoalsScreen goals={goals} hasCloudSync={Boolean(userId) && isSupabaseConfigured()} isDesktop={isDesktopLayout} isOnline={isOnline} onGoalsChange={updateGoals} userId={userId} initialGoalId={focusedGoalId} />;
+      return <GoalsScreen onOpenWorkspace={()=>setActiveTab('habits')} goals={goals} hasCloudSync={Boolean(userId) && isSupabaseConfigured()} isDesktop={isDesktopLayout} isOnline={isOnline} onGoalsChange={updateGoals} userId={userId} initialGoalId={focusedGoalId} />;
     }
     if (activeTab === 'projects') {
       return <ProjectsScreen isDesktop={isDesktopLayout} onProjectsChange={updateProjects} projects={projects} />;
@@ -1633,7 +1633,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
     <PomodoroProvider settings={pomodoro} owner={userId ?? 'guest'} onPhase={() => playPomodoroSound(pomodoro.soundId, 'end')}>
     <SafeAreaView style={styles.safe}>
       <StatusBar style={resolveKodaThemeId(profile.themeId).endsWith('dark') ? 'light' : 'dark'} />
-      <WidgetShell focused={activeTab==='planner'||activeTab==='routines'} key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults} onLaunchFinished={()=>setLaunchFinishedOwner(userId ?? null)}>
+      <WidgetShell focused={activeTab==='planner'||activeTab==='routines'||activeTab==='goals'} key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults} onLaunchFinished={()=>setLaunchFinishedOwner(userId ?? null)}>
         {activeTab==='habits'||activeTab==='planner'||activeTab==='routines'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
       </WidgetShell>
       {!launchPending && !petRoomOpen && !quickAddOpen && <PetWanderer name={petDisplayName} state={petLife} pose={petPose} onPress={()=>setPetRoomOpen(true)} />}
