@@ -1,5 +1,5 @@
 import { mergeEmotionEntries, parseEmotionEntries } from './emotionJournal';
-import { defaultJournalEntry, initialGoals, initialHabits } from './constants';
+import { defaultJournalEntry } from './constants';
 import { normalizeGoal } from './goalLogic';
 import { mergeGoalWindows } from './openWindow';
 import { mergeRoadmapClarifications } from './goalRoadmapClarifications';
@@ -162,7 +162,7 @@ export function normalizeStoredKodaState(value: unknown): StoredKodaState | null
   if (!value || typeof value !== 'object') return null;
 
   const state = value as Partial<StoredKodaState> & { koda_days?: unknown; user_id?: unknown };
-  const goals = normalizeGoalList(state.goals) ?? initialGoals;
+  const goals = normalizeGoalList(state.goals) ?? [];
   const habits = normalizeHabitList(state.habits);
   const embeddedDays = state.profile && typeof state.profile === 'object' ? (state.profile as { __kodaDays?: unknown }).__kodaDays : undefined;
   const rawKodaDays = state.kodaDays ?? state.koda_days;
@@ -410,7 +410,7 @@ function normalizeGoalList(value: unknown): Goal[] | null {
 }
 
 function normalizeHabitList(value: unknown): Habit[] {
-  if (!Array.isArray(value)) return initialHabits.map(normalizeHabitMetadata);
+  if (!Array.isArray(value)) return [];
   // One malformed row must not replace every saved habit with starter data.
   const habits = value.flatMap(item => {
     if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !item.id.trim() ||

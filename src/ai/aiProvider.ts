@@ -4,13 +4,17 @@ import { createGeminiProvider } from './geminiProvider';
 import { createOpenRouterProvider } from './openRouterProvider';
 import { rulesProvider } from './rulesProvider';
 import { providerOrder, type AiProviderConfig } from './providerConfig';
+import { requestOpenAI } from './openAiClient';
 export function createAiProvider(config: AiProviderConfig): AiProvider {
-  const available = { yandex: createYandexProvider(config), gemini: createGeminiProvider({ apiKey: config.geminiApiKey, model: config.geminiModel }), openrouter: createOpenRouterProvider({ apiKey: config.openRouterApiKey, model: config.openRouterModel }) };
+  const available = { yandex: createYandexProvider(config), gemini: createGeminiProvider({ apiKey: config.geminiApiKey, model: config.geminiModel }), openrouter: createOpenRouterProvider({ apiKey: config.openRouterApiKey, model: config.openRouterModel }), openai: config.openAiApiKey || config.preferredProvider === 'openai' ? createOpenRouterProvider({ apiKey: config.openAiApiKey || '', model: config.openAiModel }, async (_cfg, request) => requestOpenAI({ apiKey: config.openAiApiKey, model: config.openAiModel }, request), 'openai') : null };
   const providers = providerOrder(config).map(name => available[name]).filter((provider): provider is AiProvider => Boolean(provider));
   return { name: providers[0]?.name ?? 'rules', async generate(input: KodaAiInput): Promise<KodaAiResult> {
     for (const provider of providers) {
       try { return await withTimeout(provider.generate(input), provider.name === 'gemini' ? 10000 : 45000); }
-      catch { console.warn('KODA ' + provider.name + ' unavailable; trying the next configured provider.'); }
+      catch (error) {
+        if (config.preferredProvider === 'openai') throw error;
+        console.warn('KODA ' + provider.name + ' unavailable; trying the next configured provider.');
+      }
     }
     return rulesProvider.generate(input);
   } };

@@ -1,5 +1,6 @@
 import { capacityGuidance } from './planningGuidance';
 import { requestYandex } from './yandexClient';
+import { requestOpenAI } from './openAiClient';
 import { GoogleGenAI } from '@google/genai';
 import { normalizeGoalPlanInput, validateGoalPlan, type GoalPlanInput, type GoalPlanSuggestion } from './goalPlanContract';
 import { providerOrder, type AiProviderConfig } from './providerConfig';
@@ -206,13 +207,14 @@ function reviewFacts(input:GoalPlanInput){
   };
 }
 
-async function requestReviewProvider(provider:'gemini'|'openrouter'|'yandex',config:AiProviderConfig,system:string,payload:unknown,timeoutMs:number,maxTokens:number):Promise<string>{
+async function requestReviewProvider(provider:'gemini'|'openrouter'|'yandex'|'openai',config:AiProviderConfig,system:string,payload:unknown,timeoutMs:number,maxTokens:number):Promise<string>{
   const request={messages:[{role:'system' as const,content:system},{role:'user' as const,content:JSON.stringify(payload)}],response_format:{type:'json_object' as const},temperature:0.1,max_tokens:maxTokens};
   if(provider==='gemini'){
     const client=new GoogleGenAI({apiKey:config.geminiApiKey!});
     const result=await client.models.generateContent({model:config.geminiModel||'gemini-2.5-flash-lite',contents:JSON.stringify(payload),config:{systemInstruction:system,responseMimeType:'application/json',maxOutputTokens:maxTokens,httpOptions:{timeout:timeoutMs}}});
     return result.text??'';
   }
+  if(provider==='openai')return requestOpenAI({apiKey:config.openAiApiKey,model:config.openAiModel,timeoutMs},request);
   return provider==='yandex'
     ?requestYandex({apiKey:config.yandexApiKey!,folderId:config.yandexFolderId!,model:config.yandexModel,timeoutMs},request)
     :requestOpenRouter({apiKey:config.openRouterApiKey!,model:config.openRouterModel,timeoutMs},request);
@@ -270,7 +272,7 @@ async function generateReviewedRoadmap(input:GoalPlanInput,config:AiProviderConf
     return constrainInitialGoalPlan(finalRaw,input,{requireGroundingSourceId:true});
   }catch(error){
     const failure=error as Error&{status?:unknown;reason?:unknown};
-    const name=['YandexError','OpenRouterError','GoogleGenerativeAIError'].includes(failure.name)?failure.name:'Error';
+    const name=['YandexError','OpenRouterError','OpenAiError','GoogleGenerativeAIError'].includes(failure.name)?failure.name:'Error';
     const status=typeof failure.status==='number'&&Number.isInteger(failure.status)&&failure.status>=400&&failure.status<=599?failure.status:undefined;
     const reason=['authentication','rate_limit','provider_unavailable','invalid_response','model_unavailable'].includes(String(failure.reason))?String(failure.reason):undefined;
     console.warn('KODA roadmap review did not verify the plan.',JSON.stringify({name,...(status?{status}:{}),...(reason?{reason}:{})}));
@@ -302,7 +304,7 @@ export function createGoalPlanGenerator(config: AiProviderConfig) {
           content = result.text ?? '';
         } else {
           const request = { messages: [{ role: 'system' as const, content: instruction }, { role: 'user' as const, content: JSON.stringify(modelInput) }], response_format: { type: 'json_object' as const }, temperature: 0.4, max_tokens:input.planScope==='full-map'?8000:3000 };
-          content = provider === 'yandex' ? await requestYandex({ apiKey: config.yandexApiKey!, folderId: config.yandexFolderId!, model: config.yandexModel }, request) : await requestOpenRouter({ apiKey: config.openRouterApiKey!, model: config.openRouterModel }, request);
+          content = provider === 'openai' ? await requestOpenAI({apiKey:config.openAiApiKey,model:config.openAiModel},request) : provider === 'yandex' ? await requestYandex({ apiKey: config.yandexApiKey!, folderId: config.yandexFolderId!, model: config.yandexModel }, request) : await requestOpenRouter({ apiKey: config.openRouterApiKey!, model: config.openRouterModel }, request);
         }
       } catch(error) {
         const failure=error as Error&{status?:unknown;reason?:unknown;cause?:{code?:unknown}};

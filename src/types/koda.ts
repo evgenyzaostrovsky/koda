@@ -1,4 +1,4 @@
-export type AiMode = 'checking' | 'gemini' | 'openrouter' | 'yandex' | 'rules' | 'offline';
+export type AiMode = 'checking' | 'gemini' | 'openrouter' | 'yandex' | 'openai' | 'rules' | 'offline';
 
 export type Question = {
   eyebrow: string;
@@ -42,10 +42,10 @@ export type KodaAiInput = {
 
 export type KodaAiResult = KodaPlan & {
   shouldFinalize: boolean;
-  provider: 'gemini' | 'openrouter' | 'yandex' | 'rules';
+  provider: 'gemini' | 'openrouter' | 'yandex' | 'openai' | 'rules';
 };
 
 export type AiProvider = {
-  name: 'gemini' | 'openrouter' | 'yandex' | 'rules';
+  name: 'gemini' | 'openrouter' | 'yandex' | 'openai' | 'rules';
   generate(input: KodaAiInput): Promise<KodaAiResult>;
 };

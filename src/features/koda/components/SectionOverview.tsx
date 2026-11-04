@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { ArrowUpRight, X } from 'lucide-react-native';
-import { ink, inkText, lime, muted, panel, text } from '../theme';
+import { activeText, ink, inkText, lime, muted, panel, text } from '../theme';
 
 export type OverviewTile = { key: string; title: string; value: string; detail: string; action: string; onPress: () => void; tone?: 'lime' | 'dark'; };
 
@@ -12,12 +12,14 @@ export function SectionOverview({title, tiles, children}: {title:string; tiles:O
       <Text accessibilityRole="header" style={s.heading}>{title}</Text>
       {children}
       <View style={s.grid}>{tiles.map(tile => {
-        const dark=tile.tone==='dark'; const foreground=dark?inkText:text;
-        return <Pressable key={tile.key} accessibilityRole="button" accessibilityLabel={tile.action} onPress={tile.onPress}
+        const dark=tile.tone==='dark';
+        const foreground=dark?inkText:tile.tone==='lime'?activeText:text;
+        const secondary=dark?'#d3ddca':tile.tone==='lime'?activeText:muted;
+        return <Pressable key={tile.key} {...({dataSet:{petSurface:`overview-${tile.key}`}} as any)} accessibilityRole="button" accessibilityLabel={tile.action} onPress={tile.onPress}
           style={({pressed})=>[s.card,{width:compact?'48%':'49%',backgroundColor:dark?ink:tile.tone==='lime'?lime:panel},pressed&&{opacity:.8}]}>
           <View style={s.row}><Text style={[s.title,{color:foreground}]}>{tile.title}</Text><ArrowUpRight size={18} color={foreground}/></View>
           <Text numberOfLines={2} style={[s.value,{color:foreground}]}>{tile.value}</Text>
-          <Text numberOfLines={2} style={[s.detail,{color:dark?'#d3ddca':muted}]}>{tile.detail}</Text>
+          <Text numberOfLines={2} style={[s.detail,{color:secondary}]}>{tile.detail}</Text>
           <Text numberOfLines={2} style={[s.action,{color:foreground}]}>{tile.action}</Text>
         </Pressable>;
       })}</View>

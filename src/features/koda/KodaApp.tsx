@@ -70,9 +70,16 @@ const journalDeletedStorageKey = 'koda:journalDeleted:v1';
 const plannerDeletedStorageKey = 'koda:plannerDeleted:v1';
 type CalendarSyncState = { count: number; message: string; status: 'idle' | 'syncing' | 'synced' | 'error' };
 type SyncDomain = 'planner' | 'journal' | 'appState' | 'notes' | 'kodaDays';
-const starterPlannerItemIds = new Set(['planner-1', 'planner-2', 'planner-3', 'planner-4', 'planner-5']);
 
-export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?: string | null }) {
+type KodaAppProps = { onSignOut?: () => void; userId?: string | null };
+
+export function KodaApp(props: KodaAppProps) {
+  // Account changes must unmount every draft, queue and in-flight effect together.
+  // Resetting them in an effect allows the previous render to write under the new ID.
+  return <AccountWorkspace key={props.userId ? `user:${props.userId}` : 'guest'} {...props} />;
+}
+
+function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   const [petRoomOpen, setPetRoomOpen] = useState(false);
   const [launchFinishedOwner, setLaunchFinishedOwner] = useState<string | null | undefined>(undefined);
   const launchPending = launchFinishedOwner !== (userId ?? null);
@@ -103,7 +110,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const [localDate, setLocalDate] = useState(todayDateKey());
   useEffect(() => { const interval=setInterval(()=>setLocalDate(todayDateKey()),30000); return ()=>clearInterval(interval); }, []);
   const [focusedPlannerItem,setFocusedPlannerItem] = useState<PlannerItem|null>(()=>plannerFocusFromHash());
-  function openPlannerItem(item:PlannerItem){setFocusedPlannerItem(item);setActiveTabState('planner');if(typeof window!=='undefined'){const query=new URLSearchParams({date:item.date,item:item.id,title:item.title,type:item.sourceType??'planner'});window.location.hash=`planner?${query}`;}}
+  function openPlannerItem(item:PlannerItem){if(item.sourceType==='goal'&&item.goalId){setFocusedGoalId(item.goalId);setActiveTab('goals');return;}setFocusedPlannerItem(item);setActiveTabState('planner');if(typeof window!=='undefined'){const query=new URLSearchParams({date:item.date,item:item.id,title:item.title,type:item.sourceType??'planner'});window.location.hash=`planner?${query}`;}}
   const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null);
 
   const [assistantDraft,setAssistantDraft]=useState('');
@@ -115,7 +122,6 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const [plannerLoaded, setPlannerLoaded] = useState(false);
   const [plannerLoadedStorageKey, setPlannerLoadedStorageKey] = useState('');
   const [calendarKey, setCalendarKey] = useState('');
-  const [legacyCalendarKeys, setLegacyCalendarKeys] = useState<string[]>([]);
   const [calendarSync, setCalendarSync] = useState<CalendarSyncState>({ count: 0, message: 'Готовлю календарь...', status: 'idle' });
   const [deletedJournalItemIds, setDeletedJournalItemIds] = useState<string[]>([]);
   const [deletedPlannerItemIds, setDeletedPlannerItemIds] = useState<string[]>([]);
@@ -345,7 +351,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         );
       }
 
-      if (!isSupabaseConfigured()) {
+      if (!userId || !isSupabaseConfigured()) {
         if (active) {
           setJournalLoadedStorageKey(storageKey);
           setJournalLoaded(true);
@@ -504,7 +510,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   }, [journalEntries, journalLoaded, journalLoadedStorageKey, userId]);
 
   useEffect(() => {
-    if (!journalLoaded || !isSupabaseConfigured()) return;
+    if (!journalLoaded || !userId || !isSupabaseConfigured()) return;
 
     async function syncJournalEntries() {
       for (const entry of journalEntries) {
@@ -775,14 +781,12 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         const deletedIds = parseDeletedIds(await AsyncStorage.getItem(scopedStorageKey(plannerDeletedStorageKey, userId)));
         const storedQueue = parseSyncQueue(await AsyncStorage.getItem(scopedStorageKey(syncQueueStorageKey, userId)));
         const hasPendingPlannerSync = storedQueue.includes('planner');
-        const storedGuestCalendarKey = userId ? await AsyncStorage.getItem(calendarKeyStorageKey) : null;
 
         if (active) setCalendarKey(nextCalendarKey);
-        if (active) setLegacyCalendarKeys(storedGuestCalendarKey && storedGuestCalendarKey !== nextCalendarKey ? [storedGuestCalendarKey] : []);
 
         const storedValue = await AsyncStorage.getItem(userPlannerStorageKey);
-        const legacyStoredValue = userId && !storedValue ? await AsyncStorage.getItem(plannerStorageKey) : null;
-        const localItems = stripStarterPlannerItems(parsePlannerItems(storedValue) ?? parsePlannerItems(legacyStoredValue))?.filter(item => !deletedIds.includes(item.id));
+        // Unscoped storage belongs to the guest workspace; never infer account ownership.
+        const localItems = parsePlannerItems(storedValue)?.filter(item => !deletedIds.includes(item.id));
 
         if (localItems && active && !background) {
           setPlannerItems(localItems);
@@ -810,6 +814,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
             .order('event_time', { ascending: true });
         }
 
+        if (!active) return;
         if (plannerQuery.error) {
           if (active) { setPlannerLoadedStorageKey(userPlannerStorageKey); }
           setCalendarSync({
@@ -820,7 +825,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
           return;
         }
 
-        const remoteItems = stripStarterPlannerItems(Array.isArray(plannerQuery.data)
+        const remoteItems: PlannerItem[] = Array.isArray(plannerQuery.data)
           ? plannerQuery.data.map((item: Record<string, unknown>) => ({
               id: String(item.id),
               date: String(item.event_date),
@@ -835,7 +840,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
               updatedAt: typeof item.updated_at === 'string' ? item.updated_at : undefined,
               deletedAt: null,
             }))
-          : []) ?? [];
+          : [];
 
         if (!active) return;
         if (!syncCoordinator.current('planner', revision)) { setPlannerLoadedStorageKey(userPlannerStorageKey); return; }
@@ -1025,12 +1030,10 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       setCalendarSync({ count: plannerItems.length, message: 'Синхронизирую планнер...', status: 'syncing' });
 
       try {
-        const ownerKeys = [calendarKey, ...legacyCalendarKeys].filter((key, index, keys) => key && keys.indexOf(key) === index);
-        const cleanPlannerItems = stripStarterPlannerItems(plannerItems) ?? [];
-        const rows = ownerKeys.flatMap((ownerKey, ownerIndex) =>
-          cleanPlannerItems.map((item) => ({
-            id: ownerIndex === 0 ? item.id : `${ownerKey}:${item.id}`,
-            owner_key: ownerKey,
+        const cleanPlannerItems = plannerItems;
+        const rows = cleanPlannerItems.map((item) => ({
+            id: item.id,
+            owner_key: calendarKey,
             event_date: item.date,
             event_time: item.time || null,
             title: item.title,
@@ -1038,8 +1041,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
             failed: Boolean(item.failed),
             subtasks: item.subtasks ?? [],
             updated_at: item.updatedAt ?? new Date().toISOString(),
-          })),
-        );
+          }));
 
         if (rows.length) {
           let { error } = await (supabase as any).from('planner_events').upsert(rows, { onConflict: 'id' });
@@ -1055,12 +1057,9 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
           }
         }
 
-        const starterDeleteIds = ownerKeys.flatMap((ownerKey, ownerIndex) => Array.from(starterPlannerItemIds).map((id) => (ownerIndex === 0 ? id : `${ownerKey}:${id}`)));
-        const deleteIds = ownerKeys.flatMap((ownerKey, ownerIndex) => deletedPlannerItemIds.map((id) => (ownerIndex === 0 ? id : `${ownerKey}:${id}`)));
-        const allDeleteIds = [...new Set([...deleteIds, ...starterDeleteIds])];
-
-        if (allDeleteIds.length) {
-          const { error } = await (supabase as any).from('planner_events').delete().in('id', allDeleteIds);
+        if (deletedPlannerItemIds.length) {
+          const { error } = await (supabase as any).from('planner_events').delete()
+            .eq('owner_key', calendarKey).in('id', deletedPlannerItemIds);
 
           if (error) {
             throw error;
@@ -1086,7 +1085,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     }
 
     return scheduleDomainSync('planner', syncPlannerItems);
-  }, [calendarKey, deletedPlannerItemIds, legacyCalendarKeys, plannerItems, plannerLoaded, syncRetryToken, syncQueueLoaded, isOnline, syncQueue, syncCoordinator]);
+  }, [calendarKey, deletedPlannerItemIds, plannerItems, plannerLoaded, syncRetryToken, syncQueueLoaded, isOnline, syncQueue, syncCoordinator]);
 
   function togglePlannerItem(id: string) {
     markSyncQueued('planner');
@@ -1410,7 +1409,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   }
 
   async function saveJournalToBackend(entry: JournalEntry) {
-    if (!isSupabaseConfigured()) return;
+    if (!userId || !isSupabaseConfigured()) return;
 
     const payload = {
       content: entry.text,
@@ -1514,12 +1513,17 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     ...plannerDayItems.filter(p=>!p.deletedAt).map(p=>({id:`planner:${p.id}`,title:p.title,kind:'Дело',open:()=>setActiveTab('planner')})),
     ...projects.filter(p=>p.status!=='archived').map(p=>({id:`project:${p.id}`,title:p.title,kind:'Проект',open:()=>setActiveTab('projects')})),
   ];
+  const syncReady = syncQueueLoaded && plannerLoaded && journalLoaded && appStateLoaded && notesLoaded;
+  const visibleSyncQueue = syncReady ? syncQueue : [];
+  const hasCloudSync = Boolean(userId) && isSupabaseConfigured();
+  const syncText = getSyncText(visibleSyncQueue, isOnline, syncReady, hasCloudSync);
+
   const screen = (() => {
     if (activeTab === 'habits') return <WidgetDesktop journalEntries={journalEntries} lastAssistantReply={[...savedChat.chat].reverse().find(message=>message.role==='koda')?.text} onAssistantPrompt={prompt=>{setAssistantDraft(prompt);setActiveTab('koda');}} onJournal={id=>{if(id)setActiveJournalId(id);setActiveTab('journal');}} timerSettings={pomodoro} goals={goals} habits={habits} days={kodaDays} notes={notes} projects={projects} items={widgetItems} overviewItems={overviewItems} onPlannerItem={openPlannerItem} onQuickAdd={()=>setQuickAddOpen(true)} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutReady={desktopLayout.ready} onOpen={setActiveTab} onGoal={id=>{setFocusedGoalId(id);setActiveTab('goals');}} onNote={id=>{setFocusedNoteId(id);setActiveTab('notes');}} onToggleHabit={toggleHabitToday} onProgress={progressFromWidget} />;
-    if (activeTab === 'routines') return <HabitsScreen habits={habits} onHabitsChange={updateHabitSources} onToggleToday={toggleHabitToday} />;
+    if (activeTab === 'routines') return <HabitsScreen onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} habits={habits} onHabitsChange={updateHabitSources} onToggleToday={toggleHabitToday} />;
 
     if (activeTab === 'planner') {
-      return <PlannerScreen initialFocus={focusedPlannerItem} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} goals={goals} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onGoalsChange={updateGoals} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} projectNames={Object.fromEntries(projects.map(project=>[project.id,project.title]))} />;
+      return <PlannerScreen onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} initialFocus={focusedPlannerItem} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} />;
     }
     if (activeTab === 'goals') {
       return <GoalsScreen goals={goals} hasCloudSync={Boolean(userId) && isSupabaseConfigured()} isDesktop={isDesktopLayout} isOnline={isOnline} onGoalsChange={updateGoals} userId={userId} initialGoalId={focusedGoalId} />;
@@ -1583,10 +1587,6 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     return <KodaScreen key={userId || 'guest'} chat={savedChat.chat} composerValue={chatComposer.ownerId===(userId??null)?chatComposer.text:''} onComposerChange={(value)=>setChatComposer({ownerId:userId??null,text:value})} initialDraft={assistantDraft} onDraftConsumed={()=>setAssistantDraft('')} isDesktop={isDesktopLayout} onSend={savedChat.send} isSending={savedChat.busy} error={savedChat.error} provider={savedChat.provider} onRetry={savedChat.retry} retryLabel={savedChat.retryLabel} inputDisabled={savedChat.inputDisabled} historyStatus={savedChat.historyStatus} syncError={savedChat.cloudError} onSyncRetry={savedChat.retrySync} />;
   })();
 
-  const syncReady = syncQueueLoaded && plannerLoaded && journalLoaded && appStateLoaded && notesLoaded;
-  const visibleSyncQueue = syncReady ? syncQueue : [];
-  const hasCloudSync = Boolean(userId) && isSupabaseConfigured();
-  const syncText = getSyncText(visibleSyncQueue, isOnline, syncReady, hasCloudSync);
   const petState = profile.pet?.ownerId === (userId ?? null) ? profile.pet : undefined;
   const petView = getPetView(petState, petClock);
   // Earlier releases used «Кода» as the default; retain the stored value while displaying the new name.
@@ -1633,8 +1633,8 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     <PomodoroProvider settings={pomodoro} owner={userId ?? 'guest'} onPhase={() => playPomodoroSound(pomodoro.soundId, 'end')}>
     <SafeAreaView style={styles.safe}>
       <StatusBar style={resolveKodaThemeId(profile.themeId).endsWith('dark') ? 'light' : 'dark'} />
-      <WidgetShell key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults} onLaunchFinished={()=>setLaunchFinishedOwner(userId ?? null)}>
-        {activeTab==='habits'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
+      <WidgetShell focused={activeTab==='planner'||activeTab==='routines'} key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults} onLaunchFinished={()=>setLaunchFinishedOwner(userId ?? null)}>
+        {activeTab==='habits'||activeTab==='planner'||activeTab==='routines'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
       </WidgetShell>
       {!launchPending && !petRoomOpen && !quickAddOpen && <PetWanderer name={petDisplayName} state={petLife} pose={petPose} onPress={()=>setPetRoomOpen(true)} />}
       <Modal visible={petRoomOpen} animationType="fade" onRequestClose={()=>setPetRoomOpen(false)}>
@@ -1837,12 +1837,6 @@ function noteTimeValue(value?: string | null) {
   if (!value) return 0;
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? 0 : time;
-}
-
-function stripStarterPlannerItems(items: PlannerItem[] | null) {
-  if (!items) return null;
-
-  return items.filter((item) => !starterPlannerItemIds.has(item.id));
 }
 
 function ensureTodayJournalEntry(entries: JournalEntry[]) {

@@ -1,7 +1,7 @@
 import type { ChatMessage } from './types';
 
 export type ChatHistoryOwner = string | null | undefined;
-export type ChatHistoryProvider = 'gemini' | 'openrouter' | 'yandex' | null;
+export type ChatHistoryProvider = 'gemini' | 'openrouter' | 'yandex' | 'openai' | null;
 export type ChatHistoryRequestMessage = { role: 'user' | 'assistant'; content: string };
 export type ChatHistorySnapshot = {
   version: 1;
@@ -67,7 +67,7 @@ export function normalizeChatHistory(value: unknown): ChatHistorySnapshot {
     }
     messages.reverse();
   }
-  const provider = value.provider === 'gemini' || value.provider === 'openrouter' || value.provider === 'yandex' ? value.provider : null;
+  const provider = value.provider === 'gemini' || value.provider === 'openrouter' || value.provider === 'yandex' || value.provider === 'openai' ? value.provider : null;
   const pendingRequest = normalizePending(value.pendingRequest);
   const pendingMessageId = pendingRequest && typeof value.pendingMessageId === 'string' && value.pendingMessageId.length <= 128
     && messages.some((message) => message.role === 'user' && message.id === value.pendingMessageId)

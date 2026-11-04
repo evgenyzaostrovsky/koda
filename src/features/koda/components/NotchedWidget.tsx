@@ -17,7 +17,7 @@ export function NotchedWidget({variant='none', backgroundColor=panel, action, ch
  const deep=variant==='top-right'?88:variant==='stepped'?82:64;
  const bend=variant==='top-right'?40:28;
  const path=`M ${r} 0 H ${w-deep-22} Q ${w-deep} 0 ${w-deep} 22 V ${deep-bend} Q ${w-deep} ${deep} ${w-deep+bend} ${deep} H ${w-22} Q ${w} ${deep} ${w} ${deep+22} V ${h-r} Q ${w} ${h} ${w-r} ${h} H ${r} Q 0 ${h} 0 ${h-r} V ${r} Q 0 0 ${r} 0 Z`;
- return <View testID={testID} onLayout={event=>{const {width,height}=event.nativeEvent.layout;setSize(previous=>previous.width===width&&previous.height===height?previous:{width,height});}} style={[s.root,{borderRadius:radius},!shaped&&{backgroundColor},style]}>
+ return <View testID={testID} {...({dataSet:{petSurface:'card'}} as any)} onLayout={event=>{const {width,height}=event.nativeEvent.layout;setSize(previous=>previous.width===width&&previous.height===height?previous:{width,height});}} style={[s.root,{borderRadius:radius},!shaped&&{backgroundColor},style]}>
   {shaped&&<View pointerEvents="none" style={StyleSheet.absoluteFill}><Svg width="100%" height="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" accessible={false}><Path d={path} fill={backgroundColor}/></Svg></View>}
   {children}
   {action&&<View style={[s.action,shaped?{top:3,right:3}:{top:mobile?18:22,right:mobile?18:22}]}>{action}</View>}

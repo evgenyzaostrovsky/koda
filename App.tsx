@@ -9,6 +9,7 @@ import { registerServiceWorker } from './src/lib/serviceWorker';
 import { supabase, authStorageKey } from './src/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signOutDevice } from './src/lib/signOutDevice';
+import { resetTestAccountCache } from './src/lib/resetTestAccountCache';
 import { accent, bg, muted, text } from './src/features/koda/theme';
 
 export default function App() {
@@ -86,7 +87,22 @@ export default function App() {
     return <KodaApp />;
   }
 
-  return session?.user ? <KodaApp onSignOut={() => { void signOutDevice(supabase, AsyncStorage, authStorageKey); }} userId={session.user.id} /> : <AuthScreen />;
+  return session?.user ? <AccountApp key={session.user.id} owner={session.user.id} /> : <AuthScreen />;
+}
+
+function AccountApp({ owner }: { owner: string }) {
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const prepare = __DEV__
+      ? resetTestAccountCache(AsyncStorage, owner, process.env.EXPO_PUBLIC_KODA_RESET_TEST_OWNER, process.env.EXPO_PUBLIC_KODA_RESET_TEST_REVISION)
+      : Promise.resolve();
+    void prepare.then(() => { if (active) setReady(true); }).catch(() => { if (active) setError(true); });
+    return () => { active = false; };
+  }, [owner]);
+  if (!ready) return <View style={styles.loadingScreen}>{error ? <Text style={styles.loadingCaption}>Не удалось подготовить локальные данные. Обнови страницу.</Text> : <ActivityIndicator accessibilityLabel="Подготовка аккаунта" color={accent} />}</View>;
+  return <KodaApp userId={owner} onSignOut={() => { void signOutDevice(supabase, AsyncStorage, authStorageKey); }} />;
 }
 
 const styles = StyleSheet.create({

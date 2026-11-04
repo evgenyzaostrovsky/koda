@@ -290,8 +290,8 @@ function GoalCard({ desktop, goal, featured, onPress }: { desktop?: boolean; goa
 function GoalDetails({ goal, goals, isDesktop = false, isOnline, hasCloudSync = true, onBack, onCreate, onGoalsChange, onSelect }: { goal: Goal; goals: Goal[]; isDesktop?: boolean; isOnline: boolean; hasCloudSync?: boolean; onBack: () => void; onCreate: () => void; onGoalsChange: GoalsChange; onSelect: (id: string) => void }) {
   const narrow = useWindowDimensions().width < 760;
   const [structureOpen,setStructureOpen]=useState(false);
-  const [detailTab, setDetailTab] = useState<'roadmap' | 'actions' | 'matrix' | 'context'>('roadmap');
-  useEffect(()=>{setStructureOpen(false);},[goal.id]);
+  const [detailTab, setDetailTab] = useState<'roadmap' | 'actions' | 'matrix' | 'context'>('matrix');
+  useEffect(()=>{setStructureOpen(false);setDetailTab('matrix');},[goal.id]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [addKind, setAddKind] = useState<AddKind | null>(null);
   const [manageStages, setManageStages] = useState(false);
@@ -411,7 +411,7 @@ function GoalDetails({ goal, goals, isDesktop = false, isOnline, hasCloudSync = 
 
             <View style={local.detailTabs} accessibilityRole="tablist">
               {([
-                ['roadmap', 'Путь'], ['actions', 'Действия'], ['matrix', '8 направлений'], ['context', 'Контекст'],
+                ['matrix', 'Квадраты ОТАНИ'], ['roadmap', 'Путь'], ['actions', 'Действия'], ['context', 'Контекст'],
               ] as const).map(([key, label]) => (
                 <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: detailTab === key }} onPress={() => setDetailTab(key)} style={[local.detailTab, detailTab === key && local.detailTabActive]}>
                   <Text style={[local.detailTabText, detailTab === key && local.detailTabTextActive]}>{label}</Text>
@@ -474,7 +474,7 @@ function GoalDetails({ goal, goals, isDesktop = false, isOnline, hasCloudSync = 
               </View>
             ) : null}
 
-            {detailTab === 'matrix' ? <View style={local.tabContent}><Text style={local.blockTitle}>Возможные пути к цели</Text><Text style={local.goalMeta}>Сохраняй варианты на будущее и выбирай следующий шаг, когда будешь готов.</Text><GoalMatrix initialDirectionId={focusDirectionId} goal={goal} isDesktop={isDesktop} onUpdateGoal={updateGoal} onRequestAI={() => setStructureOpen(true)} /></View> : null}
+            {detailTab === 'matrix' ? <View style={local.tabContent}><Text style={local.blockTitle}>Карта цели ОТАНИ</Text><Text style={local.goalMeta}>Цель в центре, вокруг — 8 направлений. Каждое раскрывается в 8 шагов. Начни с нужных тебе квадратов — заполнять все сразу необязательно.</Text><GoalMatrix initialDirectionId={focusDirectionId} goal={goal} isDesktop={isDesktop} onUpdateGoal={updateGoal} onRequestAI={() => setStructureOpen(true)} /></View> : null}
 
             {detailTab === 'context' ? (
               <View style={local.tabContent}>

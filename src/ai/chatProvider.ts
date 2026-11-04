@@ -3,6 +3,7 @@ import { capacityGuidance } from './planningGuidance';
 import { providerOrder, type AiProviderConfig, type ProviderName } from './providerConfig';
 import { requestOpenRouter, parseModelJson } from './openRouterClient';
 import { requestYandex } from './yandexClient';
+import { requestOpenAI } from './openAiClient';
 export type ChatTurn = { role: 'user' | 'assistant'; content: string };
 export type ChatReply = { reply: string; provider: ProviderName };
 export function normalizeChatInput(value: unknown): ChatTurn[] {
@@ -29,7 +30,7 @@ export function createChatGenerator(config: AiProviderConfig) {
           text=result.text||'';
         } else {
           const request={messages:[{role:'system' as const,content:system},...input],max_tokens:1200,temperature:0.35,response_format:{type:'json_object' as const}};
-          text=provider==='yandex' ? await requestYandex({apiKey:config.yandexApiKey!,folderId:config.yandexFolderId!,model:config.yandexModel},request) : await requestOpenRouter({apiKey:config.openRouterApiKey!,model:config.openRouterModel},request);
+          text=provider==='openai' ? await requestOpenAI({apiKey:config.openAiApiKey,model:config.openAiModel},request) : provider==='yandex' ? await requestYandex({apiKey:config.yandexApiKey!,folderId:config.yandexFolderId!,model:config.yandexModel},request) : await requestOpenRouter({apiKey:config.openRouterApiKey!,model:config.openRouterModel},request);
         }
         const result=parseModelJson(text) as {reply?:unknown}|null;
         if(!result || typeof result.reply!=='string' || !result.reply.trim() || result.reply.length>4000) throw new Error('Invalid chat reply');

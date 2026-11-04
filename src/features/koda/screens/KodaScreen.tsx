@@ -7,12 +7,13 @@ import { BentoPage, bentoWidths } from '../components/Bento';
 import { accent, faint, ink, line, muted, panel, panelSoft, text as textColor } from '../theme';
 import { styles } from '../styles';
 
-type KodaProvider = 'gemini' | 'openrouter' | 'yandex' | null;
+type KodaProvider = 'gemini' | 'openrouter' | 'yandex' | 'openai' | null;
 
 const providerNames: Record<Exclude<KodaProvider, null>, string> = {
   gemini: 'Gemini',
   openrouter: 'OpenRouter',
   yandex: 'Яндекс',
+  openai: 'OpenAI',
 };
 
 type KodaScreenProps = {
@@ -96,7 +97,7 @@ export function KodaScreen({
   const chatPane = (
     <View style={[styles.kodaChatPane, isDesktop && styles.kodaChatPaneDesktop,showWelcome&&local.welcomePane]}>
       {showWelcome ? (
-        <View style={[local.quickPromptBar, isDesktop && local.quickPromptBarDesktop]}>
+        <View {...({ dataSet: { petSurface: 'assistant-prompts' } } as any)} style={[local.quickPromptBar, isDesktop && local.quickPromptBarDesktop]}>
           <Text style={local.quickPromptTitle}>С чего начнём?</Text><Text style={local.welcomeCopy}>Расскажи, что хочется сделать и сколько сейчас сил. Вместе найдём посильный шаг.</Text>
           <View style={[local.starters,isDesktop&&{flexDirection:'row'}]}>
             {[
@@ -125,7 +126,7 @@ export function KodaScreen({
         showsVerticalScrollIndicator={false}
       >
         {(showWelcome ? [] : chat).map((message) => (
-          <View key={message.id} style={[styles.chatBubble, isDesktop && styles.chatBubbleDesktop, message.role === 'user' && styles.chatBubbleUser]}>
+          <View key={message.id} {...({dataSet:{petSurface:'assistant-message'}} as any)} style={[styles.chatBubble, isDesktop && styles.chatBubbleDesktop, message.role === 'user' && styles.chatBubbleUser]}>
             <Text style={styles.chatText}>{message.text}</Text>
           </View>
         ))}

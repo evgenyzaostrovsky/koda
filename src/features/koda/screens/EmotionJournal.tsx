@@ -71,7 +71,7 @@ export function EmotionJournal({ entries, onSave, onBack, isDesktop = false }: {
     <View style={[s.history, isDesktop && s.desktopHistory]}>
     <Text style={s.heading}>История · {visible.length}</Text>
     {!visible.length ? <Text style={s.hint}>Здесь появятся сохранённые записи. В один день можно добавить несколько событий.</Text> : null}
-    <View style={s.historyList}>
+    <View {...({ dataSet: { petSurface: 'journal-history' } } as any)} style={s.historyList}>
       {visible.map(entry => <Pressable key={entry.id} accessibilityRole="button" accessibilityLabel={`Открыть запись: ${entry.event}`} onPress={() => { setDeleteId(null); setPreviewId(entry.id); }} style={s.historyRow}>
         <Text style={s.historyDate}>{new Date(entry.occurredAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}</Text>
         <Text numberOfLines={1} ellipsizeMode="tail" style={s.historyEvent}>{entry.event.replace(/\s+/g, ' ')}</Text>

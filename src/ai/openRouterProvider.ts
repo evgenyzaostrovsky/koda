@@ -26,8 +26,8 @@ ${capacityGuidance}
 - Верни только валидный JSON без markdown.
 `;
 
-export function createOpenRouterProvider(config: OpenRouterConfig, transport: typeof requestOpenRouter = requestOpenRouter, providerName: 'openrouter' | 'yandex' = 'openrouter'): AiProvider | null {
-  if (!config.apiKey) {
+export function createOpenRouterProvider(config: OpenRouterConfig, transport: typeof requestOpenRouter = requestOpenRouter, providerName: 'openrouter' | 'yandex' | 'openai' = 'openrouter'): AiProvider | null {
+  if (!config.apiKey && providerName !== 'openai') {
     return null;
   }
 

@@ -76,7 +76,7 @@ export function PetRoom({
     </View>
 
 
-    <View style={[s.room, wide && s.roomWide]}>
+    <View {...({ dataSet: { petSurface: 'pet-room' } } as any)} style={[s.room, wide && s.roomWide]}>
       <View style={[s.scene, wide ? s.sceneWide : s.sceneCompact]}>
         <View style={s.sceneArch} />
         <View style={s.sceneHalo} />
@@ -134,7 +134,7 @@ export function PetRoom({
     </View>
 
     <Pressable accessibilityRole="button" accessibilityState={{expanded:collectionOpen}} onPress={()=>setCollectionOpen(value=>!value)} style={s.collectionToggle}><Text style={s.sectionTitle}>{collectionOpen ? 'Скрыть вещи' : 'Украшения и находки'}</Text><Text style={s.collectionToggleAction}>{collectionOpen ? 'Свернуть' : 'Открыть →'}</Text></Pressable>
-    {collectionOpen && <View style={s.collection}>
+    {collectionOpen && <View {...({ dataSet: { petSurface: 'pet-collection' } } as any)} style={s.collection}>
       <View style={s.collectionHeader}>
         <Text style={s.sectionTitle}>Сделать домик своим</Text>
         <View style={s.tabs} accessibilityRole="tablist">

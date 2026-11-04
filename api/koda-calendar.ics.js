@@ -2,6 +2,7 @@ const DEFAULT_TIMEZONE = 'Europe/Moscow';
 const DEFAULT_DAYS = 30;
 const DEFAULT_PAST_DAYS = 14;
 const { createClient } = require('@supabase/supabase-js');
+const { validateBearerToken } = require('../src/server/aiSecurity');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -9,14 +10,20 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  // A predictable owner UUID is not a calendar-sharing credential.
+  const token = /^Bearer\s+(.+)$/i.exec(String(req.headers?.authorization || ''))?.[1];
+  const owner = await validateBearerToken(token);
+  if (!owner) { res.status(401).json({ error: 'Войдите в КОДА для экспорта календаря.' }); return; }
+
   const query = req.query || {};
   const timezone = normalizeTimezone(cleanText(query.tz) || DEFAULT_TIMEZONE);
   const days = clampNumber(Number(query.days || DEFAULT_DAYS), 1, 90);
   const pastDays = clampNumber(Number(query.pastDays || DEFAULT_PAST_DAYS), 0, 30);
-  const key = cleanText(query.key);
+  const key = `user:${owner}`;
+  if (query.key && cleanText(query.key) !== key) { res.status(403).json({ error: 'Этот календарь принадлежит другому аккаунту.' }); return; }
   const startDate = addDays(startOfToday(timezone), -pastDays);
   const events = [];
-  const plannerItems = key ? await loadPlannerItems(key, startDate, days + pastDays) : [];
+  const plannerItems = await loadPlannerItems(key, startDate, days + pastDays, token);
 
   for (const item of plannerItems) {
     const date = parseDateKey(item.date);
@@ -61,12 +68,15 @@ module.exports = async function handler(req, res) {
   res.status(200).send(calendar);
 };
 
-async function loadPlannerItems(key, startDate, days) {
+async function loadPlannerItems(key, startDate, days, token) {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseKey) return [];
 
-  const client = createClient(supabaseUrl, supabaseKey);
+  const client = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
   const start = formatIsoDate(startDate);
   const end = formatIsoDate(addDays(startDate, days - 1));
   const { data, error } = await client
