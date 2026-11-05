@@ -113,6 +113,13 @@ async function testProjectSync() {
 
 async function main() {
   const coordinator = new SyncCoordinator();
+  coordinator.changed('appState');
+  assert.deepEqual(coordinator.restorePending(['journal'], ['appState']), ['journal', 'appState'],
+    'Late queue hydration preserves goals repaired while local queue was loading');
+  assert.deepEqual(coordinator.restorePending([], ['appState']), ['appState'],
+    'Failed queue read cannot discard a newly recovered goal');
+  assert.deepEqual(new SyncCoordinator().restorePending(['notes'], ['appState']), ['notes'],
+    'A new account does not inherit the previous account pending state');
   const events: string[] = [];
   let finish!: () => void;
   const gate = new Promise<void>(resolve => { finish = resolve; });

@@ -24,7 +24,7 @@ import { supabase } from '../../lib/supabase';
 import { defaultHabitMonth, defaultHabitYear, defaultJournalEntry, initialGoals, initialHabits, journalMoodByName, journalMoodByValue, journalOwnerKey } from './constants';
 import { calculateGoalProgress } from './goalLogic';
 import { autoFinalizeExpiredKodaDays, fromKodaDayRow, kodaDayId, mergeKodaDaySources, toKodaDayRow } from './kodaDaySync';
-import { defaultPomodoroSettings, defaultProfile, isJournalEntryWorthSyncing, journalDateKey, mergeJournalEntries, mergePlannerItems, mergeStoredKodaState, normalizeStoredKodaState, parseJournalEntries, parseNotes, parsePlannerItems, parseStoredKodaState, type StoredKodaState } from './persistence';
+import { defaultPomodoroSettings, defaultProfile, isJournalEntryWorthSyncing, journalDateKey, mergeJournalEntries, mergePlannerItems, mergeStoredKodaState, normalizeStoredKodaState, parseJournalEntries, parseNotes, parsePlannerItems, parseStoredKodaState, shouldSyncRecoveredAppState, type StoredKodaState } from './persistence';
 import { buildHabitPlannerItems, buildProjectPlannerItems } from './plannerProjections';
 import { syncExplicitSourceChanges } from './dayPlanSync';
 import { recordHabitEdits } from './habitSync';
@@ -306,12 +306,13 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
         const journalDeletedIds = parseDeletedIds(journalDeleted);
         setDeletedJournalItemIds(journalDeletedIds);
         if (journalDeletedIds.length && !parsed.includes('journal')) parsed.push('journal');
-        setSyncQueue(deletedIds.length ? [...new Set<SyncDomain>([...parsed, 'planner'])] : parsed);
+        if (deletedIds.length && !parsed.includes('planner')) parsed.push('planner');
+        setSyncQueue(items => syncCoordinator.restorePending(parsed, items));
         setSyncQueueLoaded(true);
       })
       .catch(() => {
         if (!active) return;
-        setSyncQueue([]);
+        setSyncQueue(items => syncCoordinator.restorePending([], items));
         setSyncQueueLoaded(true);
       });
     return () => { active = false; };
@@ -737,13 +738,14 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
           const nextState = mergeStoredKodaState(remoteState, storedState);
           nextState.kodaDays = mergeKodaDaySources(canonicalRemoteDays, nextState.kodaDays);
           applyStoredKodaState(nextState);
-          // Recover projects previously acknowledged by the lossy schema fallback.
-          if (JSON.stringify(nextState.projects) !== JSON.stringify(remoteState.projects)) markSyncQueued('appState');
+          // A previous client may have acknowledged a lossy goals/profile write.
+          // Repair cloud data on reload, focus, polling and realtime pulls alike.
+          if (shouldSyncRecoveredAppState(data, nextState)) markSyncQueued('appState');
           void AsyncStorage.setItem(storageKey, JSON.stringify(nextState));
         } else if (storedState) {
           const nextState = { ...storedState, kodaDays: mergeKodaDaySources(canonicalRemoteDays, storedState.kodaDays) };
           applyStoredKodaState(nextState);
-          if (!error && storedState.projects.length) markSyncQueued('appState');
+          if (!error && shouldSyncRecoveredAppState(data, nextState)) markSyncQueued('appState');
           void AsyncStorage.setItem(storageKey, JSON.stringify(nextState));
         } else if (canonicalRemoteDays.length) {
           const nextState = normalizeStoredKodaState({ kodaDays: canonicalRemoteDays });

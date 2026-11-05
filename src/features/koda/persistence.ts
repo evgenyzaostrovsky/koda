@@ -12,6 +12,47 @@ import { todayDateKey } from './utils';
 
 export type StoredKodaState = { goals: Goal[]; habits: Habit[]; kodaDays: KodaDay[]; pomodoro: PomodoroSettings; profile: ProfileState; projects: Project[] };
 
+// Compatibility copy for clients whose action normalizer predates shortTitle.
+// They preserve unknown profile JSON while rewriting the goals array.
+export function createGoalActionCopyBackup(goals: Goal[], ownerId: string) {
+  return { version: 1, ownerId, goals: goals.map(goal => ({
+    id: goal.id,
+    actions: goal.actions.filter(action => typeof action.shortTitle === 'string')
+      .map(action => ({ id: action.id, shortTitle: action.shortTitle! })),
+  })).filter(goal => goal.actions.length) };
+}
+
+function restoreGoalActionCopy(goals: Goal[], value: unknown, ownerId: unknown): Goal[] {
+  if (!value || typeof value !== 'object') return goals;
+  const backup = value as ReturnType<typeof createGoalActionCopyBackup>;
+  // Only cloud rows carry a verified account boundary; local goals already carry
+  // the restored field and must not import an unscoped profile backup.
+  if (backup.version !== 1 || typeof ownerId !== 'string' || backup.ownerId !== ownerId || !Array.isArray(backup.goals)) return goals;
+  return goals.map(goal => {
+    const saved = backup.goals.find(item => item?.id === goal.id);
+    if (!Array.isArray(saved?.actions)) return goal;
+    return { ...goal, actions: goal.actions.map(action => {
+      if (typeof action.shortTitle === 'string') return action;
+      const copy = saved.actions.find(item => item?.id === action.id);
+      return typeof copy?.shortTitle === 'string' && copy.shortTitle.trim().length <= 48
+        ? { ...action, shortTitle: copy.shortTitle.trim() } : action;
+    }) };
+  });
+}
+
+/** Queue repaired goals even when the previous client already acknowledged its write. */
+export function shouldSyncRecoveredAppState(remoteValue: unknown, recovered: StoredKodaState): boolean {
+  const remote = normalizeStoredKodaState(remoteValue);
+  const rawGoals = remoteValue && typeof remoteValue === 'object'
+    ? normalizeGoalList((remoteValue as { goals?: unknown }).goals) ?? [] : [];
+  const row = remoteValue as { user_id?: unknown; profile?: { __kodaActionCopy?: unknown } } | null;
+  const backup = typeof row?.user_id === 'string' ? createGoalActionCopyBackup(recovered.goals, row.user_id) : null;
+  const needsBackup = backup && (backup.goals.length > 0 || row?.profile?.__kodaActionCopy !== undefined)
+    && JSON.stringify(backup) !== JSON.stringify(row?.profile?.__kodaActionCopy);
+  return JSON.stringify(rawGoals) !== JSON.stringify(recovered.goals)
+    || JSON.stringify(remote?.projects ?? []) !== JSON.stringify(recovered.projects) || Boolean(needsBackup);
+}
+
 export const defaultPomodoroSettings: PomodoroSettings = {
   workMinutes: 25,
   breakMinutes: 5,
@@ -162,12 +203,14 @@ export function normalizeStoredKodaState(value: unknown): StoredKodaState | null
   if (!value || typeof value !== 'object') return null;
 
   const state = value as Partial<StoredKodaState> & { koda_days?: unknown; user_id?: unknown };
-  const goals = normalizeGoalList(state.goals) ?? [];
+  const rawProfile = state.profile;
+  const actionCopy = rawProfile && typeof rawProfile === 'object'
+    ? (rawProfile as { __kodaActionCopy?: unknown }).__kodaActionCopy : undefined;
+  const goals = restoreGoalActionCopy(normalizeGoalList(state.goals) ?? [], actionCopy, state.user_id);
   const habits = normalizeHabitList(state.habits);
   const embeddedDays = state.profile && typeof state.profile === 'object' ? (state.profile as { __kodaDays?: unknown }).__kodaDays : undefined;
   const rawKodaDays = state.kodaDays ?? state.koda_days;
   const kodaDays = mergeKodaDays(isKodaDayList(embeddedDays) ? embeddedDays : [], isKodaDayList(rawKodaDays) ? rawKodaDays : []);
-  const rawProfile = state.profile;
   const pomodoro = normalizePomodoroSettings(state.pomodoro ?? getEmbeddedPomodoroSettings(rawProfile));
   const profile = normalizeProfileState(state.profile);
   // Cloud rows carry their account boundary; a foreign embedded pet must not cross it.
@@ -354,7 +397,9 @@ function clampPomodoroMinutes(value: unknown, fallback: number, min: number, max
 
 function normalizeProfileState(value: unknown): ProfileState {
   if (!isProfileState(value)) return defaultProfile;
-  const { pet: rawPet, ...profile } = value;
+  // The cloud backup is transport metadata, not editable profile state. Keeping
+  // it out of local snapshots prevents a stale modern client from echoing it back.
+  const { pet: rawPet, __kodaActionCopy: _actionCopy, ...profile } = value as ProfileState & { __kodaActionCopy?: unknown };
   const pet = parsePetState(rawPet);
   return { ...defaultProfile, ...profile, themeId: normalizeThemeId(value.themeId), emotionEntries: parseEmotionEntries(value.emotionEntries), ...(pet ? { pet } : {}) };
 }

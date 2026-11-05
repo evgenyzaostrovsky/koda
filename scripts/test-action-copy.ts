@@ -4,8 +4,8 @@ import {createGoal,createGoalAction,normalizeGoal} from '../src/features/koda/go
 import {addGoalStructure,rebuildGoalStructure} from '../src/features/koda/goalStructure';
 import {buildGoalPlanContext} from '../src/features/koda/goalPlanContext';
 import {createOpenWindow} from '../src/features/koda/openWindow';
-import {mergeGoals,normalizeStoredKodaState,parseStoredKodaState} from '../src/features/koda/persistence';
-import {writeAppStateSnapshot} from '../src/features/koda/syncCoordinator';
+import {mergeGoals,mergeStoredKodaState,normalizeStoredKodaState,parseStoredKodaState,shouldSyncRecoveredAppState} from '../src/features/koda/persistence';
+import {SyncCoordinator,writeAppStateSnapshot} from '../src/features/koda/syncCoordinator';
 
 const originalTitle='Открыть программу выбранного курса и выделить обязательные разделы';
 const detail={title:originalTitle,shortTitle:'Изучить программу курса',description:'Открой программу выбранного курса. Выпиши обязательные разделы и требования.'};
@@ -99,7 +99,8 @@ assert.deepEqual(mergeGoals([newerLegacy],[updated]),mergeGoals([updated],[newer
 
 // Local PostgREST boundary: no credentials, network, or real account records.
 class CopyBackend {
-  rows=new Map<string,Record<string,any>>();offline=false;writes=0;
+  rows=new Map<string,Record<string,any>>();offline=false;writes=0;conflicts=0;
+  beforeWrite?:()=>Promise<void>;
   from(table:string){
     assert.equal(table,'user_app_state');
     let operation='read',payload:Record<string,any>={};const filters:Record<string,unknown>={};
@@ -110,10 +111,13 @@ class CopyBackend {
       insert:(value:Record<string,any>)=>{operation='insert';payload=value;return query;},
       maybeSingle:async()=>{
         if(this.offline)return {data:null,error:{code:'FETCH',message:'offline'}};
-        const userId=String(filters.user_id??payload.user_id),current=this.rows.get(userId);
+        const userId=String(filters.user_id??payload.user_id);
+        let current=this.rows.get(userId);
         if(operation==='read')return {data:structuredClone(current??null),error:null};
-        if(operation==='insert'&&current)return {data:null,error:{code:'23505',message:'duplicate'}};
-        if(operation==='update'&&current?.updated_at!==filters.updated_at)return {data:null,error:null};
+        const beforeWrite=this.beforeWrite;this.beforeWrite=undefined;
+        await beforeWrite?.();current=this.rows.get(userId);
+        if(operation==='insert'&&current){this.conflicts++;return {data:null,error:{code:'23505',message:'duplicate'}};}
+        if(operation==='update'&&current?.updated_at!==filters.updated_at){this.conflicts++;return {data:null,error:null};}
         this.rows.set(userId,JSON.parse(JSON.stringify({...current,...payload,updated_at:`server-${++this.writes}`})));
         return {data:{user_id:userId},error:null};
       },
@@ -140,7 +144,93 @@ async function verifyCopyPersistence(){
   await writeAppStateSnapshot(backend,'copy-a',snapshot(updated));
   assert.equal(backend.label('copy-a'),'','Retry and stale writes cannot resurrect a cleared label');
   assert.equal(normalizeStoredKodaState(backend.rows.get('copy-a'))!.goals.length,1,'Retry does not duplicate goals');
+  await verifyLegacyRoundtrip(backend,snapshot);
   console.log('PASS action copy persistence: legacy omission vs explicit clear, bounded original notes context, account isolation, failed request, local queue/retry and stale cloud writes.');
+}
+
+async function verifyLegacyRoundtrip(backend:CopyBackend,snapshot:(goal:typeof updated)=>ReturnType<typeof normalizeStoredKodaState> & {}){
+  // Model the pre-shortTitle client: it rewrites normalized actions but preserves
+  // unknown profile JSON. No modern merge helper participates in this write.
+  const legacyRewrite=(account:string,goal:typeof updated)=>{
+    const row=backend.rows.get(account)!;
+    backend.rows.set(account,JSON.parse(JSON.stringify({...row,goals:[{...goal,actions:goal.actions.map(({shortTitle:_copy,...action})=>action)}],updated_at:`legacy-${++backend.writes}`})));
+  };
+  await writeAppStateSnapshot(backend,'legacy',snapshot(updated));
+  const beforeUpgrade=structuredClone(backend.rows.get('legacy')!);delete beforeUpgrade.profile.__kodaActionCopy;
+  assert.equal(shouldSyncRecoveredAppState(beforeUpgrade,normalizeStoredKodaState(beforeUpgrade)!),true,
+    'An upgraded client seeds backup for already-synced labels without another user edit');
+  const originalHistory=structuredClone(updated.openWindow!.history);
+  legacyRewrite('legacy',newerLegacy);
+  const damaged=backend.rows.get('legacy')!;
+  assert.equal(Object.hasOwn(damaged.goals[0].actions[0],'shortTitle'),false,'Fixture must reproduce actual cloud loss');
+  const freshDevice=normalizeStoredKodaState(structuredClone(damaged))!;
+  assert.equal(freshDevice.goals[0].actions[0].shortTitle,detail.shortTitle,'A fresh second device recovers copy without local state');
+  assert.equal(freshDevice.goals[0].actions[0].description,newerLegacy.actions[0].description);
+  assert.equal(freshDevice.goals[0].actions[0].status,'pending');
+  assert.equal(Object.hasOwn(freshDevice.profile,'__kodaActionCopy'),false,'Transport backup is not stale editable profile data');
+  assert.equal(shouldSyncRecoveredAppState(damaged,freshDevice),true,'Pull queues repaired goals even with an empty old outbox');
+  await writeAppStateSnapshot(backend,'legacy',freshDevice);
+  assert.equal(backend.rows.get('legacy')!.goals[0].actions[0].shortTitle,detail.shortTitle,'Repair writes actual goals JSON, not just the backup');
+  assert.equal(shouldSyncRecoveredAppState(backend.rows.get('legacy'),normalizeStoredKodaState(backend.rows.get('legacy'))!),false,'Acknowledged repair does not create a sync loop');
+  assert.deepEqual(updated.openWindow!.history,originalHistory,'Backup and repair do not mutate history');
+
+  // Existing installations have no backup yet: surviving local metadata must
+  // repair the server, including after an offline reload with an empty outbox.
+  const noBackup={...damaged,profile:{...damaged.profile}};delete noBackup.profile.__kodaActionCopy;
+  const local=parseStoredKodaState(JSON.stringify(snapshot(updated)))!;
+  const recovered=mergeStoredKodaState(normalizeStoredKodaState(noBackup)!,local);
+  assert.equal(shouldSyncRecoveredAppState(noBackup,recovered),true);
+  assert.equal(shouldSyncRecoveredAppState(null,local),true,'Missing row queues local goals even without projects');
+  assert.equal(shouldSyncRecoveredAppState(null,normalizeStoredKodaState({})!),false,'Empty account does not invent a recovery');
+  backend.rows.set('recover-local',{...noBackup,user_id:'recover-local'});
+  backend.offline=true;
+  await assert.rejects(writeAppStateSnapshot(backend,'recover-local',recovered));
+  backend.offline=false;
+  await writeAppStateSnapshot(backend,'recover-local',parseStoredKodaState(JSON.stringify(recovered))!);
+  assert.equal(backend.label('recover-local'),detail.shortTitle);
+
+  // Device A prepares a repair; device B clears the label after A's read.
+  // The failed compare-and-swap must reread B's explicit clear and its backup.
+  backend.beforeWrite=()=>writeAppStateSnapshot(backend,'legacy',snapshot(clear));
+  await writeAppStateSnapshot(backend,'legacy',freshDevice);
+  assert.ok(backend.conflicts>0,'A real competing version must be exercised');
+  assert.equal(backend.label('legacy'),'','Concurrent clear survives stale repair');
+  legacyRewrite('legacy',afterClearLegacy);
+  const clearedFresh=normalizeStoredKodaState(backend.rows.get('legacy'))!;
+  assert.equal(clearedFresh.goals[0].actions[0].shortTitle,'','Backup retains explicit clear across another legacy rewrite');
+  assert.equal(shouldSyncRecoveredAppState(backend.rows.get('legacy'),clearedFresh),true);
+  await writeAppStateSnapshot(backend,'legacy',clearedFresh);
+  assert.equal(backend.rows.get('legacy')!.goals[0].actions[0].shortTitle,'');
+
+  const foreign={...damaged,user_id:'different-account'};
+  assert.equal(normalizeStoredKodaState(foreign)!.goals[0].actions[0].shortTitle,undefined,'Foreign backup cannot cross account boundary');
+  assert.equal(normalizeStoredKodaState({...damaged,user_id:undefined})!.goals[0].actions[0].shortTitle,undefined,'Unscoped local metadata cannot inject cloud copy');
+  const removed={...damaged,goals:[{...damaged.goals[0],actions:[]}]};
+  assert.deepEqual(normalizeStoredKodaState(removed)!.goals[0].actions,[],'Backup never revives removed actions');
+  const changedId={...damaged,goals:[{...damaged.goals[0],actions:damaged.goals[0].actions.map((a:any)=>({...a,id:'different-action'}))}]};
+  assert.equal(normalizeStoredKodaState(changedId)!.goals[0].actions[0].shortTitle,undefined,'Matching titles do not transfer backups to a different action');
+  const explicit={...damaged,goals:[{...damaged.goals[0],actions:damaged.goals[0].actions.map((a:any)=>({...a,shortTitle:''}))}]};
+  assert.equal(normalizeStoredKodaState(explicit)!.goals[0].actions[0].shortTitle,'','An explicit field always overrides compatibility backup');
+  const malformed={...damaged,profile:{...damaged.profile,__kodaActionCopy:{version:1,ownerId:'legacy',goals:[null,{id:updated.id,actions:[null,{id:completed.id,shortTitle:4}]}]}}};
+  assert.equal(normalizeStoredKodaState(malformed)!.goals[0].actions[0].shortTitle,undefined,'Malformed backup is ignored without failing goal loading');
+
+  // Compatibility limit: an old client can echo an obsolete unknown profile
+  // field over a newer backup. Client-only code cannot veto that server write.
+  await writeAppStateSnapshot(backend,'legacy-profile',snapshot(updated));
+  const oldProfile=structuredClone(backend.rows.get('legacy-profile')!.profile);
+  await writeAppStateSnapshot(backend,'legacy-profile',snapshot(clear));
+  legacyRewrite('legacy-profile',afterClearLegacy);
+  backend.rows.get('legacy-profile')!.profile=oldProfile;
+  assert.equal(backend.label('legacy-profile'),detail.shortTitle,
+    'Known pre-upgrade limit: replacing both goals and backup loses the newer clear for a fresh device');
+
+  // A repair is queued while an old request is still awaiting its response.
+  const coordinator=new SyncCoordinator();let finish!:()=>void;
+  const gate=new Promise<void>(resolve=>{finish=resolve;});let acknowledged=false;
+  const first=coordinator.run('appState',0,async()=>{await gate;if(coordinator.current('appState',0))acknowledged=true;});
+  await Promise.resolve();coordinator.changed('appState');finish();await first;
+  assert.equal(acknowledged,false,'Stale acknowledgement cannot clear a newly queued repair');
+  console.log('PASS two-client action copy: legacy raw JSON loss, fresh-device backup recovery, local repair, no sync loop, CAS clear race, account/deletion boundaries and stale acknowledgement.');
 }
 void verifyCopyPersistence().catch(error=>{console.error(error);process.exitCode=1;});
 console.log('PASS action copy: bounded exact identity, legacy compatibility, immutable copy-only apply, stale/deleted work rejection, metadata history/retry, progress/notes preservation, rebuild, JSON reload and stale-device merge.');
