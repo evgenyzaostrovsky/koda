@@ -4,6 +4,8 @@ const DEFAULT_PAST_DAYS = 14;
 const { createClient } = require('@supabase/supabase-js');
 const { escapeIcs } = require('../src/server/ics');
 const { calendarOwnerFromToken } = require('./_calendarTokens');
+const { validateBearerToken } = require('../src/server/aiSecurity');
+const { parseAutoPlanState, buildAutoPlanItems, normalizeGoal } = require('../src/server/kodaDomain.cjs');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -16,20 +18,23 @@ module.exports = async function handler(req, res) {
   const days = clampNumber(Number(query.days || DEFAULT_DAYS), 1, 90);
   const pastDays = clampNumber(Number(query.pastDays || DEFAULT_PAST_DAYS), 0, 30);
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  if (!process.env.CALENDAR_TOKEN_SECRET) {
-    res.status(503).json({ error: 'Календарь временно недоступен.' });
-    return;
-  }
-  const key = calendarOwnerFromToken(cleanText(query.key), process.env.CALENDAR_TOKEN_SECRET);
-  if (!key) {
-    res.status(403).json({ error: 'Ссылка недействительна. Подключите календарь заново в профиле KODA.' });
-    return;
+  const token = /^Bearer\s+(.+)$/i.exec(String(req.headers?.authorization || ''))?.[1];
+  const owner = token ? await validateBearerToken(token) : null;
+  let key;
+  if (token) {
+    if (!owner) { res.status(401).json({ error: 'Войдите в КОДА для экспорта календаря.' }); return; }
+    key = `user:${owner}`;
+    if (query.key && cleanText(query.key) !== key) { res.status(403).json({ error: 'Этот календарь принадлежит другому аккаунту.' }); return; }
+  } else {
+    if (!process.env.CALENDAR_TOKEN_SECRET) { res.status(503).json({ error: 'Календарь временно недоступен.' }); return; }
+    key = calendarOwnerFromToken(cleanText(query.key), process.env.CALENDAR_TOKEN_SECRET);
+    if (!key) { res.status(403).json({ error: 'Ссылка недействительна. Подключите календарь заново в профиле KODA.' }); return; }
   }
   const startDate = addDays(startOfToday(timezone), -pastDays);
   const events = [];
   let plannerItems;
   try {
-    plannerItems = await loadPlannerItems(key, startDate, days + pastDays);
+    plannerItems = await loadPlannerItems(key, startDate, days + pastDays, token);
   } catch {
     res.status(503).json({ error: 'Календарь временно недоступен.' });
     return;
@@ -78,12 +83,17 @@ module.exports = async function handler(req, res) {
   res.status(200).send(calendar);
 };
 
-async function loadPlannerItems(key, startDate, days) {
+async function loadPlannerItems(key, startDate, days, token) {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseKey = token
+    ? process.env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+    : process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
   if (!supabaseUrl || !supabaseKey) throw new Error('Calendar backend not configured');
 
-  const client = createClient(supabaseUrl, supabaseKey);
+  const client = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    ...(token ? { global: { headers: { Authorization: `Bearer ${token}` } } } : {}),
+  });
   const start = formatIsoDate(startDate);
   const end = formatIsoDate(addDays(startDate, days - 1));
   const { data, error } = await client
@@ -97,13 +107,18 @@ async function loadPlannerItems(key, startDate, days) {
 
   if (error || !Array.isArray(data)) throw new Error('Calendar backend unavailable');
 
-  return data.map((item) => ({
+  const account = await client.from('user_app_state').select('user_id,goals,profile_auto_plan:profile->autoPlan').eq('user_id', key.slice(5)).maybeSingle();
+  const autoPlan = !account.error && account.data?.user_id === key.slice(5) ? parseAutoPlanState(account.data.profile_auto_plan, key.slice(5)) : undefined;
+  const goals = Array.isArray(account.data?.goals) ? account.data.goals.map(normalizeGoal).filter(Boolean) : [];
+  const today = formatIsoDate(startOfToday(autoPlan?.settings.timezone || DEFAULT_TIMEZONE));
+  const automatic = buildAutoPlanItems(autoPlan, goals, today).filter(item => item.date >= start && item.date <= end);
+  return [...data.map((item) => ({
     id: String(item.id),
     date: String(item.event_date),
     time: item.event_time ? String(item.event_time).slice(0, 5) : '',
     title: String(item.title),
     done: Boolean(item.done),
-  }));
+  })), ...automatic];
 }
 
 function createAllDayEvent({ date, description, summary, uidPrefix }) {

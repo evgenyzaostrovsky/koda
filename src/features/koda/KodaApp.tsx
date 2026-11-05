@@ -1,3 +1,6 @@
+import { useAutoPlan } from './useAutoPlan';
+import { applyAutoPlanProgress } from './autoPlan';
+import { AutoPlanControl } from './components/AutoPlanControl';
 import { habitIsDue, habitDoneOn } from './habitModel';
 import { adoptPet, customizePet, feedPet, getPetView, rebirthPet, recordPetSourceChanges, type PetAccessory, type PetSpecies, type PetState } from './petState';
 import { type PetPose } from './components/PetCompanion';
@@ -12,8 +15,9 @@ import { upsertRoutineLog } from './goalLogic';
 import { usePersistentChat } from './usePersistentChat';
 import { accountDisplayName } from './components/WorkspaceIdentity';
 import { mergeEmotionEntries, type EmotionEntry } from './emotionJournal';
-import { SyncCoordinator, parseDeletedIds, journalRowId, writeAppStateSnapshot } from './syncCoordinator';
+import { SyncCoordinator, atSyncStage, syncFailureText, parseDeletedIds, journalRowId, writeAppStateSnapshot } from './syncCoordinator';
 import { plannerOwnerKey, plannerRowsForAccount, resolvePlannerPull } from './plannerPrivacy';
+import { toNullableSqlDate, toRequiredSqlDate } from './syncDate';
 import { RightPanelProvider } from './components/RightPanel';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
@@ -25,7 +29,7 @@ import { supabase } from '../../lib/supabase';
 import { defaultHabitMonth, defaultHabitYear, defaultJournalEntry, initialGoals, initialHabits, journalMoodByName, journalMoodByValue, journalOwnerKey } from './constants';
 import { calculateGoalProgress } from './goalLogic';
 import { autoFinalizeExpiredKodaDays, fromKodaDayRow, kodaDayId, mergeKodaDaySources, toKodaDayRow } from './kodaDaySync';
-import { defaultPomodoroSettings, defaultProfile, isJournalEntryWorthSyncing, journalDateKey, mergeJournalEntries, mergeStoredKodaState, normalizeStoredKodaState, parseJournalEntries, parseNotes, parsePlannerItems, parseStoredKodaState, type StoredKodaState } from './persistence';
+import { defaultPomodoroSettings, defaultProfile, isJournalEntryWorthSyncing, journalDateKey, mergeJournalEntries, mergePlannerItems, mergeStoredKodaState, normalizeStoredKodaState, parseJournalEntries, parseNotes, parsePlannerItems, parseStoredKodaState, shouldSyncRecoveredAppState, type StoredKodaState } from './persistence';
 import { buildHabitPlannerItems, buildProjectPlannerItems } from './plannerProjections';
 import { syncExplicitSourceChanges } from './dayPlanSync';
 import { recordHabitEdits } from './habitSync';
@@ -70,9 +74,16 @@ const journalDeletedStorageKey = 'koda:journalDeleted:v1';
 const plannerDeletedStorageKey = 'koda:plannerDeleted:v1';
 type CalendarSyncState = { count: number; message: string; status: 'idle' | 'syncing' | 'synced' | 'error' };
 type SyncDomain = 'planner' | 'journal' | 'appState' | 'notes' | 'kodaDays';
-const starterPlannerItemIds = new Set(['planner-1', 'planner-2', 'planner-3', 'planner-4', 'planner-5']);
 
-export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?: string | null }) {
+type KodaAppProps = { onSignOut?: () => void; userId?: string | null };
+
+export function KodaApp(props: KodaAppProps) {
+  // Account changes must unmount every draft, queue and in-flight effect together.
+  // Resetting them in an effect allows the previous render to write under the new ID.
+  return <AccountWorkspace key={props.userId ? `user:${props.userId}` : 'guest'} {...props} />;
+}
+
+function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   const [petRoomOpen, setPetRoomOpen] = useState(false);
   const [launchFinishedOwner, setLaunchFinishedOwner] = useState<string | null | undefined>(undefined);
   const launchPending = launchFinishedOwner !== (userId ?? null);
@@ -103,7 +114,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const [localDate, setLocalDate] = useState(todayDateKey());
   useEffect(() => { const interval=setInterval(()=>setLocalDate(todayDateKey()),30000); return ()=>clearInterval(interval); }, []);
   const [focusedPlannerItem,setFocusedPlannerItem] = useState<PlannerItem|null>(()=>plannerFocusFromHash());
-  function openPlannerItem(item:PlannerItem){setFocusedPlannerItem(item);setActiveTabState('planner');if(typeof window!=='undefined'){const query=new URLSearchParams({date:item.date,item:item.id,title:item.title,type:item.sourceType??'planner'});window.location.hash=`planner?${query}`;}}
+  function openPlannerItem(item:PlannerItem){if(item.sourceType==='goal'&&item.goalId){setFocusedGoalId(item.goalId);setActiveTab('goals');return;}setFocusedPlannerItem(item);setActiveTabState('planner');if(typeof window!=='undefined'){const query=new URLSearchParams({date:item.date,item:item.id,title:item.title,type:item.sourceType??'planner'});window.location.hash=`planner?${query}`;}}
   const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null);
 
   const [assistantDraft,setAssistantDraft]=useState('');
@@ -144,6 +155,12 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
   const [syncQueue, setSyncQueue] = useState<SyncDomain[]>([]);
   const [syncQueueLoaded, setSyncQueueLoaded] = useState(false);
+  const [syncFailures, setSyncFailures] = useState<Partial<Record<SyncDomain, { revision: number; text: string }>>>({});
+  const workspaceActive = useRef(true);
+  useEffect(() => {
+    workspaceActive.current = true;
+    return () => { workspaceActive.current = false; };
+  }, []);
   const syncCoordinator = useMemo(() => new SyncCoordinator(), [userId]);
   const activeDataOwner = useRef(userId);
   activeDataOwner.current = userId;
@@ -160,7 +177,15 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   const [quickAddLastSubtaskTap, setQuickAddLastSubtaskTap] = useState<{ id: string; at: number } | null>(null);
   const savedChat=usePersistentChat(userId,activeTab==='koda');
 
-  const projectPlannerItems = useMemo(() => buildProjectPlannerItems(projects), [projects]);
+  const baseProjectPlannerItems = useMemo(() => buildProjectPlannerItems(projects), [projects]);
+  const manualPlannerItems = useMemo(() => [...plannerItems, ...baseProjectPlannerItems], [plannerItems, baseProjectPlannerItems]);
+  const autoPlan = useAutoPlan({ ownerId: userId, state: profile.autoPlan,
+    ready: appStateLoaded && plannerLoaded && syncQueueLoaded && appStateLoadedStorageKey === scopedStorageKey(kodaStateStorageKey, userId) && plannerLoadedStorageKey === scopedStorageKey(plannerStorageKey, userId),
+    goals, manualItems: manualPlannerItems,
+    onChange: updater => { markSyncQueued('appState'); setProfile(current => ({ ...current, autoPlan: updater(current.autoPlan) })); },
+  });
+  const effectiveGoals = autoPlan.displayGoals;
+  const projectPlannerItems = useMemo(() => [...baseProjectPlannerItems, ...autoPlan.items], [baseProjectPlannerItems, autoPlan.items]);
   const plannerDayItems = useMemo(() => [...plannerItems, ...projectPlannerItems], [plannerItems, projectPlannerItems]);
   const completedTasks = useMemo(() => plannerDayItems.filter((item) => !item.deletedAt && item.done).length, [plannerDayItems]);
   const habitScore = useMemo(() => {
@@ -315,12 +340,13 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         const journalDeletedIds = parseDeletedIds(journalDeleted);
         setDeletedJournalItemIds(journalDeletedIds);
         if (journalDeletedIds.length && !parsed.includes('journal')) parsed.push('journal');
-        setSyncQueue(deletedIds.length ? [...new Set<SyncDomain>([...parsed, 'planner'])] : parsed);
+        if (deletedIds.length && !parsed.includes('planner')) parsed.push('planner');
+        setSyncQueue(items => syncCoordinator.restorePending(parsed, items));
         setSyncQueueLoaded(true);
       })
       .catch(() => {
         if (!active) return;
-        setSyncQueue([]);
+        setSyncQueue(items => syncCoordinator.restorePending([], items));
         setSyncQueueLoaded(true);
       });
     return () => { active = false; };
@@ -496,8 +522,8 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     if (!userId || !isSupabaseConfigured()) return;
 
     async function syncAppState() {
-      await writeAppStateSnapshot(supabase, userId!, state);
-      await syncGoalsToBackend(goals);
+      await atSyncStage('snapshot', () => writeAppStateSnapshot(supabase, userId!, state));
+      await atSyncStage('goalMirror', () => syncGoalsToBackend(goals));
     }
 
     return scheduleDomainSync('appState', syncAppState);
@@ -755,13 +781,14 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
           const nextState = mergeStoredKodaState(remoteState, storedState);
           nextState.kodaDays = mergeKodaDaySources(canonicalRemoteDays, nextState.kodaDays);
           applyStoredKodaState(nextState);
-          // Recover projects previously acknowledged by the lossy schema fallback.
-          if (JSON.stringify(nextState.projects) !== JSON.stringify(remoteState.projects)) markSyncQueued('appState');
+          // A previous client may have acknowledged a lossy goals/profile write.
+          // Repair cloud data on reload, focus, polling and realtime pulls alike.
+          if (shouldSyncRecoveredAppState(data, nextState)) markSyncQueued('appState');
           void AsyncStorage.setItem(storageKey, JSON.stringify(nextState));
         } else if (storedState) {
           const nextState = { ...storedState, kodaDays: mergeKodaDaySources(canonicalRemoteDays, storedState.kodaDays) };
           applyStoredKodaState(nextState);
-          if (!error && storedState.projects.length) markSyncQueued('appState');
+          if (!error && shouldSyncRecoveredAppState(data, nextState)) markSyncQueued('appState');
           void AsyncStorage.setItem(storageKey, JSON.stringify(nextState));
         } else if (canonicalRemoteDays.length) {
           const nextState = normalizeStoredKodaState({ kodaDays: canonicalRemoteDays });
@@ -802,7 +829,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         const hasPendingPlannerSync = storedQueue.includes('planner');
         const storedValue = await AsyncStorage.getItem(userPlannerStorageKey);
         // Guest data stays in its original namespace until ownership can be established.
-        const localItems = stripStarterPlannerItems(parsePlannerItems(storedValue))?.filter(item => !deletedIds.includes(item.id)) ?? null;
+        const localItems = parsePlannerItems(storedValue)?.filter(item => !deletedIds.includes(item.id)) ?? null;
         localReadComplete = true;
         if (!active) return;
         setCalendarKey(nextCalendarKey);
@@ -844,7 +871,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
           return;
         }
 
-        const remoteItems = stripStarterPlannerItems(Array.isArray(plannerQuery.data)
+        const remoteItems: PlannerItem[] = Array.isArray(plannerQuery.data)
           ? plannerQuery.data.map((item: Record<string, unknown>) => ({
               id: String(item.id),
               date: String(item.event_date),
@@ -859,7 +886,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
               updatedAt: typeof item.updated_at === 'string' ? item.updated_at : undefined,
               deletedAt: null,
             }))
-          : []) ?? [];
+          : [];
 
         if (!active) return;
         if (!syncCoordinator.current('planner', revision)) { setPlannerLoadedStorageKey(userPlannerStorageKey); return; }
@@ -899,8 +926,8 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       title: goal.title,
       description: goal.desiredResult || null,
       desired_result: goal.desiredResult || null,
-      deadline: goal.deadline || null,
-      target_date: goal.deadline || null,
+      deadline: toNullableSqlDate(goal.deadline),
+      target_date: toNullableSqlDate(goal.deadline),
       priority: goal.priority,
       status: goal.status,
       progress: calculateGoalProgress(goal),
@@ -910,8 +937,10 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       updated_at: now,
     }));
 
-    const { error: goalsError } = await (supabase as any).from('goals').upsert(goalRows, { onConflict: 'id' });
-    if (goalsError) throw goalsError;
+    await atSyncStage('goals', async () => {
+      const { error } = await (supabase as any).from('goals').upsert(goalRows, { onConflict: 'id' });
+      if (error) throw error;
+    });
 
     const milestoneRows = accountGoals.flatMap((goal) =>
       goal.milestones.map((milestone) => ({
@@ -920,7 +949,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         user_id: userId,
         title: milestone.title,
         description: milestone.description || null,
-        deadline: milestone.deadline || null,
+        deadline: toNullableSqlDate(milestone.deadline),
         status: milestone.status,
         position: milestone.position,
         completed_at: milestone.completedAt,
@@ -928,8 +957,10 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       })),
     );
     if (milestoneRows.length) {
-      const { error } = await (supabase as any).from('goal_milestones').upsert(milestoneRows, { onConflict: 'id' });
-      if (error) throw error;
+      await atSyncStage('milestones', async () => {
+        const { error } = await (supabase as any).from('goal_milestones').upsert(milestoneRows, { onConflict: 'id' });
+        if (error) throw error;
+      });
     }
 
     const actionRows = accountGoals.flatMap((goal) =>
@@ -940,7 +971,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         user_id: userId,
         title: action.title,
         description: action.description || null,
-        due_date: action.dueDate || null,
+        due_date: toNullableSqlDate(action.dueDate),
         estimated_minutes: action.estimatedMinutes,
         importance: action.importance,
         status: action.status,
@@ -950,8 +981,10 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       })),
     );
     if (actionRows.length) {
-      const { error } = await (supabase as any).from('goal_actions').upsert(actionRows, { onConflict: 'id' });
-      if (error) throw error;
+      await atSyncStage('actions', async () => {
+        const { error } = await (supabase as any).from('goal_actions').upsert(actionRows, { onConflict: 'id' });
+        if (error) throw error;
+      });
     }
 
     const routineRows = accountGoals.flatMap((goal) =>
@@ -964,15 +997,17 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         target_value: routine.targetValue,
         frequency_type: routine.frequencyType,
         weekdays: routine.weekdays,
-        start_date: routine.startDate,
-        end_date: routine.endDate || null,
+        start_date: toRequiredSqlDate(routine.startDate, 'routineStart'),
+        end_date: toNullableSqlDate(routine.endDate),
         is_active: routine.isActive,
         updated_at: now,
       })),
     );
     if (routineRows.length) {
-      const { error } = await (supabase as any).from('goal_routines').upsert(routineRows, { onConflict: 'id' });
-      if (error) throw error;
+      await atSyncStage('routines', async () => {
+        const { error } = await (supabase as any).from('goal_routines').upsert(routineRows, { onConflict: 'id' });
+        if (error) throw error;
+      });
     }
 
     const logRows = accountGoals.flatMap((goal) =>
@@ -981,14 +1016,16 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
         routine_id: entityId(log.routineId),
         goal_id: goal.id,
         user_id: userId,
-        log_date: log.date,
+        log_date: toRequiredSqlDate(log.date, 'routineLog'),
         value: log.value,
         updated_at: log.updatedAt,
       })),
     );
     if (logRows.length) {
-      const { error } = await (supabase as any).from('goal_routine_logs').upsert(logRows, { onConflict: 'routine_id,log_date' });
-      if (error) throw error;
+      await atSyncStage('routineLogs', async () => {
+        const { error } = await (supabase as any).from('goal_routine_logs').upsert(logRows, { onConflict: 'routine_id,log_date' });
+        if (error) throw error;
+      });
     }
   }
 
@@ -1001,23 +1038,22 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   function scheduleDomainSync(domain: SyncDomain, work: () => Promise<void>) {
     if (!syncQueueLoaded || !pendingSync.current.includes(domain) || !isOnline) return;
     const revision = syncCoordinator.revision(domain);
-    let cancelled = false;
-    const timeout = setTimeout(() => {
-      void syncCoordinator.run(domain, revision, async () => {
-        if (cancelled || activeDataOwner.current !== userId) return;
-        if (domain === 'planner' || domain === 'journal') {
-          const { data, error } = await supabase.auth.getSession();
-          if (error) throw error;
-          if (!userId || data.session?.user.id !== userId || activeDataOwner.current !== userId) {
-            throw new Error('Account changed; local changes remain queued');
-          }
+    return syncCoordinator.schedule(domain, revision, async () => {
+      if (domain === 'planner' || domain === 'journal') {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (!userId || data.session?.user.id !== userId || activeDataOwner.current !== userId) {
+          throw new Error('Account changed; local changes remain queued');
         }
-        if (cancelled || !syncCoordinator.current(domain, revision)) return;
-        await work();
-        if (!cancelled && activeDataOwner.current === userId && syncCoordinator.current(domain, revision)) clearSyncQueued(domain);
-      }).catch(() => undefined);
-    }, 650);
-    return () => { cancelled = true; clearTimeout(timeout); };
+      }
+      if (activeDataOwner.current !== userId || !syncCoordinator.current(domain, revision)) throw new Error('Account changed; local changes remain queued');
+      await work();
+    }, {
+      isPending: () => pendingSync.current.includes(domain),
+      isActive: () => workspaceActive.current && activeDataOwner.current === userId,
+      onSuccess: () => clearSyncQueued(domain),
+      onError: error => setSyncFailures(current => ({ ...current, [domain]: { revision, text: syncFailureText(domain, error) } })),
+    });
   }
 
   useEffect(() => {
@@ -1027,6 +1063,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   function clearSyncQueued(domain: SyncDomain) {
     pendingSync.current = pendingSync.current.filter(item => item !== domain);
     setSyncQueue((items) => items.filter((item) => item !== domain));
+    setSyncFailures(current => { const next = { ...current }; delete next[domain]; return next; });
     if (domain === 'appState') setPlannerPullToken(value => value + 1);
   }
 
@@ -1045,7 +1082,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       setCalendarSync({ count: plannerItems.length, message: 'Синхронизирую планнер...', status: 'syncing' });
 
       try {
-        const cleanPlannerItems = stripStarterPlannerItems(plannerItems) ?? [];
+        const cleanPlannerItems = plannerItems;
         const rows = plannerRowsForAccount(plannerUserId, cleanPlannerItems);
 
         if (rows.length) {
@@ -1062,10 +1099,9 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
           }
         }
 
-        const allDeleteIds = [...new Set([...deletedPlannerItemIds, ...starterPlannerItemIds])];
-
-        if (allDeleteIds.length) {
-          const { error } = await (supabase as any).from('planner_events').delete().eq('owner_key', plannerOwnerKey(plannerUserId)).in('id', allDeleteIds);
+        if (deletedPlannerItemIds.length) {
+          const { error } = await (supabase as any).from('planner_events').delete()
+            .eq('owner_key', calendarKey).in('id', deletedPlannerItemIds);
 
           if (error) {
             throw error;
@@ -1208,7 +1244,13 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
 
   function updateGoals(updater: (items: Goal[]) => Goal[]) {
     markSyncQueued('appState');
-    const next = updater(editSources.current?.goals ?? goals);
+    const currentGoals = applyAutoPlanProgress(profile.autoPlan, editSources.current?.goals ?? goals);
+    const next = updater(currentGoals);
+    for (const item of autoPlan.items) {
+      const before = currentGoals.find(g => g.id === item.goalId)?.actions.find(a => a.id === item.goalActionId);
+      const after = next.find(g => g.id === item.goalId)?.actions.find(a => a.id === item.goalActionId);
+      if (before && after && before.status !== after.status) autoPlan.complete(item, after.status === 'completed');
+    }
     commitExplicitSources({ goals: next });
     setGoals(next);
   }
@@ -1233,8 +1275,10 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     if (!kodaDays.some(d=>d.status==='active'&&d.plan)) return;
     updateKodaDays(days=>days.map(d=> {
       if (!d.plan || d.status!=='active') return d;
-      const imported = syncDayPlanProgress(d.plan, previous.goals, before);
-      const plan = syncExplicitSourceChanges(imported,previous.goals,next.goals,before,after);
+      const previousGoals = applyAutoPlanProgress(profile.autoPlan, previous.goals);
+      const nextGoals = patch.goals ? next.goals : previousGoals;
+      const imported = syncDayPlanProgress(d.plan, previousGoals, before);
+      const plan = syncExplicitSourceChanges(imported,previousGoals,nextGoals,before,after);
       return plan===d.plan?d:{...d,plan,updatedAt:new Date().toISOString()};
     }));
   }
@@ -1281,6 +1325,14 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   }
 
   function toggleProjectedPlannerItem(item: PlannerItem) {
+    if (item.sourceType === 'goal') {
+      if (item.ownerId !== userId) return;
+      const at = new Date().toISOString();
+      updateGoals(current => current.map(goal => goal.id === item.goalId ? { ...goal, updatedAt: at,
+        actions: goal.actions.map(action => action.id === item.goalActionId ? { ...action, status: item.done ? 'pending' : 'completed', completedAt: item.done ? null : at } : action),
+      } : goal));
+      return;
+    }
     if (item.sourceType !== 'project' || !item.ownerId || !item.sourceId) return;
 
     const now = new Date().toISOString();
@@ -1302,6 +1354,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
   }
 
   function moveProjectedPlannerItemDate(item: PlannerItem, date: string) {
+    if (item.sourceType === 'goal') { autoPlan.move(item, date); return; }
     if (item.sourceType !== 'project' || !item.ownerId || !item.sourceId) return;
 
     const now = new Date().toISOString();
@@ -1505,31 +1558,40 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     }
   }
   const widgetItems = useMemo(() => [...plannerDayItems, ...buildHabitPlannerItems(habits, localDate)], [plannerDayItems, habits, localDate]);
-  const overviewItems = useMemo(() => [...plannerDayItems, ...goalOverviewItems(goals, localDate)], [plannerDayItems, goals, localDate]);
+  const overviewItems = useMemo(() => [...plannerDayItems, ...goalOverviewItems(effectiveGoals, localDate).filter(item => !autoPlan.items.some(auto => auto.goalId === item.goalId && auto.goalActionId === item.goalActionId))], [plannerDayItems, effectiveGoals, localDate, autoPlan.items]);
   useEffect(() => {
     if (!appStateLoaded || !plannerLoaded || appStateLoadedStorageKey !== scopedStorageKey(kodaStateStorageKey,userId)) return;
     const day=kodaDays.find(d=>d.localDate===localDate&&d.status==='active'&&d.plan);
     if (!day?.plan) return;
     const sourcePlan=day.plan;
-    const synced=syncDayPlanProgress(sourcePlan,goals,widgetItems);
+    const synced=syncDayPlanProgress(sourcePlan,effectiveGoals,widgetItems);
     if (synced===sourcePlan) return;
     updateKodaDays(days=>days.map(d=>d.id===day.id&&d.status==='active'&&d.plan===sourcePlan?{...d,plan:synced,updatedAt:new Date().toISOString()}:d));
-  }, [goals,widgetItems,kodaDays,localDate,appStateLoaded,plannerLoaded,appStateLoadedStorageKey,userId]);
+  }, [effectiveGoals,widgetItems,kodaDays,localDate,appStateLoaded,plannerLoaded,appStateLoadedStorageKey,userId]);
   const searchResults: DesktopSearchResult[] = useMemo(() => [
     ...goals.filter(g=>!g.archivedAt).map(g=>({id:`goal:${g.id}`,title:g.title,kind:'Цель',open:()=>{setFocusedGoalId(g.id);setActiveTab('goals');}})),
     ...notes.filter(n=>!n.deletedAt).map(n=>({id:`note:${n.id}`,title:n.title,kind:'Заметка',open:()=>{setFocusedNoteId(n.id);setActiveTab('notes');}})),
     ...plannerDayItems.filter(p=>!p.deletedAt).map(p=>({id:`planner:${p.id}`,title:p.title,kind:'Дело',open:()=>setActiveTab('planner')})),
     ...projects.filter(p=>p.status!=='archived').map(p=>({id:`project:${p.id}`,title:p.title,kind:'Проект',open:()=>setActiveTab('projects')})),
   ], [goals, notes, plannerDayItems, projects]);
+  const syncReady = syncQueueLoaded && plannerLoaded && journalLoaded && appStateLoaded && notesLoaded;
+  const visibleSyncQueue = syncReady ? syncQueue : [];
+  const hasCloudSync = Boolean(userId) && isSupabaseConfigured();
+  const syncFailure = visibleSyncQueue.map(domain => {
+    const failure = syncFailures[domain];
+    return failure && syncCoordinator.current(domain, failure.revision) ? failure.text : undefined;
+  }).filter(Boolean).join(' ');
+  const syncText = getSyncText(visibleSyncQueue, isOnline, syncReady, hasCloudSync, syncFailure);
+
   const screen = (() => {
-    if (activeTab === 'habits') return <WidgetDesktop journalEntries={journalEntries} lastAssistantReply={[...savedChat.chat].reverse().find(message=>message.role==='koda')?.text} onAssistantPrompt={prompt=>{setAssistantDraft(prompt);setActiveTab('koda');}} onJournal={id=>{if(id)setActiveJournalId(id);setActiveTab('journal');}} timerSettings={pomodoro} goals={goals} habits={habits} days={kodaDays} notes={notes} projects={projects} items={widgetItems} overviewItems={overviewItems} onPlannerItem={openPlannerItem} onQuickAdd={()=>setQuickAddOpen(true)} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutReady={desktopLayout.ready} onOpen={setActiveTab} onGoal={id=>{setFocusedGoalId(id);setActiveTab('goals');}} onNote={id=>{setFocusedNoteId(id);setActiveTab('notes');}} onToggleHabit={toggleHabitToday} onProgress={progressFromWidget} />;
-    if (activeTab === 'routines') return <HabitsScreen habits={habits} onHabitsChange={updateHabitSources} onToggleToday={toggleHabitToday} />;
+    if (activeTab === 'habits') return <WidgetDesktop journalEntries={journalEntries} lastAssistantReply={[...savedChat.chat].reverse().find(message=>message.role==='koda')?.text} onAssistantPrompt={prompt=>{setAssistantDraft(prompt);setActiveTab('koda');}} onJournal={id=>{if(id)setActiveJournalId(id);setActiveTab('journal');}} timerSettings={pomodoro} goals={effectiveGoals} habits={habits} days={kodaDays} notes={notes} projects={projects} items={widgetItems} overviewItems={overviewItems} onPlannerItem={openPlannerItem} onQuickAdd={()=>setQuickAddOpen(true)} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutReady={desktopLayout.ready} onOpen={setActiveTab} onGoal={id=>{setFocusedGoalId(id);setActiveTab('goals');}} onNote={id=>{setFocusedNoteId(id);setActiveTab('notes');}} onToggleHabit={toggleHabitToday} onProgress={progressFromWidget} />;
+    if (activeTab === 'routines') return <HabitsScreen onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} habits={habits} onHabitsChange={updateHabitSources} onToggleToday={toggleHabitToday} />;
 
     if (activeTab === 'planner') {
-      return <PlannerScreen initialFocus={focusedPlannerItem} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} goals={goals} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onGoalsChange={updateGoals} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} projectNames={Object.fromEntries(projects.map(project=>[project.id,project.title]))} />;
+      return <PlannerScreen autoPlanControl={<AutoPlanControl {...autoPlan.control} />} onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} initialFocus={focusedPlannerItem} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} />;
     }
     if (activeTab === 'goals') {
-      return <GoalsScreen goals={goals} hasCloudSync={Boolean(userId) && isSupabaseConfigured()} isDesktop={isDesktopLayout} isOnline={isOnline} onGoalsChange={updateGoals} userId={userId} initialGoalId={focusedGoalId} />;
+      return <GoalsScreen onOpenWorkspace={()=>setActiveTab('habits')} goals={effectiveGoals} hasCloudSync={Boolean(userId) && isSupabaseConfigured()} isDesktop={isDesktopLayout} isOnline={isOnline} onGoalsChange={updateGoals} userId={userId} initialGoalId={focusedGoalId} />;
     }
     if (activeTab === 'projects') {
       return <ProjectsScreen isDesktop={isDesktopLayout} onProjectsChange={updateProjects} projects={projects} />;
@@ -1540,7 +1602,7 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     if (activeTab === 'day') {
       return (
         <DailyPlanScreen
-          goals={goals}
+          goals={effectiveGoals}
           isDesktop={isDesktopLayout}
           kodaDays={kodaDays}
           onGoalsChange={updateGoals}
@@ -1585,15 +1647,11 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
       );
     }
     if (activeTab === 'progress') {
-      return <ProgressScreen completedTasks={completedTasks} goals={goals} habitScore={habitScore} isDesktop={isDesktopLayout} totalTasks={plannerDayItems.filter(item=>!item.deletedAt).length} kodaDays={kodaDays} />;
+      return <ProgressScreen completedTasks={completedTasks} goals={effectiveGoals} habitScore={habitScore} isDesktop={isDesktopLayout} totalTasks={plannerDayItems.filter(item=>!item.deletedAt).length} kodaDays={kodaDays} />;
     }
-    return <KodaScreen key={userId || 'guest'} chat={savedChat.chat} composerValue={chatComposer.ownerId===(userId??null)?chatComposer.text:''} onComposerChange={(value)=>setChatComposer({ownerId:userId??null,text:value})} initialDraft={assistantDraft} onDraftConsumed={()=>setAssistantDraft('')} isDesktop={isDesktopLayout} onSend={savedChat.send} isSending={savedChat.busy} error={savedChat.error} provider={savedChat.provider} onRetry={savedChat.retry} retryLabel={savedChat.retryLabel} inputDisabled={savedChat.inputDisabled} historyStatus={savedChat.historyStatus} syncError={savedChat.cloudError} onSyncRetry={savedChat.retrySync} />;
+    return <KodaScreen key={userId || 'guest'} userId={userId} memorySuggestion={savedChat.memorySuggestion} onDismissMemorySuggestion={savedChat.clearMemorySuggestion} chat={savedChat.chat} composerValue={chatComposer.ownerId===(userId??null)?chatComposer.text:''} onComposerChange={(value)=>setChatComposer({ownerId:userId??null,text:value})} initialDraft={assistantDraft} onDraftConsumed={()=>setAssistantDraft('')} isDesktop={isDesktopLayout} onSend={savedChat.send} isSending={savedChat.busy} error={savedChat.error} provider={savedChat.provider} onRetry={savedChat.retry} retryLabel={savedChat.retryLabel} inputDisabled={savedChat.inputDisabled} historyStatus={savedChat.historyStatus} syncError={savedChat.cloudError} onSyncRetry={savedChat.retrySync} />;
   })();
 
-  const syncReady = syncQueueLoaded && plannerLoaded && journalLoaded && appStateLoaded && notesLoaded;
-  const visibleSyncQueue = syncReady ? syncQueue : [];
-  const hasCloudSync = Boolean(userId) && isSupabaseConfigured();
-  const syncText = getSyncText(visibleSyncQueue, isOnline, syncReady, hasCloudSync);
   const petState = profile.pet?.ownerId === (userId ?? null) ? profile.pet : undefined;
   const petView = getPetView(petState, petClock);
   // Earlier releases used «Кода» as the default; retain the stored value while displaying the new name.
@@ -1640,8 +1698,8 @@ export function KodaApp({ onSignOut, userId }: { onSignOut?: () => void; userId?
     <PomodoroProvider settings={pomodoro} owner={userId ?? 'guest'} onPhase={() => playPomodoroSound(pomodoro.soundId, 'end')}>
     <SafeAreaView style={styles.safe}>
       <StatusBar style={resolveKodaThemeId(profile.themeId).endsWith('dark') ? 'light' : 'dark'} />
-      <WidgetShell key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults} onLaunchFinished={()=>setLaunchFinishedOwner(userId ?? null)}>
-        {activeTab==='habits'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
+      <WidgetShell focused={activeTab==='planner'||activeTab==='routines'||activeTab==='goals'} key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults} onLaunchFinished={()=>setLaunchFinishedOwner(userId ?? null)}>
+        {activeTab==='habits'||activeTab==='planner'||activeTab==='routines'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
       </WidgetShell>
       {!launchPending && !petRoomOpen && !quickAddOpen && <PetWanderer name={petDisplayName} state={petLife} pose={petPose} onPress={()=>setPetRoomOpen(true)} />}
       <Modal visible={petRoomOpen} animationType="fade" onRequestClose={()=>setPetRoomOpen(false)}>
@@ -1846,12 +1904,6 @@ function noteTimeValue(value?: string | null) {
   return Number.isNaN(time) ? 0 : time;
 }
 
-function stripStarterPlannerItems(items: PlannerItem[] | null) {
-  if (!items) return null;
-
-  return items.filter((item) => !starterPlannerItemIds.has(item.id));
-}
-
 function ensureTodayJournalEntry(entries: JournalEntry[]) {
   const today = todayDateKey();
   if (entries.some((entry) => journalDateKey(entry) === today)) {
@@ -1868,12 +1920,12 @@ function preferredJournalEntryId(entries: JournalEntry[]) {
   return todayEntry?.id ?? entries[0]?.id ?? defaultJournalEntry.id;
 }
 
-function getSyncText(queue: SyncDomain[], online: boolean, ready = true, hasCloudSync = true) {
+function getSyncText(queue: SyncDomain[], online: boolean, ready = true, hasCloudSync = true, failure = '') {
   if (!hasCloudSync) return 'Сохранено на устройстве';
   if (!ready && online) return 'Синхронизация...';
   if (!online && queue.length) return 'Изменения ждут подключения к интернету';
   if (!online) return 'Офлайн: новые данные сохранятся на телефоне';
-  if (queue.length) return 'Изменения ждут синхронизации';
+  if (queue.length) return failure || 'Изменения ждут синхронизации';
 
   return 'Синхронизировано';
 }

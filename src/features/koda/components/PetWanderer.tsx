@@ -1,14 +1,54 @@
-import { useEffect, useRef, useState } from 'react';
-import { Animated, AppState, Easing, Platform, useWindowDimensions } from 'react-native';
-import { PetCompanion, type PetLifeState, type PetPose } from './PetCompanion';
-import { horizontalPetPath, isShortPetJump, type PetRoutePoint, type PetRouteRect } from './PetWandererGeometry';
+import { createElement, useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, AppState, Easing, Keyboard, Platform, View, useWindowDimensions } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
+import { getPetActionFrameBounds, getPetClimbHandX, PetCompanion, type PetActionPose, type PetClimbPose, type PetLifeState, type PetPose } from './PetCompanion';
 import { useReducedMotion } from './RightPanel';
 
-type Point = PetRoutePoint;
-type Rect = PetRouteRect;
-const PET_SIZE = 72;
+type Scene = 'rest' | 'approach' | 'push' | 'hop' | 'roam' | 'big-jump' | 'look-user';
+type Point = { x: number; y: number };
+type WidgetRect = { id: string; element?: HTMLElement; left: number; top: number; right: number; bottom: number; width: number; height: number };
+type WidgetApproach = { side: 'left' | 'right' | 'below' | 'current'; facing: 1 | -1; point: Point };
+type VineScene = { id: number; x: number; top: number; height: number; opacity: Animated.Value };
+type FlightPath = {
+  x: Animated.AnimatedInterpolation<number>;
+  y: Animated.AnimatedInterpolation<number>;
+  progress: Animated.Value;
+  from: Point;
+  to: Point;
+  height: number;
+  listenerId: string;
+};
 
-/** A small, accessible entrance to the pet's room across the workspace. */
+const PET_SIZE = 72;
+const SURFACE_SELECTOR = '[data-widget-slot], [data-pet-surface]';
+
+// Keep the real top edge for landing, but use only the visible side for contact.
+// A tall card remains playable when its bottom extends below a scroll viewport.
+function measureSurface(element: HTMLElement, id: string): WidgetRect | null {
+  if (!element.isConnected || element.closest('[role="dialog"], [aria-modal="true"], [aria-hidden="true"], [data-pet-surface="off"]') || element.querySelector('input, textarea, select, [contenteditable="true"]')) return null;
+  const rect = element.getBoundingClientRect();
+  let clipTop = 0, clipLeft = 0;
+  let clipBottom = window.innerHeight, clipRight = document.documentElement.clientWidth || window.innerWidth;
+  for (let parent: HTMLElement | null = element; parent; parent = parent.parentElement) {
+    const style = window.getComputedStyle(parent);
+    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return null;
+    if (parent === element) continue;
+    const bounds = parent.getBoundingClientRect();
+    if (/(hidden|clip|auto|scroll)/.test(style.overflowY)) { clipTop = Math.max(clipTop, bounds.top); clipBottom = Math.min(clipBottom, bounds.bottom); }
+    if (/(hidden|clip|auto|scroll)/.test(style.overflowX)) { clipLeft = Math.max(clipLeft, bounds.left); clipRight = Math.min(clipRight, bounds.right); }
+  }
+  const bottom = Math.min(rect.bottom, clipBottom);
+  if (rect.width < 60 || rect.height < 60 || rect.top < Math.max(PET_SIZE + 8, clipTop) || bottom - rect.top < 60 || rect.left < clipLeft || rect.right > clipRight) return null;
+  return { id, element, left: rect.left, right: rect.right, top: rect.top, bottom, width: rect.width, height: bottom - rect.top };
+}
+
+const pick = <T,>(values: T[]) => values[Math.floor(Math.random() * values.length)];
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const pointOnArc = (from: Point, to: Point, height: number, progress: number): Point => {
+  const t = clamp(progress, 0, 1);
+  return { x: from.x + (to.x - from.x) * t, y: Math.max(8, from.y + (to.y - from.y) * t - 4 * height * t * (1 - t)) };
+};
+
 export function PetWanderer({ name, state, pose, onPress }: {
   name: string;
   state: PetLifeState;
@@ -18,367 +58,397 @@ export function PetWanderer({ name, state, pose, onPress }: {
   const { width, height } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
   const [appActive, setAppActive] = useState(AppState.currentState !== 'background' && AppState.currentState !== 'inactive');
-  const displayName = name.trim() || 'Кодик';
-  const positionX = useRef(new Animated.Value(0)).current;
-  const positionY = useRef(new Animated.Value(0)).current;
-  const facing = useRef(new Animated.Value(-1)).current;
+  const [blocked, setBlocked] = useState(false);
+  const [navigationPaused, setNavigationPaused] = useState(false);
+  const [scene, setScene] = useState<Scene>('rest');
+  const [scenePose, setScenePose] = useState<PetPose | null>(null);
+  const [actionPose, setActionPose] = useState<PetActionPose | null>(null);
+  const [climbFrame, setClimbFrame] = useState<PetClimbPose>('climb-reach');
   const [walking, setWalking] = useState(false);
-  const [jumping, setJumping] = useState(false);
-  const [overControl, setOverControl] = useState(false);
+  const [climbing, setClimbing] = useState(false);
+  const [vine, setVine] = useState<VineScene | null>(null);
+  const [flightMode, setFlightMode] = useState(false);
+  const [targetId, setTargetId] = useState('');
+  const displayState: PetLifeState = state === 'egg' ? 'alive' : state;
+  const displayName = name.trim() || 'Кодик';
+  const basePose = useRef(pose);
+  basePose.current = pose;
+  const initialPoint = { x: Math.max(8, width - PET_SIZE - 16), y: Math.max(8, height - PET_SIZE - 20) };
+  const position = useRef(new Animated.ValueXY(initialPoint)).current;
+  const springOffset = useRef(new Animated.Value(0)).current;
+  const point = useRef<Point>(initialPoint);
+  const facing = useRef(new Animated.Value(-1)).current;
+  const flightPath = useRef<FlightPath | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const climbTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeAnimation = useRef<Animated.CompositeAnimation | null>(null);
+  const widgetAnimations = useRef<Animation[]>([]);
+  const vineOpacity = useRef<Animated.Value | null>(null);
 
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined' || !appActive) {
-      setOverControl(false);
-      return;
-    }
-    let frame = 0;
-    const measure = () => {
-      const pet = document.querySelector<HTMLElement>('[data-testid="pet-wanderer"]');
-      if (!pet) return;
-      const bounds = pet.getBoundingClientRect();
-      const controls = document.querySelectorAll<HTMLElement>('button, a, input, textarea, select, [role="button"], [role="checkbox"], [role="switch"]');
-      const overlaps = Array.from(controls).some(control => {
-        if (pet.contains(control)) return false;
-        const rect = control.getBoundingClientRect();
-        const clearance = 24;
-        return rect.width > 0 && rect.height > 0 && bounds.left - clearance < rect.right && bounds.right + clearance > rect.left && bounds.top - clearance < rect.bottom && bounds.bottom + clearance > rect.top;
-      });
-      setOverControl(previous => previous === overlaps ? previous : overlaps);
-    };
-    const scheduleMeasure = () => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        measure();
-      });
-    };
-    measure();
-    // The pet only changes screen position while walking or jumping. Keep the
-    // fast check during those animations, and use layout/scroll events at rest.
-    const interval = walking || jumping ? setInterval(measure, 80) : undefined;
-    const onMutations = (records: MutationRecord[]) => {
-      const pet = document.querySelector<HTMLElement>('[data-testid="pet-wanderer"]');
-      if (records.some(record => !pet?.contains(record.target))) scheduleMeasure();
-    };
-    const observer = typeof MutationObserver !== 'undefined' && document.body
-      ? new MutationObserver(onMutations)
-      : null;
-    observer?.observe(document.body, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ['class', 'style', 'hidden', 'disabled', 'aria-hidden', 'role', 'tabindex'],
+  const syncBlocked = useCallback(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const active = document.activeElement as HTMLElement | null;
+    const inputFocused = Boolean(active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable));
+    const dialogOpen = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]')).some(node => {
+      const element = node as HTMLElement;
+      const style = window.getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
     });
-    window.addEventListener('resize', scheduleMeasure);
-    window.addEventListener('scroll', scheduleMeasure, true);
-    // Layout may change after an image finishes loading or a CSS transition
-    // completes even when no element was inserted or removed.
-    window.addEventListener('load', scheduleMeasure, true);
-    window.addEventListener('transitionend', scheduleMeasure, true);
-    window.addEventListener('animationend', scheduleMeasure, true);
-    return () => {
-      if (interval !== undefined) clearInterval(interval);
-      observer?.disconnect();
-      window.removeEventListener('resize', scheduleMeasure);
-      window.removeEventListener('scroll', scheduleMeasure, true);
-      window.removeEventListener('load', scheduleMeasure, true);
-      window.removeEventListener('transitionend', scheduleMeasure, true);
-      window.removeEventListener('animationend', scheduleMeasure, true);
-      if (frame) window.cancelAnimationFrame(frame);
-    };
-  }, [appActive, jumping, walking]);
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextState) => setAppActive(nextState === 'active'));
-    if (Platform.OS !== 'web' || typeof document === 'undefined') return () => subscription.remove();
-    const updateVisibility = () => setAppActive(document.visibilityState === 'visible' && AppState.currentState !== 'background' && AppState.currentState !== 'inactive');
-    document.addEventListener('visibilitychange', updateVisibility);
-    updateVisibility();
-    return () => { subscription.remove(); document.removeEventListener('visibilitychange', updateVisibility); };
+    setBlocked(inputFocused || dialogOpen);
   }, []);
 
   useEffect(() => {
-    positionX.stopAnimation();
-    positionY.stopAnimation();
-    positionX.setValue(0);
-    positionY.setValue(0);
-    facing.setValue(-1);
-    setWalking(false);
-    setJumping(false);
-    if (reducedMotion || !appActive || state === 'dead' || width < 240 || height < 240) return;
-
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    let active = true;
-    let actionCycle = 0;
-    let passCount = 0;
-    let direction = -1;
-    let cleanupPush: (() => void) | null = null;
-    let baseline = { x: Math.max(0, width - 84), y: Math.max(0, height - 92) };
-    let currentPoint = { ...baseline };
-
-    // Widget slots expose their actual web positions. The pet may overlap a
-    // card's blank edge; text and controls are measured separately for landings.
-    const visibleWidgets = () => {
-      if (Platform.OS !== 'web' || typeof document === 'undefined') return null;
-      const pet = document.querySelector('[data-testid="pet-wanderer"]');
-      const root = pet?.parentElement?.getBoundingClientRect();
-      if (!root) return null;
-      baseline = { x: Math.max(0, root.width - 84), y: Math.max(0, root.height - 92) };
-      const visibleRect = (node: HTMLElement) => {
-        const source = node.getBoundingClientRect();
-        let left = Math.max(source.left, root.left), top = Math.max(source.top, root.top);
-        let right = Math.min(source.right, root.right), bottom = Math.min(source.bottom, root.bottom);
-        for (let ancestor = node.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
-          const style = window.getComputedStyle(ancestor);
-          if (!/(auto|scroll|hidden|clip)/.test(`${style.overflowX} ${style.overflowY}`)) continue;
-          const clip = ancestor.getBoundingClientRect();
-          left = Math.max(left, clip.left); top = Math.max(top, clip.top);
-          right = Math.min(right, clip.right); bottom = Math.min(bottom, clip.bottom);
-        }
-        return { left, top, right, bottom, width: right - left, height: bottom - top };
-      };
-      const contentRects = (card: HTMLElement) => {
-        const rects: Rect[] = [];
-        for (const node of Array.from(card.querySelectorAll<HTMLElement>('button,a,input,textarea,select,[role="button"],[role="checkbox"],[role="switch"],[tabindex]:not([tabindex="-1"])'))) {
-          const rect = node.getBoundingClientRect();
-          if (rect.width && rect.height) rects.push({ left: rect.left - root.left, top: rect.top - root.top, right: rect.right - root.left, bottom: rect.bottom - root.top });
-        }
-        const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
-        let node = walker.nextNode();
-        while (node) {
-          if (node.textContent?.trim()) {
-            const range = document.createRange();
-            range.selectNodeContents(node);
-            for (const rect of Array.from(range.getClientRects())) if (rect.width && rect.height) rects.push({ left: rect.left - root.left, top: rect.top - root.top, right: rect.right - root.left, bottom: rect.bottom - root.top });
-            range.detach();
-          }
-          node = walker.nextNode();
-        }
-        return rects;
-      };
-      const slots = Array.from(document.querySelectorAll<HTMLElement>('[data-widget-slot]'))
-        .map(slot => {
-          const card = slot.querySelector<HTMLElement>(':scope > [data-testid^="widget-"]');
-          return card ? { id: slot.dataset.widgetSlot ?? '', slot, card, rect: visibleRect(card), textRects: contentRects(card) } : null;
-        })
-        .filter((item): item is NonNullable<typeof item> => Boolean(item && item.rect.width > 0 && item.rect.height > 0));
-      return { root, widgets: slots.map(item => ({ ...item, rect: { left: item.rect.left - root.left, top: item.rect.top - root.top, right: item.rect.right - root.left, bottom: item.rect.bottom - root.top } })) };
-    };
-
-    const pickWidgetAction = () => {
-      const measured = visibleWidgets();
-      if (!measured || !measured.widgets.length) return null;
-      const { root, widgets } = measured;
-      const petCenterY = currentPoint.y + PET_SIZE / 2;
-      const nearby = widgets
-        .filter(widget => widget.rect.top < currentPoint.y + PET_SIZE && widget.rect.bottom > currentPoint.y
-          && (widget.rect.left - PET_SIZE - 8 >= 4 || widget.rect.right + PET_SIZE + 8 <= root.width - 4))
-        .sort((a, b) => {
-          const distance = (rect: Rect) => Math.abs((rect.top + rect.bottom) / 2 - petCenterY)
-            + Math.min(Math.abs(rect.left - PET_SIZE - 8 - currentPoint.x), Math.abs(rect.right + 8 - currentPoint.x));
-          return distance(a.rect) - distance(b.rect);
-        })
-        .slice(0, 2);
-      if (!nearby.length) return null;
-      const target = nearby[Math.floor(Math.random() * nearby.length)];
-      const r = target.rect;
-      const canApproachLeft = r.left - PET_SIZE - 8 >= 4;
-      const canApproachRight = r.right + PET_SIZE + 8 <= root.width - 4;
-      if (!canApproachLeft && !canApproachRight) return null;
-      const side: 'left' | 'right' = canApproachLeft && canApproachRight
-        ? (Math.abs(r.left - PET_SIZE - 8 - currentPoint.x) <= Math.abs(r.right + 8 - currentPoint.x) ? 'left' : 'right')
-        : canApproachLeft ? 'left' : 'right';
-      const launch = side === 'left'
-        ? { x: r.left - PET_SIZE - 8, y: currentPoint.y }
-        : { x: r.right + 8, y: currentPoint.y };
-      const textAndControls = target.textRects;
-      const approach = horizontalPetPath(currentPoint, launch, root.width, root.height);
-      if (!approach) return null;
-      const clearOfCopy = (point: Point, from: Point = point) => {
-        const swept = { left: Math.min(point.x, from.x), top: Math.min(point.y, from.y), right: Math.max(point.x, from.x) + PET_SIZE, bottom: Math.max(point.y, from.y) + PET_SIZE };
-        return textAndControls.every(rect => swept.right <= rect.left - 2 || swept.left >= rect.right + 2 || swept.bottom <= rect.top - 2 || swept.top >= rect.bottom + 2);
-      };
-      const candidates: Array<{ kind: 'peek' | 'land' | 'push'; point: Point; launch: Point; approach: Point[] }> = [];
-      // Both peek and landing occupy only a 12px blank strip over the card edge.
-      const peek = { x: side === 'left' ? r.left - PET_SIZE + 12 : r.right - PET_SIZE + 12, y: currentPoint.y };
-      if (clearOfCopy(peek, launch)) candidates.push({ kind: 'peek', point: peek, launch, approach });
-      const landingX = side === 'left' ? r.left + 10 : r.right - PET_SIZE - 10;
-      const landing = { x: landingX, y: r.top - PET_SIZE + 8 };
-      if (landingX >= 4 && landingX + PET_SIZE <= root.width - 4 && landing.y >= 4 && landing.y + PET_SIZE <= root.height - 4 && isShortPetJump(launch, landing)) {
-        candidates.push({ kind: 'land', point: landing, launch, approach: approach.concat([landing]) });
-      }
-      candidates.push({ kind: 'push', point: launch, launch, approach });
-      if (!candidates.length) return null;
-      const preferred = (['push', 'land', 'peek'] as const)[actionCycle % 3];
-      const selected = candidates.find(candidate => candidate.kind === preferred) ?? candidates[0];
-      actionCycle++;
-      return { ...selected, target, measuredRoot: root };
-    };
-
-    const moveTo = (point: Point, next: () => void, durationOverride?: number) => {
-      const dx = point.x - currentPoint.x, dy = point.y - currentPoint.y;
-      direction = dx < 0 ? -1 : 1;
-      facing.setValue(direction);
-      setWalking(true);
-      const duration = durationOverride ?? Math.max(500, Math.hypot(dx, dy) / 42 * 1000);
-      Animated.parallel([
-        Animated.timing(positionX, { toValue: point.x - baseline.x, duration, easing: durationOverride ? Easing.inOut(Easing.cubic) : Easing.linear, useNativeDriver: true }),
-        Animated.timing(positionY, { toValue: point.y - baseline.y, duration, easing: durationOverride ? Easing.inOut(Easing.cubic) : Easing.linear, useNativeDriver: true }),
-      ]).start(({ finished }) => { if (active && finished) { currentPoint = point; setWalking(false); next(); } });
-    };
-
-    const moveAlong = (points: Point[], next: () => void, jumpingAtEnd = false) => {
-      const walk = (index: number) => {
-        if (!active) return;
-        if (index >= points.length) { setWalking(false); next(); return; }
-        const finalHop = jumpingAtEnd && index === points.length - 1;
-        if (finalHop) setJumping(true);
-        moveTo(points[index], () => {
-          if (finalHop) setJumping(false);
-          walk(index + 1);
-        }, finalHop ? 430 : undefined);
-      };
-      walk(0);
-    };
-
-    const clearWidgetPush = () => {
-      cleanupPush?.();
-      cleanupPush = null;
-    };
-
-    const runPass = () => {
-      if (!active) return;
-      if (Platform.OS === 'web' && typeof document !== 'undefined' && document.querySelector('[data-testid="widget-drag-grid"]')?.getAttribute('data-drag-active') === 'true') {
-        timeout = setTimeout(runPass, 1200);
-        return;
-      }
-      const action = passCount++ % 2 === 0 ? pickWidgetAction() : null;
-      if (action) {
-        const faceCard = () => facing.setValue(action.measuredRoot.left + (action.target.rect.left + action.target.rect.right) / 2 < action.measuredRoot.left + currentPoint.x + PET_SIZE / 2 ? -1 : 1);
-        const returnHome = (from?: Point, landed = false) => {
-          const goHome = () => {
-            const measured = visibleWidgets();
-            const route = horizontalPetPath(currentPoint, baseline, measured?.root.width ?? width, measured?.root.height ?? height);
-            if (route) moveAlong(route, () => { timeout = setTimeout(runPass, 2500 + Math.random() * 4000); });
-            else {
-              positionX.setValue(0); positionY.setValue(0); currentPoint = { ...baseline };
-              timeout = setTimeout(runPass, 2500 + Math.random() * 4000);
-            }
-          };
-          if (from) {
-            if (landed) setJumping(true);
-            moveTo(from, () => { if (landed) setJumping(false); goHome(); }, landed ? 430 : undefined);
-          } else goHome();
-        };
-        moveAlong(action.approach, () => {
-          faceCard();
-          if (action.kind === 'peek') {
-            moveTo(action.point, () => {
-              faceCard();
-              timeout = setTimeout(() => returnHome(action.launch), 750);
-            }, 260);
-          } else if (action.kind === 'land') {
-            timeout = setTimeout(() => returnHome(action.launch, true), 650);
-          } else {
-            const card = action.target.card;
-            const oldTranslate = card.style.translate;
-            const oldTransition = card.style.transition;
-            const push = action.point.y < action.target.rect.top ? '0px 5px' : currentPoint.x < (action.target.rect.left + action.target.rect.right) / 2 ? '5px 0px' : '-5px 0px';
-            card.style.transition = 'translate 110ms ease-out';
-            card.style.translate = push;
-            timeout = setTimeout(() => {
-              card.style.translate = '0px 0px';
-              timeout = setTimeout(() => {
-                card.style.translate = oldTranslate;
-                card.style.transition = oldTransition;
-                cleanupPush = null;
-                returnHome();
-              }, 130);
-            }, 110);
-            cleanupPush = () => { card.style.translate = oldTranslate; card.style.transition = oldTransition; };
-          }
-        }, action.kind === 'land');
-        return;
-      }
-
-      // Ordinary strolls choose a fresh direction and endpoint, with varied
-      // pauses. The route planner rejects paths through cards or their text.
-      const measured = visibleWidgets();
-      const rootWidth = measured?.root.width ?? width, rootHeight = measured?.root.height ?? height;
-      const minX = 8, maxX = Math.max(minX, rootWidth - PET_SIZE - 8);
-      const travel = Math.min(80 + Math.random() * 180, Math.max(32, maxX - minX));
-      const sign = Math.random() < .5 ? -1 : 1;
-      let destinationX = Math.max(minX, Math.min(maxX, currentPoint.x + sign * travel));
-      if (Math.abs(destinationX - currentPoint.x) < 32) destinationX = Math.max(minX, Math.min(maxX, currentPoint.x - sign * travel));
-      const destination = { x: destinationX, y: baseline.y };
-      const route = horizontalPetPath(currentPoint, destination, rootWidth, rootHeight);
-      if (route) moveAlong(route, () => {
-        timeout = setTimeout(() => {
-          const latest = visibleWidgets();
-          const homeRoute = horizontalPetPath(currentPoint, baseline, latest?.root.width ?? width, latest?.root.height ?? height);
-          if (homeRoute) moveAlong(homeRoute, () => { timeout = setTimeout(runPass, 2600 + Math.random() * 4400); });
-          else { positionX.setValue(0); positionY.setValue(0); currentPoint = { ...baseline }; timeout = setTimeout(runPass, 2600 + Math.random() * 4400); }
-        }, 900 + Math.random() * 1600);
-      });
-      else timeout = setTimeout(runPass, 2600 + Math.random() * 4400);
-    };
-
-    const cancelTrip = () => {
-      if (!active) return;
-      if (timeout) clearTimeout(timeout);
-      clearWidgetPush();
-      positionX.stopAnimation();
-      positionY.stopAnimation();
-      positionX.setValue(0);
-      positionY.setValue(0);
-      currentPoint = { ...baseline };
-      setWalking(false);
-      setJumping(false);
-      timeout = setTimeout(runPass, 1400);
-    };
-    const handleDragMove = () => {
-      if (typeof document !== 'undefined' && document.querySelector('[data-testid="widget-drag-grid"]')?.getAttribute('data-drag-active') === 'true') cancelTrip();
-    };
-    const workspace = typeof document !== 'undefined' ? document.querySelector('[data-testid="workspace-content"]') : null;
-    let screenNode = workspace?.firstElementChild ?? null;
-    const screenObserver = workspace && typeof MutationObserver !== 'undefined' ? new MutationObserver(() => {
-      const next = workspace.firstElementChild;
-      if (next !== screenNode) { screenNode = next; cancelTrip(); }
-    }) : null;
-    if (workspace && screenObserver) screenObserver.observe(workspace, { childList: true });
-    const grid = typeof document !== 'undefined' ? document.querySelector('[data-testid="widget-drag-grid"]') : null;
-    const dragObserver = grid && typeof MutationObserver !== 'undefined' ? new MutationObserver(() => {
-      handleDragMove();
-      if (grid.getAttribute('data-drag-active') !== 'true') cancelTrip();
-    }) : null;
-    if (grid && dragObserver) dragObserver.observe(grid, { attributes: true, attributeFilter: ['data-drag-active'], childList: true });
-    if (Platform.OS === 'web') {
-      window.addEventListener('scroll', cancelTrip, true);
-      window.addEventListener('pointermove', handleDragMove, true);
-    }
-    timeout = setTimeout(runPass, 2200);
+    const appSubscription = AppState.addEventListener('change', value => setAppActive(value === 'active'));
+    const keyboardShow = Keyboard.addListener('keyboardDidShow', () => setBlocked(true));
+    const keyboardHide = Keyboard.addListener('keyboardDidHide', () => Platform.OS === 'web' ? syncBlocked() : setBlocked(false));
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return () => { appSubscription.remove(); keyboardShow.remove(); keyboardHide.remove(); };
+    let focusTimer: ReturnType<typeof setTimeout> | null = null;
+    const focusOut = () => { if (focusTimer) clearTimeout(focusTimer); focusTimer = setTimeout(() => { focusTimer = null; syncBlocked(); }, 0); };
+    const focus = () => { setAppActive(true); syncBlocked(); };
+    const blur = () => setAppActive(false);
+    const visibility = () => setAppActive(document.visibilityState === 'visible');
+    document.addEventListener('focusin', syncBlocked);
+    document.addEventListener('focusout', focusOut);
+    document.addEventListener('visibilitychange', visibility);
+    window.addEventListener('focus', focus);
+    window.addEventListener('blur', blur);
+    const observer = typeof MutationObserver === 'undefined' ? null : new MutationObserver(syncBlocked);
+    observer?.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-hidden', 'aria-modal', 'role', 'hidden', 'class'] });
+    syncBlocked();
     return () => {
-      active = false;
-      if (timeout) clearTimeout(timeout);
-      clearWidgetPush();
-      screenObserver?.disconnect();
-      dragObserver?.disconnect();
-      if (Platform.OS === 'web') {
-        window.removeEventListener('scroll', cancelTrip, true);
-        window.removeEventListener('pointermove', handleDragMove, true);
-      }
-      positionX.stopAnimation();
-      positionY.stopAnimation();
+      appSubscription.remove(); keyboardShow.remove(); keyboardHide.remove();
+      document.removeEventListener('focusin', syncBlocked);
+      document.removeEventListener('focusout', focusOut);
+      document.removeEventListener('visibilitychange', visibility);
+      window.removeEventListener('focus', focus);
+      window.removeEventListener('blur', blur);
+      if (focusTimer) clearTimeout(focusTimer);
+      observer?.disconnect();
+    };
+  }, [syncBlocked]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const pause = () => {
+      setNavigationPaused(true);
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => { debounce = null; setNavigationPaused(false); }, 260);
+    };
+    window.addEventListener('scroll', pause, { capture: true, passive: true });
+    window.addEventListener('hashchange', pause);
+    window.addEventListener('popstate', pause);
+    return () => {
+      window.removeEventListener('scroll', pause, true);
+      window.removeEventListener('hashchange', pause);
+      window.removeEventListener('popstate', pause);
+      if (debounce) clearTimeout(debounce);
+    };
+  }, []);
+
+  useEffect(() => {
+    const safe = { x: clamp(point.current.x, 8, Math.max(8, width - PET_SIZE - 8)), y: clamp(point.current.y, 8, Math.max(8, height - PET_SIZE - 8)) };
+    point.current = safe;
+    position.setValue(safe);
+  }, [height, position, width]);
+
+  const widgets = useCallback((): WidgetRect[] => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return [];
+    const elements = Array.from(document.querySelectorAll<HTMLElement>(SURFACE_SELECTOR));
+    return elements.flatMap((element, index) => {
+      // Dashboard slots already contain a marked card: animate their outer slot once.
+      if (element.parentElement?.closest(SURFACE_SELECTOR)) return [];
+      const measured = measureSurface(element, element.dataset.widgetSlot || `${element.dataset.petSurface || 'card'}-${index}`);
+      return measured ? [measured] : [];
+    });
+  }, []);
+
+  const live = appActive && !blocked && displayState === 'alive';
+  useEffect(() => {
+    activeAnimation.current?.stop();
+    widgetAnimations.current.forEach(animation => animation.cancel());
+    widgetAnimations.current = [];
+    const previousFlight = flightPath.current;
+    if (previousFlight) {
+      previousFlight.progress.stopAnimation(value => { point.current = pointOnArc(previousFlight.from, previousFlight.to, previousFlight.height, value); position.setValue(point.current); });
+      previousFlight.progress.removeListener(previousFlight.listenerId);
+      flightPath.current = null;
+      setFlightMode(false);
+    } else position.stopAnimation(value => { point.current = value; });
+    facing.stopAnimation();
+    springOffset.stopAnimation(); springOffset.setValue(0);
+    vineOpacity.current?.stopAnimation();
+    vineOpacity.current = null;
+    activeAnimation.current = null;
+    if (timer.current) clearTimeout(timer.current);
+    if (climbTimer.current) clearTimeout(climbTimer.current);
+    timer.current = null;
+    climbTimer.current = null;
+    setWalking(false);
+    setClimbing(false); setVine(null);
+    setScene('rest'); setScenePose(null); setActionPose(null); setTargetId('');
+    if (!live || navigationPaused || reducedMotion) return;
+
+    let cancelled = false;
+    const safePoint = (p: Point): Point => ({ x: clamp(p.x, 8, Math.max(8, width - PET_SIZE - 8)), y: clamp(p.y, 8, Math.max(8, height - PET_SIZE - 8)) });
+    const wait = (ms: number, done: () => void) => { timer.current = setTimeout(() => { timer.current = null; if (!cancelled) done(); }, ms); };
+    const climbVertical = (target: Point, done: () => void) => {
+      const from = point.current;
+      const direction = target.y < from.y ? -1 : 1;
+      if (Math.abs(target.y - from.y) <= 24) { point.current = target; setClimbing(false); done(); return; }
+      const vineTop = Math.max(8, Math.min(from.y, target.y) - 18);
+      const vineHeight = Math.max(24, Math.min(height - vineTop - 8, Math.abs(target.y - from.y) + PET_SIZE + 36));
+      const opacity = new Animated.Value(0);
+      vineOpacity.current = opacity;
+      setVine({ id: Date.now(), x: target.x + getPetClimbHandX(PET_SIZE) - 18, top: vineTop, height: vineHeight, opacity });
+      setClimbing(true); setWalking(false); setActionPose(null);
+      facing.setValue(1);
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+      let y = from.y;
+      let frame: PetClimbPose = direction < 0 ? 'climb-pull' : 'climb-reach';
+      const climbStep = () => {
+        if (cancelled) return;
+        frame = frame === 'climb-reach' ? 'climb-pull' : 'climb-reach';
+        setClimbFrame(frame);
+        const nextY = y + direction * Math.min(22, Math.abs(target.y - y));
+        activeAnimation.current = Animated.timing(position.y, {
+          toValue: nextY,
+          duration: 280,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: true,
+        });
+        activeAnimation.current.start(({ finished }) => {
+          if (!finished || cancelled) return;
+          y = nextY; point.current = { x: target.x, y };
+          if (Math.abs(target.y - y) > .5) { climbTimer.current = setTimeout(climbStep, 24); return; }
+          point.current = target; setClimbing(false);
+          Animated.timing(opacity, { toValue: 0, duration: 360, delay: 90, useNativeDriver: true }).start(() => {
+            if (vineOpacity.current === opacity) { setVine(null); vineOpacity.current = null; }
+          });
+          done();
+        });
+      };
+      setClimbFrame(frame); climbStep();
+    };
+    const moveTo = (p: Point, done: () => void) => {
+      const target = safePoint(p); const from = point.current;
+      const dy = target.y - from.y;
+      const horizontalPoint = { x: target.x, y: from.y };
+      const vertical = () => climbVertical(target, done);
+      const walk = (walkTarget: Point, finish: () => void) => {
+        const start = point.current;
+        if (Math.hypot(walkTarget.x - start.x, walkTarget.y - start.y) < 2) { point.current = walkTarget; finish(); return; }
+        if (Math.abs(walkTarget.x - start.x) > 2) facing.setValue(walkTarget.x < start.x ? -1 : 1);
+        setWalking(true); setClimbing(false);
+        const duration = Math.max(850, Math.min(3600, Math.hypot(walkTarget.x - start.x, walkTarget.y - start.y) / 40 * 1000));
+        activeAnimation.current = Animated.parallel([
+          Animated.timing(position.x, { toValue: walkTarget.x, duration, easing: Easing.linear, useNativeDriver: true }),
+          Animated.timing(position.y, { toValue: walkTarget.y, duration, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+        ]);
+        activeAnimation.current.start(({ finished }) => { if (!finished || cancelled) return; point.current = walkTarget; setWalking(false); finish(); });
+      };
+      if (Math.abs(dy) > 24) walk(horizontalPoint, vertical);
+      else walk(target, done);
+    };
+    const arc = (from: Point, to: Point, desiredPeak: number, duration: number, done: () => void) => {
+      const value = new Animated.Value(0);
+      const heightLimit = (Math.sqrt(Math.max(0, from.y - 8)) + Math.sqrt(Math.max(0, to.y - 8))) ** 2 / 4;
+      const h = clamp((from.y + to.y) / 2 - desiredPeak, 0, heightLimit);
+      const inputRange = Array.from({ length: 31 }, (_, i) => i / 30);
+      const outputX = inputRange.map(t => from.x + (to.x - from.x) * t);
+      const outputY = inputRange.map(t => Math.max(8, from.y + (to.y - from.y) * t - 4 * h * t * (1 - t)));
+      const listener = value.addListener(({ value: progress }) => { point.current = pointOnArc(from, to, h, progress); });
+      flightPath.current = { x: value.interpolate({ inputRange, outputRange: outputX }), y: value.interpolate({ inputRange, outputRange: outputY }), progress: value, from, to, height: h, listenerId: listener };
+      setFlightMode(true);
+      activeAnimation.current = Animated.timing(value, { toValue: 1, duration, easing: Easing.linear, useNativeDriver: true });
+      activeAnimation.current.start(({ finished }) => {
+        if (!finished || cancelled) return;
+        value.removeListener(listener); point.current = to; position.setValue(to); flightPath.current = null; setFlightMode(false); done();
+      });
+    };
+    const freshWidget = (widget: WidgetRect): WidgetRect | null => {
+      const element = widget.element;
+      if (!element?.isConnected) return null;
+      return measureSurface(element, widget.id);
+    };
+    const sideFor = (widget: WidgetRect): WidgetApproach | null => {
+      const bounds = getPetActionFrameBounds('push-ready', PET_SIZE);
+      const leftOk = widget.left >= bounds.right + 8;
+      // The push frames are right-aligned to the canvas before mirroring, so
+      // their mirrored left edge is exactly the canvas edge.
+      const rightOk = width - widget.right >= PET_SIZE + 8;
+      if (!leftOk && !rightOk) return null;
+      const side: 'left' | 'right' = leftOk && rightOk ? (Math.random() < .8 ? 'left' : 'right') : leftOk ? 'left' : 'right';
+      const x = side === 'left' ? widget.left - bounds.right : widget.right;
+      return { side, facing: side === 'left' ? 1 : -1, point: safePoint({ x, y: widget.top + widget.height / 2 - PET_SIZE / 2 }) };
+    };
+    const approach = (widget: WidgetRect, allowFallback: boolean, done: (target: WidgetRect, side: WidgetApproach) => void) => {
+      const fresh = freshWidget(widget); if (!fresh) { wait(800, startPush); return; }
+      const side = sideFor(fresh) ?? (allowFallback ? (() => {
+        const below = fresh.bottom + 6; const canStandBelow = below + PET_SIZE <= height - 8;
+        const p = canStandBelow ? safePoint({ x: fresh.left + fresh.width / 2 - PET_SIZE / 2, y: below }) : safePoint(point.current);
+        return { side: canStandBelow ? 'below' as const : 'current' as const, facing: p.x < fresh.left + fresh.width / 2 ? 1 as const : -1 as const, point: p };
+      })() : null);
+      if (!side) { wait(800, startPush); return; }
+      setTargetId(fresh.id); setScene('approach'); setScenePose(basePose.current); setActionPose(null);
+      moveTo(side.point, () => { facing.setValue(side.facing); point.current = side.point; done(fresh, side); });
+    };
+    const widgetAnimation = (widget: WidgetRect, dx: number, dy: number, duration: number) => new Promise<void>(resolve => {
+      const element = widget.element;
+      if (!element?.animate) { resolve(); return; }
+      let animation: Animation;
+      try {
+        animation = element.animate([
+          { translate: '0px 0px', offset: 0 },
+          { translate: `${dx}px ${dy}px`, offset: .28, easing: 'cubic-bezier(.2,.8,.3,1)' },
+          { translate: `${dx * 1.08}px ${dy * 1.08}px`, offset: .48, easing: 'cubic-bezier(.16,1,.3,1)' },
+          { translate: '0px 0px', offset: 1, easing: 'cubic-bezier(.2,0,.8,1)' },
+        ] as any, { duration, fill: 'none', composite: 'add', easing: 'cubic-bezier(.2,.8,.2,1)' } as any);
+      } catch { resolve(); return; }
+      widgetAnimations.current.push(animation);
+      const finish = () => { widgetAnimations.current = widgetAnimations.current.filter(item => item !== animation); resolve(); };
+      animation.onfinish = finish; animation.oncancel = finish;
+    });
+    const widgetLandingSpring = (widget: WidgetRect) => new Promise<void>(resolve => {
+      const element = widget.element;
+      if (!element?.animate) { resolve(); return; }
+      let animation: Animation;
+      try {
+        animation = element.animate([
+          { translate: '0px 0px', offset: 0 },
+          { translate: '0px 7px', offset: .25 },
+          { translate: '0px -3px', offset: .52 },
+          { translate: '0px 1px', offset: .77 },
+          { translate: '0px 0px', offset: 1 },
+        ] as any, { duration: 650, fill: 'none', composite: 'add', easing: 'linear' } as any);
+      } catch { resolve(); return; }
+      widgetAnimations.current.push(animation);
+      const finish = () => { widgetAnimations.current = widgetAnimations.current.filter(item => item !== animation); resolve(); };
+      animation.onfinish = finish; animation.oncancel = finish;
+    });
+    const petPress = (side: WidgetApproach) => new Promise<void>(resolve => {
+      activeAnimation.current = Animated.sequence([
+        Animated.timing(position.x, { toValue: side.point.x + side.facing * 2, duration: 180, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(position.x, { toValue: side.point.x, duration: 260, easing: Easing.out(Easing.back(1.2)), useNativeDriver: true }),
+      ]);
+      activeAnimation.current.start(() => { point.current = side.point; resolve(); });
+    });
+    const roam = (done: () => void) => {
+      setScene('roam'); setScenePose(basePose.current); setActionPose(null); setTargetId('');
+      const from = point.current;
+      const to = safePoint({ x: 8 + Math.random() * Math.max(1, width - PET_SIZE - 16), y: 8 + Math.random() * Math.max(1, height - PET_SIZE - 16) });
+      moveTo(to, () => {
+        if (Math.random() > .2) { wait(700, done); return; }
+        const landing = safePoint({ x: 8 + Math.random() * Math.max(1, width - PET_SIZE - 16), y: 8 + Math.random() * Math.max(1, height - PET_SIZE - 16) });
+        setScene('big-jump'); setActionPose('jump-tuck'); facing.setValue(landing.x < to.x ? -1 : 1);
+        arc(to, landing, Math.max(8, Math.min(to.y, landing.y) - 80), 1050, () => {
+          setScenePose(basePose.current); setActionPose('land-brace'); wait(850, done);
+        });
+      });
+    };
+    const hop = (widget: WidgetRect, side: WidgetApproach) => {
+      const current = freshWidget(widget);
+      if (!current) { roam(() => wait(3500, startPush)); return; }
+      setTargetId(current.id);
+      const bounds = getPetActionFrameBounds('land-brace', PET_SIZE);
+      const landing = safePoint({ x: current.left + current.width / 2 - (bounds.left + bounds.right) / 2, y: current.top - bounds.bottom });
+      setScene('hop'); setScenePose(null); setActionPose('jump-tuck'); facing.setValue(landing.x < side.point.x ? -1 : 1);
+      const desiredPeak = Math.max(8, landing.y - 60);
+      arc(side.point, landing, desiredPeak, 1100, () => {
+        point.current = landing; setActionPose('land-brace');
+        springOffset.setValue(0);
+        const bounceDone = new Promise<boolean>(resolve => {
+          activeAnimation.current = Animated.timing(springOffset, { toValue: 1, duration: 650, easing: Easing.linear, useNativeDriver: true });
+          activeAnimation.current.start(({ finished }) => resolve(finished));
+        });
+        Promise.all([widgetLandingSpring(current), bounceDone]).then(([, finished]) => {
+          if (!finished || cancelled) return;
+          point.current = landing;
+          const stamp = (index: number) => {
+            if (index >= 2) {
+              setScene('look-user'); setActionPose(null); setScenePose('poses_01'); facing.setValue(1);
+              wait(1300, () => roam(() => wait(8000 + Math.random() * 7000, startPush)));
+              return;
+            }
+            const target = freshWidget(widget);
+            if (!target) { roam(() => wait(3500, startPush)); return; }
+            setActionPose('stomp');
+            wait(130, () => {
+              if (cancelled) return;
+              setActionPose('land-brace');
+              Promise.all([widgetAnimation(target, 0, 2, 390), new Promise<void>(resolve => {
+              activeAnimation.current = Animated.sequence([
+                Animated.timing(position.y, { toValue: landing.y + 2, duration: 130, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+                Animated.timing(position.y, { toValue: landing.y, duration: 230, easing: Easing.out(Easing.back(1.25)), useNativeDriver: true }),
+              ]);
+              activeAnimation.current.start(() => resolve());
+              })]).then(() => { if (!cancelled) wait(160, () => stamp(index + 1)); });
+            });
+          };
+          stamp(0);
+        });
+      });
+    };
+    function startPush() {
+      if (cancelled) return;
+      const visible = widgets(); const widget = visible.length ? pick(visible) : null;
+      if (!widget) { roam(() => wait(3500 + Math.random() * 2500, startPush)); return; }
+      const side = sideFor(widget);
+      if (!side) { approach(widget, true, (target, fallback) => hop(target, fallback)); return; }
+      approach(widget, false, (target, contact) => {
+        setTargetId(target.id); setScene('push'); setScenePose(null); facing.setValue(contact.facing); setActionPose('push-ready');
+        const attempt = (index: number) => {
+          if (cancelled) return;
+          if (index >= 3) {
+            setScene('look-user'); setActionPose(null); setScenePose(basePose.current);
+            wait(380, () => { setScenePose(basePose.current); hop(target, contact); });
+            return;
+          }
+          setActionPose(index === 0 ? 'push-ready' : 'push-recoil');
+          wait(110, () => {
+            if (cancelled) return;
+            setActionPose('push-drive');
+            Promise.all([widgetAnimation(target, contact.facing * 3, 0, 480), petPress(contact)]).then(() => {
+              if (cancelled) return;
+              setActionPose('push-recoil'); point.current = contact.point;
+              wait(120, () => attempt(index + 1));
+            });
+          });
+        };
+        attempt(0);
+      });
+    }
+    timer.current = setTimeout(startPush, 1500);
+    return () => {
+      cancelled = true;
+      if (timer.current) clearTimeout(timer.current);
+      if (climbTimer.current) clearTimeout(climbTimer.current);
+      activeAnimation.current?.stop();
+      widgetAnimations.current.forEach(animation => animation.cancel()); widgetAnimations.current = [];
+      vineOpacity.current?.stopAnimation(); vineOpacity.current = null;
+      springOffset.stopAnimation();
+      const activeFlight = flightPath.current;
+      if (activeFlight) {
+        activeFlight.progress.stopAnimation(value => { point.current = pointOnArc(activeFlight.from, activeFlight.to, activeFlight.height, value); position.setValue(point.current); });
+        activeFlight.progress.removeListener(activeFlight.listenerId); flightPath.current = null;
+      } else position.stopAnimation(value => { point.current = value; });
       facing.stopAnimation();
     };
-  }, [appActive, facing, height, positionX, positionY, reducedMotion, state, width]);
+  }, [appActive, blocked, facing, height, live, navigationPaused, position, reducedMotion, springOffset, state, widgets, width]);
 
-  return <Animated.View testID="pet-wanderer" pointerEvents={overControl ? 'none' : 'auto'} style={{ position: 'absolute', right: 12, bottom: 20, zIndex: 20, transform: [{ translateX: positionX }, { translateY: positionY }] }}>
-    <PetCompanion name={displayName} state={state === 'egg' ? 'alive' : state} pose={pose} size={72}
-      walking={walking && appActive && !reducedMotion && state !== 'dead'} facing={facing}
-      jumping={jumping && appActive && !reducedMotion && state !== 'dead'}
-      ambientMotion={false}
-      accessibilityLabel={state === 'egg' ? `Познакомиться с питомцем ${displayName}` : `Открыть домик питомца ${displayName}`} onPress={onPress} />
+  const visible = appActive && !blocked;
+  const landingOffset = springOffset.interpolate({ inputRange: [0, .25, .52, .77, 1], outputRange: [0, 7, -3, 1, 0] });
+  const translation = flightMode && flightPath.current ? [{ translateX: flightPath.current.x }, { translateY: flightPath.current.y }] : [...position.getTranslateTransform(), { translateY: landingOffset }];
+  const vineVisual = vine ? <Animated.View testID="pet-vine" pointerEvents="none" style={{ position: 'absolute', left: vine.x, top: vine.top, width: 36, height: vine.height, opacity: vine.opacity, zIndex: 0 }}>
+    <Svg pointerEvents="none" width="36" height={vine.height} viewBox={`0 0 36 ${vine.height}`}>
+      <Path d={`M18 0 C6 ${vine.height * .2} 29 ${vine.height * .35} 17 ${vine.height * .52} C7 ${vine.height * .67} 28 ${vine.height * .82} 18 ${vine.height}`} fill="none" stroke="#819b62" strokeWidth="2.4" strokeLinecap="round" />
+      <Path d={`M17 ${vine.height * .24} C6 ${vine.height * .17} 4 ${vine.height * .26} 10 ${vine.height * .31} C14 ${vine.height * .3} 16 ${vine.height * .28} 17 ${vine.height * .24} M20 ${vine.height * .48} C30 ${vine.height * .4} 33 ${vine.height * .48} 27 ${vine.height * .55} C24 ${vine.height * .55} 21 ${vine.height * .53} 20 ${vine.height * .48} M15 ${vine.height * .72} C5 ${vine.height * .65} 3 ${vine.height * .74} 9 ${vine.height * .8} C13 ${vine.height * .79} 15 ${vine.height * .76} 15 ${vine.height * .72}`} fill="#a8bd7b" opacity=".94" />
+    </Svg>
+  </Animated.View> : null;
+  const pet = <Animated.View testID="pet-body" pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: 0, width: PET_SIZE, height: PET_SIZE, transform: translation }}>
+    <PetCompanion name={displayName} state={displayState} pose={scenePose ?? pose} actionPose={actionPose ?? undefined} climbPose={climbing ? climbFrame : undefined} size={PET_SIZE} walking={walking && live && !reducedMotion} animatingScene={Boolean(actionPose) || climbing || scene === 'hop' || scene === 'big-jump'} facing={facing} accessibilityLabel={state === 'egg' ? `Познакомиться с питомцем ${displayName}` : `Открыть домик питомца ${displayName}`} onPress={onPress} />
   </Animated.View>;
+  const overlayStyle = { position: Platform.OS === 'web' ? 'fixed' : 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 70, pointerEvents: 'none' } as any;
+  if (Platform.OS === 'web') return createElement('div' as any, { 'data-testid': 'pet-wanderer', 'data-pet-scene': scene, 'data-pet-target': targetId, 'data-pet-action': actionPose ?? '', 'data-pet-locomotion': climbing ? 'climb' : walking ? 'walk' : '', 'data-pet-climb-frame': climbing ? climbFrame : '', 'aria-hidden': !visible, style: { ...overlayStyle, display: visible ? 'block' : 'none' } }, vineVisual, pet);
+  return <View testID="pet-wanderer" pointerEvents="box-none" style={[overlayStyle, !visible && { display: 'none' }]}>{vineVisual}{pet}</View>;
 }

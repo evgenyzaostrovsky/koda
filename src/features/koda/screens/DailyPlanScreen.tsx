@@ -148,7 +148,7 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
       {!shown.items.length ? <View style={s.inline}><Action title="Открыть цели" onPress={()=>onOpenSection('goals')} /><Action title="Добавить дело" onPress={()=>onOpenSection('planner')} /></View> : null}
       {notSelected.length?<Action title={`Ещё ${notSelected.length} дел · открыть планнер`} onPress={()=>onOpenSection('planner')}/>:null}
       {details?shown.items.map(i=><Text key={i.sourceKey} style={s.meta}>{i.title}: {i.explanation}</Text>):null}
-    </View> : <View style={s.hero}>
+    </View> : <View {...({ dataSet: { petSurface: 'daily-plan-summary' } } as any)} style={s.hero}>
       <Text style={s.heading}>{completed?'Итог и наблюдения':'Следующий шаг'}</Text>
       {!completed ? <Text style={s.body}>{nextItem?.title ?? 'Принятые действия выполнены'}</Text> : <Text style={s.body}>{day?.summary}</Text>}
       {!completed&&nextItem?<Action title={nextItem.metric==='minutes'?'Начать шаг с таймером':'Открыть следующий шаг'} onPress={beginNextStep} primary/>:null}

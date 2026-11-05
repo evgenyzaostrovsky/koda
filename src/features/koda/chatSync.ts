@@ -39,7 +39,7 @@ export function mergeChatMessages(local: ChatMessage[], remote: ChatMessage[]): 
 }
 
 function providerValue(value: unknown): ChatHistoryProvider {
-  return value === 'gemini' || value === 'openrouter' || value === 'yandex' ? value : null;
+  return value === 'gemini' || value === 'openrouter' || value === 'yandex' || value === 'openai' ? value : null;
 }
 
 /** Structural client keeps tests independent of Supabase/network/runtime configuration. */

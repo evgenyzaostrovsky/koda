@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import { ArrowUpRight } from 'lucide-react-native';
 import { NotchedWidget, type NotchedWidgetVariant } from './NotchedWidget';
-import { ink, inkText, line, muted, panel, panelSoft, text } from '../theme';
+import { activeText, ink, inkText, line, muted, panel, panelSoft, text } from '../theme';
 
 export const bentoWidths={desktop:1320,day:1040,planner:1040,goals:960,progress:960,projects:880,habits:880,notes:840,journal:800,assistant:840,timer:640,settings:760} as const;
 export const bentoTokens={gap:24,compactGap:16,radius:32,compactRadius:24,control:48,padding:24} as const;
@@ -25,7 +25,7 @@ export function BentoCard({children,tone='light',variant='none',action,style,tes
 export const CompactWidget=BentoCard;
 export const NotchedCard=BentoCard;
 export function FloatingCardAction({label,onPress,icon,tone='light'}:{label:string;onPress:()=>void;icon?:ReactNode;tone?:BentoTone}){
- return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={[s.action,{backgroundColor:backgrounds[tone]}]}>{icon??<ArrowUpRight size={22} color={tone==='dark'?inkText:text}/>}</Pressable>;
+ return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={[s.action,{backgroundColor:backgrounds[tone]}]}>{icon??<ArrowUpRight size={22} color={tone==='dark'?inkText:tone==='lime'?activeText:text}/>}</Pressable>;
 }
 export function MetricCard({label,value,detail,tone='light',style,valueSize=32}:{label:string;value:string|number;detail?:string;tone?:BentoTone;style?:StyleProp<ViewStyle>;valueSize?:number}){
  const foreground=tone==='dark'?inkText:tone==='lime'?'#263c19':text;const secondary=tone==='dark'?'#c4cebb':tone==='lime'?'#435b31':muted;

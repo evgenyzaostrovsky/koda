@@ -59,6 +59,7 @@ async function testPolicies() {
     const before = await snapshot();
     await db.exec(migration);
     await db.exec(migration); // Safe to retry policy deployment; never transforms data.
+    await db.exec(await readFile('supabase/migrations/0020_account_data_isolation_guards.sql', 'utf8'));
     assert.deepEqual(await snapshot(), before, 'migration preserves every legacy row and field');
 
     const asOwner = async (owner: string) => {

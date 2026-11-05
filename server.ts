@@ -9,6 +9,7 @@ import { createGoalPlanGenerator } from './src/ai/goalPlanProvider';
 import { normalizeGoalPlanInput } from './src/ai/goalPlanContract';
 const { authorizeAiRequest } = require('./src/server/aiSecurity');
 const { escapeIcs } = require('./src/server/ics');
+const { loadAssistantContext } = require('./src/server/assistantContext');
 
 const app = express();
 const port = Number(process.env.PORT || process.env.KODA_API_PORT || 3333);
@@ -23,14 +24,14 @@ app.post('/api/chat', async (req, res) => {
   if (!(await authorizeAiRequest(req, res))) return;
   let messages;
   try { messages=normalizeChatInput(req.body); } catch { res.status(400).json({error:'Напишите сообщение.'}); return; }
-  try { res.json(await generateChat({messages})); } catch { res.status(503).json({error:'Помощник сейчас недоступен. Попробуйте ещё раз.'}); }
+  try { res.json(await generateChat({messages},await loadAssistantContext(req))); } catch { res.status(503).json({error:'Помощник сейчас недоступен. Попробуйте ещё раз.'}); }
 });
 const generateGoalPlan = createGoalPlanGenerator(aiConfig);
 app.post('/api/goal-plan', async (req, res) => {
   if (!(await authorizeAiRequest(req, res))) return;
   let input;
   try { input = normalizeGoalPlanInput(req.body); } catch { res.status(400).json({ error: 'Опишите желание.' }); return; }
-  try { res.json(await generateGoalPlan(input)); } catch { res.status(503).json({ error: 'Помощник недоступен. Продолжите вручную.' }); }
+  try { res.json(await generateGoalPlan(input,await loadAssistantContext(req))); } catch { res.status(503).json({ error: 'Помощник недоступен. Продолжите вручную.' }); }
 });
 
 app.get('/api/health', (_req, res) => {

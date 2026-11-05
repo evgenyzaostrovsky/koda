@@ -1,5 +1,4 @@
-const { readAiConfig } = require('../src/ai/providerConfig');
-const { createAiProvider } = require('../src/ai/aiProvider');
+const { readAiConfig, createAiProvider } = require('../src/server/kodaDomain.cjs');
 const { authorizeAiRequest } = require('../src/server/aiSecurity');
 
 const aiProvider = createAiProvider(readAiConfig(process.env));

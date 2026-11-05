@@ -9,6 +9,7 @@ export function buildGoalPlanContext(goal:Goal):Required<Pick<GoalPlanInput,'exi
   return {
     existingDirections:[...window.directions].sort((a,b)=>a.position-b.position).slice(0,8).map(direction=>({
       title:direction.title,actions:linked(direction.actionIds).map(action=>action.title),
+      actionDetails:linked(direction.actionIds).filter(action=>action.shortTitle||action.description).map(action=>({title:action.title,...(action.shortTitle===undefined?{}:{shortTitle:action.shortTitle}),description:action.description})),
       completedActions:linked(direction.actionIds).filter(action=>action.status==='completed').map(action=>action.title),
       routineTitles:direction.routineIds.map(id=>goal.routines.find(routine=>routine.id===id)?.title).filter((title):title is string=>title!==undefined),
       archived:Boolean(direction.archivedAt),

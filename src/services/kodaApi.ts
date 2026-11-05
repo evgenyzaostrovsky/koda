@@ -46,6 +46,7 @@ export async function getAiMode(): Promise<AiMode> {
     if (data.provider === 'openrouter') {
       return 'openrouter';
     }
+    if (data.provider === 'openai') return 'openai';
 
     return 'rules';
   } catch {
@@ -72,14 +73,14 @@ export async function generateKodaState(input: {
   return response.json();
 }
 
-export async function requestChat(messages: Array<{role:'user'|'assistant';content:string}>): Promise<{reply:string;provider:'yandex'|'openrouter'|'gemini'}> {
+export async function requestChat(messages: Array<{role:'user'|'assistant';content:string}>): Promise<{reply:string;provider:'yandex'|'openrouter'|'gemini'|'openai';memorySuggestion?:string}> {
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),50000);
   try {
     const response=await fetch(API_URL+'/api/chat',{method:'POST',signal:controller.signal,headers:await authenticatedHeaders(),body:JSON.stringify({messages})});
     if(!response.ok) throw await aiRequestError(response, 'Помощник сейчас недоступен. Попробуйте ещё раз.');
     const result=await response.json();
-    if(typeof result.reply!=='string'||!result.reply.trim()||!['yandex','openrouter','gemini'].includes(result.provider))throw new Error('Некорректный ответ помощника.');
+    if(typeof result.reply!=='string'||!result.reply.trim()||!['yandex','openrouter','gemini','openai'].includes(result.provider))throw new Error('Некорректный ответ помощника.');
     return result;
   } finally { clearTimeout(timer); }
 }

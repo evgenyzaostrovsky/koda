@@ -1,21 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Send } from 'lucide-react-native';
+import { AssistantMemory } from '../components/AssistantMemory';
+import { AssistantCorrection } from '../components/AssistantCorrection';
 import type { ChatMessage } from '../types';
 import { SectionTitle } from '../components';
 import { BentoPage, bentoWidths } from '../components/Bento';
 import { accent, faint, ink, line, muted, panel, panelSoft, text as textColor } from '../theme';
 import { styles } from '../styles';
 
-type KodaProvider = 'gemini' | 'openrouter' | 'yandex' | null;
+type KodaProvider = 'gemini' | 'openrouter' | 'yandex' | 'openai' | null;
 
 const providerNames: Record<Exclude<KodaProvider, null>, string> = {
   gemini: 'Gemini',
   openrouter: 'OpenRouter',
   yandex: 'Яндекс',
+  openai: 'OpenAI',
 };
 
 type KodaScreenProps = {
+  userId?: string | null;
+  memorySuggestion?: string | null;
+  onDismissMemorySuggestion?: () => void;
   chat: ChatMessage[];
   isDesktop?: boolean;
   isSending?: boolean;
@@ -35,6 +41,9 @@ type KodaScreenProps = {
 };
 
 export function KodaScreen({
+  userId,
+  memorySuggestion,
+  onDismissMemorySuggestion,
   chat,
   isDesktop = false,
   isSending = false,
@@ -96,7 +105,7 @@ export function KodaScreen({
   const chatPane = (
     <View style={[styles.kodaChatPane, isDesktop && styles.kodaChatPaneDesktop,showWelcome&&local.welcomePane]}>
       {showWelcome ? (
-        <View style={[local.quickPromptBar, isDesktop && local.quickPromptBarDesktop]}>
+        <View {...({ dataSet: { petSurface: 'assistant-prompts' } } as any)} style={[local.quickPromptBar, isDesktop && local.quickPromptBarDesktop]}>
           <Text style={local.quickPromptTitle}>С чего начнём?</Text><Text style={local.welcomeCopy}>Расскажи, что хочется сделать и сколько сейчас сил. Вместе найдём посильный шаг.</Text>
           <View style={[local.starters,isDesktop&&{flexDirection:'row'}]}>
             {[
@@ -125,8 +134,9 @@ export function KodaScreen({
         showsVerticalScrollIndicator={false}
       >
         {(showWelcome ? [] : chat).map((message) => (
-          <View key={message.id} style={[styles.chatBubble, isDesktop && styles.chatBubbleDesktop, message.role === 'user' && styles.chatBubbleUser]}>
+          <View key={message.id} {...({dataSet:{petSurface:'assistant-message'}} as any)} style={[styles.chatBubble, isDesktop && styles.chatBubbleDesktop, message.role === 'user' && styles.chatBubbleUser]}>
             <Text style={styles.chatText}>{message.text}</Text>
+            {message.role==='koda'&&userId?<AssistantCorrection userId={userId} source="chat" before={message.text} />:null}
           </View>
         ))}
         {isSending && (
@@ -188,6 +198,7 @@ export function KodaScreen({
       <View style={styles.kodaScreen}>
         <BentoPage maxWidth={bentoWidths.assistant} scroll={showWelcome} contentStyle={local.assistantPageContent}>
           <SectionTitle title="Помощник" subtitle={subtitle} />
+          <AssistantMemory key={userId} userId={userId} suggestion={memorySuggestion} onDismissSuggestion={onDismissMemorySuggestion}/>
           {chatPane}
         </BentoPage>
       </View>
@@ -199,6 +210,7 @@ export function KodaScreen({
       <View style={styles.kodaDesktopHeader}>
         <SectionTitle title="Помощник" subtitle={subtitle} />
       </View>
+      <AssistantMemory key={userId} userId={userId} suggestion={memorySuggestion} onDismissSuggestion={onDismissMemorySuggestion}/>
       {chatPane}
     </BentoPage>
   );

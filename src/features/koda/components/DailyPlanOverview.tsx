@@ -57,7 +57,7 @@ export function DailyPlanOverview(props: DailyPlanOverviewProps) {
         <Text numberOfLines={1} style={s.date}>{formatDate(props.date)}</Text>
       </View>
       <View style={s.grid}>
-        <View style={[s.card, s.plan, compact && s.planCompact, { width: planWidth }]}>
+        <View {...({dataSet:{petSurface:'day-plan'}} as any)} style={[s.card, s.plan, compact && s.planCompact, { width: planWidth }]}>
           <View style={[s.planTop, compact && s.planTopCompact]}>
             <View style={s.statusPill}>
               <View style={[s.statusDot, props.hasConflicts && s.conflictDot]} />
@@ -96,7 +96,7 @@ export function DailyPlanOverview(props: DailyPlanOverviewProps) {
           {props.error ? <Text accessibilityRole="alert" numberOfLines={2} style={s.error}>{props.error}</Text> : null}
         </View>
 
-        <View style={[s.card, s.scoreCard, compact && s.scoreCardCompact, { width: scoreWidth }]}>
+        <View {...({dataSet:{petSurface:'day-score'}} as any)} style={[s.card, s.scoreCard, compact && s.scoreCardCompact, { width: scoreWidth }]}>
           <View style={s.cardHeader}>
             <Text style={s.darkTitle}>SCORE за 7 дней</Text>
             <Action label="Открыть историю SCORE" title="История" onPress={props.onOpenHistory} tone="dark" />
@@ -114,7 +114,7 @@ export function DailyPlanOverview(props: DailyPlanOverviewProps) {
           {props.status === 'completed' ? <Text numberOfLines={1} style={s.darkCaption}>{props.score === null ? 'Сегодня · без оценки' : `Сегодня · ${Math.round(props.score)} SCORE`}</Text> : null}
         </View>
 
-        <Pressable accessibilityRole="button" accessibilityLabel="Открыть календарь и дела выбранной даты" onPress={props.onOpenCalendar} style={({ pressed }) => [s.card, s.lightCard, s.calendarCard, { width: smallWidth }, pressed && s.pressedCard]}>
+        <Pressable {...({dataSet:{petSurface:'day-calendar'}} as any)} accessibilityRole="button" accessibilityLabel="Открыть календарь и дела выбранной даты" onPress={props.onOpenCalendar} style={({ pressed }) => [s.card, s.lightCard, s.calendarCard, { width: smallWidth }, pressed && s.pressedCard]}>
           <View style={s.cardHeader}>
             <Text style={s.cardTitle}>Календарь</Text>
             <ArrowUpRight size={18} color="#3e501b" aria-hidden />
@@ -124,7 +124,7 @@ export function DailyPlanOverview(props: DailyPlanOverviewProps) {
           <Text numberOfLines={1} style={s.cardMeta}>{props.selectedDate === props.date ? 'Сегодня' : 'Выбранная дата'}</Text>
         </Pressable>
 
-        <Pressable accessibilityRole="button" accessibilityLabel="Открыть общий таймер фокуса" onPress={props.onOpenTimer} style={({ pressed }) => [s.card, s.lightCard, s.focusCard, { width: smallWidth }, pressed && s.pressedCard]}>
+        <Pressable {...({dataSet:{petSurface:'day-focus'}} as any)} accessibilityRole="button" accessibilityLabel="Открыть общий таймер фокуса" onPress={props.onOpenTimer} style={({ pressed }) => [s.card, s.lightCard, s.focusCard, { width: smallWidth }, pressed && s.pressedCard]}>
           <View style={s.cardHeader}>
             <Text style={s.cardTitle}>Фокус</Text>
             <Clock3 size={18} color="#3e501b" aria-hidden />
@@ -133,7 +133,7 @@ export function DailyPlanOverview(props: DailyPlanOverviewProps) {
           <Text numberOfLines={1} style={s.cardMeta}>{timerStatus(props.timer.status, props.timer.mode)}</Text>
         </Pressable>
 
-        <Pressable accessibilityRole="button" accessibilityLabel="Открыть историю завершённых дней" onPress={props.onOpenHistory} style={({ pressed }) => [s.card, s.lightCard, s.historyCard, { width: smallWidth }, pressed && s.pressedCard]}>
+        <Pressable {...({dataSet:{petSurface:'day-history'}} as any)} accessibilityRole="button" accessibilityLabel="Открыть историю завершённых дней" onPress={props.onOpenHistory} style={({ pressed }) => [s.card, s.lightCard, s.historyCard, { width: smallWidth }, pressed && s.pressedCard]}>
           <View style={s.cardHeader}>
             <Text style={s.cardTitle}>История дня</Text>
             <ArrowUpRight size={18} color="#3e501b" aria-hidden />
@@ -141,7 +141,7 @@ export function DailyPlanOverview(props: DailyPlanOverviewProps) {
           <LatestDay days={props.days} />
         </Pressable>
 
-        <Pressable accessibilityRole="button" accessibilityLabel="Обсудить день с помощником" onPress={props.onDiscussDay} style={({ pressed }) => [s.card, s.assistant, compact && s.assistantCompact, { width: compact ? width : quarter }, pressed && s.pressedCard]}>
+        <Pressable {...({dataSet:{petSurface:'day-assistant'}} as any)} accessibilityRole="button" accessibilityLabel="Обсудить день с помощником" onPress={props.onDiscussDay} style={({ pressed }) => [s.card, s.assistant, compact && s.assistantCompact, { width: compact ? width : quarter }, pressed && s.pressedCard]}>
           <View style={s.cardHeader}>
             <Text style={s.assistantTitle}>Помощник</Text>
             <ArrowUpRight size={18} color="#202810" aria-hidden />

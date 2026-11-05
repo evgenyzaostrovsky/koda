@@ -130,7 +130,7 @@ const s = StyleSheet.create({
   meta: { color: muted, fontSize: 12, lineHeight: 17 },
   category: { fontSize: 11, lineHeight: 16, paddingHorizontal: 9, borderRadius: 12, overflow: 'hidden' },
   primary: { minHeight: 42, width: '100%', borderRadius: 24, backgroundColor: lime, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingHorizontal: 12, marginTop: 'auto' },
-  primaryNarrow: { width: '75%', minWidth: 210 },
+  primaryNarrow: { width: '75%', minWidth: 210, alignSelf: 'center' },
   primaryText: { fontSize: 14, fontWeight: '600', color: activeText },
   plant: { width: 190, alignItems: 'center', justifyContent: 'center' },
   empty: { gap: 5 },

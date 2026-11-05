@@ -4,6 +4,9 @@ import { useReducedMotion } from './RightPanel';
 
 export type PetPose = 'poses_01' | 'poses_04' | 'emotions_01' | 'emotions_06' | 'emotions_07' | 'care_moods_03' | 'celebration_01';
 export type PetLifeState = 'egg' | 'alive' | 'dead';
+export type PetActionPose = 'push-ready' | 'push-drive' | 'push-recoil' | 'jump-tuck' | 'land-brace' | 'stomp';
+export type PetClimbPose = 'climb-reach' | 'climb-pull';
+export type PetActionBounds = { left: number; top: number; right: number; bottom: number };
 
 const petImages: Record<PetPose, ImageSourcePropType> = {
   poses_01: require('../../../../assets/pet/poses_01.png'),
@@ -19,6 +22,35 @@ const WALK_FRAME_COUNT = 4;
 const WALK_FRAME_MS = 240;
 const WALK_FRAME_ASPECT = 543 / 724;
 const walkSheet = require('../../../../assets/pet/kodik-walk-sheet-v1.png') as ImageSourcePropType;
+const playSheet = require('../../../../assets/pet/kodik-play-sheet-v2.png') as ImageSourcePropType;
+const climbSheet = require('../../../../assets/pet/kodik-climb-sheet-v1.png') as ImageSourcePropType;
+const PLAY_CELL_SIZE = 512;
+const CLIMB_CELL_SIZE = 887;
+const CLIMB_REFERENCE_SIZE = 760;
+const climbFrames: Record<PetClimbPose, number> = { 'climb-reach': 0, 'climb-pull': 1 };
+const climbBounds: Record<PetClimbPose, { handX: number; bottom: number }> = {
+  'climb-reach': { handX: 650, bottom: 806 },
+  'climb-pull': { handX: 640, bottom: 763 },
+};
+const playFrames: Record<PetActionPose, number> = { 'push-ready': 0, 'push-drive': 1, 'push-recoil': 2, 'jump-tuck': 3, 'land-brace': 4, stomp: 5 };
+const playBounds: Record<PetActionPose, PetActionBounds> = {
+  'push-ready': { left: 93, top: 11, right: 442, bottom: 495 },
+  'push-drive': { left: 45, top: 45, right: 484, bottom: 494 },
+  'push-recoil': { left: 81, top: 15, right: 410, bottom: 496 },
+  'jump-tuck': { left: 69, top: 5, right: 423, bottom: 425 },
+  'land-brace': { left: 41, top: 85, right: 460, bottom: 484 },
+  stomp: { left: 90, top: 4, right: 425, bottom: 485 },
+};
+
+export function getPetActionFrameBounds(actionPose: PetActionPose, size: number): PetActionBounds {
+  const scale = size / PLAY_CELL_SIZE;
+  const bounds = playBounds[actionPose];
+  const xOffset = actionPose.startsWith('push-') ? (PLAY_CELL_SIZE - bounds.right) * scale : 0;
+  const yOffset = (PLAY_CELL_SIZE - bounds.bottom) * scale;
+  return { left: bounds.left * scale + xOffset, top: bounds.top * scale + yOffset, right: bounds.right * scale + xOffset, bottom: size };
+}
+
+export function getPetClimbHandX(size: number): number { return size * .78; }
 
 export function PetCompanion({
   name,
@@ -28,6 +60,9 @@ export function PetCompanion({
   onPress,
   accessibilityLabel,
   walking = false,
+  animatingScene = false,
+  actionPose,
+  climbPose,
   facing,
   jumping = false,
   ambientMotion = true,
@@ -39,6 +74,9 @@ export function PetCompanion({
   onPress?: () => void;
   accessibilityLabel?: string;
   walking?: boolean;
+  animatingScene?: boolean;
+  actionPose?: PetActionPose;
+  climbPose?: PetClimbPose;
   facing?: Animated.Value;
   jumping?: boolean;
   ambientMotion?: boolean;
@@ -57,7 +95,7 @@ export function PetCompanion({
     scale.stopAnimation();
     bob.setValue(0);
     scale.setValue(1);
-    if (reducedMotion || state !== 'alive' || isWalking || !ambientMotion) return;
+    if (reducedMotion || state !== 'alive' || isWalking || animatingScene || !ambientMotion) return;
 
     const bobLoop = Animated.loop(Animated.sequence([
       Animated.timing(bob, { toValue: -4, duration: 1150, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
@@ -70,7 +108,7 @@ export function PetCompanion({
     bobLoop.start();
     breathLoop.start();
     return () => { bobLoop.stop(); breathLoop.stop(); };
-  }, [ambientMotion, bob, isWalking, scale, reducedMotion, state]);
+  }, [ambientMotion, animatingScene, bob, isWalking, scale, reducedMotion, state]);
 
   useEffect(() => {
     setWalkFrame(0);
@@ -105,12 +143,33 @@ export function PetCompanion({
       style={{ position: 'absolute', left: -frameWidth * walkFrame, top: 0, width: frameWidth * WALK_FRAME_COUNT, height: size }}
     />
   </View>;
+  const actionFrame = actionPose ? playFrames[actionPose] : 0;
+  const actionBounds = actionPose ? playBounds[actionPose] : playBounds['push-ready'];
+  const actionScale = size / PLAY_CELL_SIZE;
+  const actionXOffset = actionPose?.startsWith('push-') ? (PLAY_CELL_SIZE - actionBounds.right) * actionScale : 0;
+  const actionYOffset = (PLAY_CELL_SIZE - actionBounds.bottom) * actionScale;
+  const actionArtwork = <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[s.walkViewport, { width: size, height: size }]}>
+    <View style={[s.walkViewport, { width: size, height: size, transform: [{ translateX: actionXOffset }, { translateY: actionYOffset }] }]}>
+      <Animated.Image source={playSheet} resizeMode="stretch" style={{ position: 'absolute', left: -(actionFrame % 3) * size, top: -Math.floor(actionFrame / 3) * size, width: size * 3, height: size * 2 }} />
+    </View>
+  </View>;
+  const climbFrame = climbPose ? climbFrames[climbPose] : 0;
+  const climbMetadata = climbPose ? climbBounds[climbPose] : climbBounds['climb-reach'];
+  const climbScale = size / CLIMB_REFERENCE_SIZE;
+  const climbCellSize = CLIMB_CELL_SIZE * climbScale;
+  const climbXOffset = getPetClimbHandX(size) - climbMetadata.handX * climbScale;
+  const climbYOffset = size - climbMetadata.bottom * climbScale;
+  const climbArtwork = <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[s.walkViewport, { width: size, height: size }]}>
+    <View style={[s.walkViewport, { width: climbCellSize, height: climbCellSize, transform: [{ translateX: climbXOffset }, { translateY: climbYOffset }] }]}>
+      <Animated.Image source={climbSheet} resizeMode="stretch" style={{ position: 'absolute', left: -climbFrame * climbCellSize, top: 0, width: climbCellSize * 2, height: climbCellSize }} />
+    </View>
+  </View>;
   const visual = state === 'egg'
     ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[s.egg, { width: size * .52, height: size * .66, borderRadius: size }]}><View style={s.eggLight} /></View>
     : <Animated.View style={[s.artwork, { width: size, height: size, transform: [
       { translateY: Animated.add(bob, jumpLift) }, { scale }, { scaleX: facing ?? 1 },
-      ], opacity: state === 'dead' ? .55 : 1 }]}>
-      {isWalking ? walkArtwork : <Animated.Image source={image!} resizeMode="contain" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ width: size, height: size }} />}
+    ], opacity: state === 'dead' ? .55 : 1 }]}>
+      {climbPose ? climbArtwork : actionPose ? actionArtwork : isWalking ? walkArtwork : <Animated.Image source={image!} resizeMode="contain" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ width: size, height: size }} />}
     </Animated.View>;
 
   if (!onPress) return <View style={[s.artwork, { width: size, height: size }]}>{visual}</View>;

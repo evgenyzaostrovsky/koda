@@ -12,6 +12,7 @@ import { getHabitMonthDays, todayDateKey } from '../src/features/koda/utils';
 import { acceptDayPlan, calculatePlanScore, suggestDayPlan } from '../src/features/koda/dayPlan';
 import { parseDayPlanState, syncDayPlanProgress, syncExplicitSourceChanges } from '../src/features/koda/dayPlanSync';
 import { buildProjectPlannerItems } from '../src/features/koda/plannerProjections';
+import { applyAutoPlanProgress } from '../src/features/koda/autoPlan';
 
 const firstAt = '2026-10-20T08:00:00.000Z';
 const nextAt = '2026-10-20T09:00:00.000Z';
@@ -142,7 +143,7 @@ if (process.argv.includes('--timezone-child')) {
     const handler = transpileModule(app.slice(start, end), {}).outputText;
     const makeHandler = new Function('context', `const { editSources, goals, plannerItems, projects, habits, kodaDays, profile,
       todayDateKey, buildProjectPlannerItems, buildHabitPlannerItems, syncDayPlanProgress,
-      syncExplicitSourceChanges, updateKodaDays } = context; ${handler}; return commitExplicitSources;`);
+      syncExplicitSourceChanges, updateKodaDays, applyAutoPlanProgress } = context; ${handler}; return commitExplicitSources;`);
     const date = '2026-10-20';
     const initial = base();
     const root = acceptDayPlan(suggestDayPlan([], buildHabitPlannerItems([initial], date), date), { versionId: 'widget-root', at: firstAt });
@@ -152,7 +153,7 @@ if (process.argv.includes('--timezone-child')) {
       const sources = { goals: [], plannerItems: [], projects: [], habits: [completed] };
       let days = [{ id: 'widget-day', status: 'active', plan: root }];
       const commit = makeHandler({ ...sources, profile: {}, editSources: { current: sources }, kodaDays: days,
-        todayDateKey: () => date, buildProjectPlannerItems, buildHabitPlannerItems, syncDayPlanProgress, syncExplicitSourceChanges,
+        todayDateKey: () => date, buildProjectPlannerItems, buildHabitPlannerItems, syncDayPlanProgress, syncExplicitSourceChanges, applyAutoPlanProgress,
         updateKodaDays: (update: (items: typeof days) => typeof days) => { days = update(days); },
       });
       assert.equal(calculatePlanScore(root).totalScore, 0);

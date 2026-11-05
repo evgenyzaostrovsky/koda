@@ -24,6 +24,7 @@ export type GoalMilestone = {
 export type GoalAction = {
   id: string;
   title: string;
+  shortTitle?: string;
   description: string;
   dueDate: string;
   estimatedMinutes: number | null;
@@ -136,6 +137,8 @@ export type PlannerItem = {
   date: string;
   time: string;
   title: string;
+  description?: string;
+  goalTitle?: string;
   done: boolean;
   failed?: boolean;
   subtasks?: PlannerSubtask[];
@@ -233,6 +236,7 @@ export type PomodoroSettings = {
   soundId: PomodoroSoundId;
 };
 export type ProfileState = {
+  autoPlan?: import('./autoPlan').AutoPlanState;
   pet?: import('./petState').PetState;
   emotionEntries?: import('./emotionJournal').EmotionEntry[];
   themeId: ThemeId;
