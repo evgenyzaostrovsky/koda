@@ -1,6 +1,8 @@
 import { normalizeAssistantMemoryContent, normalizeAssistantMemoryRow, type AssistantMemory } from '../ai/assistantMemory';
+import { buildAssistantCorrectionMemory, type SaveAssistantCorrectionInput } from '../ai/assistantCorrections';
 
 export type { AssistantMemory } from '../ai/assistantMemory';
+export type { SaveAssistantCorrectionInput } from '../ai/assistantCorrections';
 
 const columns = 'id,user_id,content,created_at,updated_at';
 const conflictMessage = 'Факт изменён или удалён на другом устройстве. Обновите память и повторите изменение.';
@@ -13,7 +15,7 @@ export function createAssistantMemoryService(client: any) {
     if (error || !session?.access_token || !session.user?.id || session.user.is_anonymous === true) {
       throw new Error('Войдите в аккаунт, чтобы использовать память помощника.');
     }
-    if (expected && session.user.id !== expected) throw new Error('Аккаунт изменился. Откройте память заново.');
+    if (expected !== undefined && session.user.id !== expected) throw new Error('Аккаунт изменился. Откройте память заново.');
     return session.user.id;
   }
 
@@ -29,8 +31,16 @@ export function createAssistantMemoryService(client: any) {
   }
 
   return {
-    async listAssistantMemories(): Promise<AssistantMemory[]> {
-      const owner = await requireOwner();
+    async saveAssistantCorrection(input: SaveAssistantCorrectionInput): Promise<AssistantMemory> {
+      if (typeof input.ownerId !== 'string' || !input.ownerId.trim()) throw new Error('Войдите в аккаунт, чтобы сохранить исправление.');
+      const content = buildAssistantCorrectionMemory(input);
+      // Bind the draft to its submitting account, including when auth changes while an editor is open.
+      const owner = await requireOwner(input.ownerId);
+      // No queue/retry: a lost acknowledgement requires refreshing memory before resubmitting.
+      return resultRow(await client.from('assistant_memories').insert({ user_id: owner, content }).select(columns).single(), owner);
+    },
+    async listAssistantMemories(expectedOwner?: string): Promise<AssistantMemory[]> {
+      const owner = await requireOwner(expectedOwner);
       const memories: AssistantMemory[] = [];
       for (let offset = 0; offset < 10000; offset += 100) {
         const result = await client.from('assistant_memories').select(columns).eq('user_id', owner)
@@ -42,16 +52,16 @@ export function createAssistantMemoryService(client: any) {
       }
       throw new Error('Слишком много фактов. Не удалось загрузить полный список.');
     },
-    async addAssistantMemory(content: string): Promise<AssistantMemory> {
+    async addAssistantMemory(content: string, expectedOwner?: string): Promise<AssistantMemory> {
       const normalized = normalizeAssistantMemoryContent(content);
-      const owner = await requireOwner();
+      const owner = await requireOwner(expectedOwner);
       // A failed/lost acknowledgement is not retried automatically: refresh before resubmitting.
       return resultRow(await client.from('assistant_memories').insert({ user_id: owner, content: normalized }).select(columns).single(), owner);
     },
-    async updateAssistantMemory(id: string, content: string, updatedAt?: string): Promise<AssistantMemory> {
+    async updateAssistantMemory(id: string, content: string, updatedAt?: string, expectedOwner?: string): Promise<AssistantMemory> {
       checkId(id);
       const normalized = normalizeAssistantMemoryContent(content);
-      const owner = await requireOwner();
+      const owner = await requireOwner(expectedOwner);
       // Editors must supply their loaded revision; otherwise fetch one before the mutation.
       let revision = updatedAt;
       if (!revision) {
@@ -62,9 +72,9 @@ export function createAssistantMemoryService(client: any) {
       return resultRow(await client.from('assistant_memories').update({ content: normalized })
         .eq('user_id', owner).eq('id', id).eq('updated_at', revision).select(columns).maybeSingle(), owner);
     },
-    async deleteAssistantMemory(id: string, updatedAt?: string): Promise<void> {
+    async deleteAssistantMemory(id: string, updatedAt?: string, expectedOwner?: string): Promise<void> {
       checkId(id);
-      const owner = await requireOwner();
+      const owner = await requireOwner(expectedOwner);
       let query = client.from('assistant_memories').delete().eq('user_id', owner).eq('id', id);
       if (updatedAt) {
         if (!Number.isFinite(Date.parse(updatedAt))) throw new Error('Некорректная версия факта.');
@@ -85,7 +95,8 @@ async function service() {
   return createAssistantMemoryService(supabase);
 }
 
-export async function listAssistantMemories(): Promise<AssistantMemory[]> { return (await service()).listAssistantMemories(); }
-export async function addAssistantMemory(content: string): Promise<AssistantMemory> { return (await service()).addAssistantMemory(content); }
-export async function updateAssistantMemory(id: string, content: string, updatedAt?: string): Promise<AssistantMemory> { return (await service()).updateAssistantMemory(id, content, updatedAt); }
-export async function deleteAssistantMemory(id: string, updatedAt?: string): Promise<void> { return (await service()).deleteAssistantMemory(id, updatedAt); }
+export async function listAssistantMemories(expectedOwner?: string): Promise<AssistantMemory[]> { return (await service()).listAssistantMemories(expectedOwner); }
+export async function saveAssistantCorrection(input: SaveAssistantCorrectionInput): Promise<AssistantMemory> { return (await service()).saveAssistantCorrection(input); }
+export async function addAssistantMemory(content: string, expectedOwner?: string): Promise<AssistantMemory> { return (await service()).addAssistantMemory(content, expectedOwner); }
+export async function updateAssistantMemory(id: string, content: string, updatedAt?: string, expectedOwner?: string): Promise<AssistantMemory> { return (await service()).updateAssistantMemory(id, content, updatedAt, expectedOwner); }
+export async function deleteAssistantMemory(id: string, updatedAt?: string, expectedOwner?: string): Promise<void> { return (await service()).deleteAssistantMemory(id, updatedAt, expectedOwner); }

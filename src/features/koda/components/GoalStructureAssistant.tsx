@@ -2,15 +2,18 @@ import {useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {Check,ChevronDown,ChevronUp,Plus,Sparkles,X} from 'lucide-react-native';
 import {requestGoalPlan} from '../../../services/kodaApi';
+import {AssistantCorrection} from './AssistantCorrection';
+import {AssistantMemory} from './AssistantMemory';
 import type {GoalActionDetail,GoalPlanSuggestion} from '../../../ai/goalPlanContract';
+import {diffGoalProposals} from '../../../ai/proposalCorrections';
 import {addGoalStructure,rebuildGoalStructure} from '../goalStructure';
 import {buildGoalPlanContext} from '../goalPlanContext';
 import {getActiveRoadmapClarifications,upsertRoadmapQuestions,updateRoadmapAnswer,removeRoadmapClarification} from '../goalRoadmapClarifications';
 import type {Goal} from '../types';
 import {accent,activeBg,activeText,line,muted,panel,panelSoft,text} from '../theme';
 
-type Props={open:boolean;goal:Goal;planningMethod?:'otani'|'roadmap';onClose:()=>void;onUpdateGoal:(recipe:(current:Goal)=>Goal)=>void};
-export function GoalStructureAssistant({open,goal,planningMethod='roadmap',onClose,onUpdateGoal}:Props){
+type Props={open:boolean;goal:Goal;userId?:string|null;planningMethod?:'otani'|'roadmap';onClose:()=>void;onUpdateGoal:(recipe:(current:Goal)=>Goal)=>void};
+export function GoalStructureAssistant({open,goal,userId,planningMethod='roadmap',onClose,onUpdateGoal}:Props){
   const isOtani=planningMethod==='otani';
   const [planScope,setPlanScope]=useState<'starter'|'full-map'>('starter');
   const context=goal.planningContext??'';
@@ -20,6 +23,7 @@ export function GoalStructureAssistant({open,goal,planningMethod='roadmap',onClo
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [proposal,setProposal]=useState<GoalPlanSuggestion|null>(null);
+  const [initialProposal,setInitialProposal]=useState<GoalPlanSuggestion|null>(null);
   const [actionCopyOnly,setActionCopyOnly]=useState(false);
   const [proposalSource,setProposalSource]=useState<string|null>(null);
   const [otaniQuestions,setOtaniQuestions]=useState<Array<{id:string;question:string;answer:string}>>([]);
@@ -40,10 +44,11 @@ export function GoalStructureAssistant({open,goal,planningMethod='roadmap',onClo
   const requestSource=JSON.stringify([basis,clarifications]);
   const latestSource=useRef(requestSource);latestSource.current=requestSource;
   const staleProposal=Boolean(proposal?.directions.length&&proposalSource!==requestSource);
+  const proposalCorrections=proposal&&initialProposal?diffGoalProposals(initialProposal,proposal,isOtani):[];
   const [pendingApply,setPendingApply]=useState<{base:string;changeId:string}|null>(null);
   const requestId=useRef(0);
   useEffect(()=>{
-    requestId.current++;setPlanScope(getActiveRoadmapClarifications(goal).length?'full-map':'starter');setMinutes('20');setRebuildPending(false);setFillAllSteps(false);setProposal(null);setActionCopyOnly(false);setProposalSource(null);setOtaniQuestions([]);setExpandedDirections([]);setPendingApply(null);setError('');setBusy(false);
+    requestId.current++;setPlanScope(getActiveRoadmapClarifications(goal).length?'full-map':'starter');setMinutes('20');setRebuildPending(false);setFillAllSteps(false);setProposal(null);setInitialProposal(null);setActionCopyOnly(false);setProposalSource(null);setOtaniQuestions([]);setExpandedDirections([]);setPendingApply(null);setError('');setBusy(false);
     return()=>{requestId.current++;};
   },[open,goal.id,planningMethod]);
   useEffect(()=>{
@@ -58,7 +63,7 @@ export function GoalStructureAssistant({open,goal,planningMethod='roadmap',onClo
     if(!isOtani&&planScope==='full-map'&&goal.openWindow?.directions.every(d=>Boolean(d.archivedAt))){setError('Все направления в архиве. Сначала восстанови хотя бы одно направление.');return;}
     const available=Number(minutes);
     if(!Number.isFinite(available)||available<10||available>480){setError('Укажи от 10 до 480 минут на один подход. Это не ежедневное обязательство.');return;}
-    const id=++requestId.current,requestedSource=requestSource,requestedScope=planScope,requestedRevisionMode=isOtani?undefined:revisionMode,requestedStepDensity=isOtani?undefined:stepDensity;setActionCopyOnly(requestedActionCopyOnly);setBusy(true);setError('');setProposal(null);setProposalSource(null);
+    const id=++requestId.current,requestedSource=requestSource,requestedScope=planScope,requestedRevisionMode=isOtani?undefined:revisionMode,requestedStepDensity=isOtani?undefined:stepDensity;setActionCopyOnly(requestedActionCopyOnly);setBusy(true);setError('');setProposal(null);setInitialProposal(null);setProposalSource(null);
     try{
       const result=await requestGoalPlan({wish:requestedActionCopyOnly?`Главная цель: ${goal.title.slice(0,400)}\nУлучши только краткие подписи (до 48 знаков) и конкретные пояснения существующих действий в переданном списке. Сохрани исходные названия действий без изменений, не добавляй и не удаляй действия.`:isOtani?`Главная цель: ${goal.title.slice(0,400)}\nСформируй независимые поддерживающие факторы по методу OTANI, не последовательные этапы.`:[`Главная цель: ${goal.title.slice(0,400)}`,requestedScope==='full-map'?fillAllSteps?'Подготовь полный роадмап из 8 этапов и заполни все 8 шагов каждого этапа (64 шага): долгосрочные варианты, не ежедневные обязанности.':'Подготовь конкретный роадмап до 8 этапов и предложи только обоснованные известными фактами шаги: долгосрочные варианты, не ежедневные обязанности.':'Предложи ближайшие полезные шаги от текущей точки, не начинай заново.'].join('\n'),desiredResult:goal.desiredResult||undefined,availableMinutes:available,...(isOtani?{planningMethod:'otani' as const,actionCopyOnly:requestedActionCopyOnly,clarifyGoal:!requestedActionCopyOnly,planScope:'full-map' as const,clarifications:requestedActionCopyOnly?undefined:clarifications}:{planningMethod:'roadmap' as const,clarifyRoadmap:true,clarifications,planScope:requestedScope,revisionMode:requestedRevisionMode,stepDensity:requestedStepDensity}),currentState:context.trim().slice(0,2000)||undefined,goalProgress:autoContext.goalProgress,existingDirections:requestedActionCopyOnly?copySourceDirections:autoContext.existingDirections});
       if(id!==requestId.current)return;
@@ -72,7 +77,7 @@ export function GoalStructureAssistant({open,goal,planningMethod='roadmap',onClo
         }
         return;
       }
-      setProposal(result);setProposalSource(requestedSource);setExpandedDirections(requestedScope==='starter'||isOtani?result.directions.map((_,index)=>index):[]);
+      const captured=JSON.parse(JSON.stringify(result)) as GoalPlanSuggestion;setProposal(captured);setInitialProposal(captured);setProposalSource(requestedSource);setExpandedDirections(requestedScope==='starter'||isOtani?result.directions.map((_,index)=>index):[]);
     }catch{if(id===requestId.current)setError(isOtani?'KODA пока не смогла предложить факторы. Попробуй ещё раз или добавь их вручную в матрице. Ничего не изменено.':'KODA пока не смогла предложить направления. Попробуй ещё раз или добавь их вручную в карте. Ничего не изменено.');}
     finally{if(id===requestId.current)setBusy(false);}
   }
@@ -106,6 +111,7 @@ export function GoalStructureAssistant({open,goal,planningMethod='roadmap',onClo
         <Text style={styles.goal}>{goal.title}</Text>
         {!!goal.desiredResult&&<Text style={styles.help}>{goal.desiredResult}</Text>}
         <Text style={styles.help}>{isOtani?'Расскажи о своей стартовой точке, времени и доступных ресурсах. KODA предложит независимые факторы и наблюдаемые действия; ты проверишь их до добавления в цель.':'Расскажи, где ты сейчас и чего уже достиг. KODA подготовит следующий план, а ты проверишь его до добавления в цель.'}</Text>
+        {userId?<AssistantMemory key={userId} userId={userId}/>:null}
         {!isOtani&&<Text style={styles.label}>Какую карту подготовить?</Text>}
         {!isOtani&&
         <View style={styles.scopeRow}>
@@ -156,6 +162,11 @@ export function GoalStructureAssistant({open,goal,planningMethod='roadmap',onClo
         {!!error&&<Text accessibilityRole="alert" style={styles.help}>{error}</Text>}
         {staleProposal&&!pendingApply&&<Text accessibilityRole="alert" style={styles.help}>Условия изменились. Запроси новый вариант перед сохранением.</Text>}
         {!!proposal?.planningNote&&proposalSource===requestSource&&<Text style={styles.help}>{proposal.planningNote}</Text>}
+        {proposal&&userId&&proposalSource===requestSource&&proposalCorrections.length>0&&<View style={styles.rememberBox}>
+          <Text style={styles.label}>Запомнить исправления · {proposalCorrections.length}</Text>
+          <Text style={styles.help}>Каждый изменённый пункт сохраняется отдельно с коротким фрагментом исходного и исправленного варианта. Сохранение примеров не меняет цель; для этого используй кнопку добавления ниже.</Text>
+          {proposalCorrections.map(change=><AssistantCorrection key={`${change.key}:${change.before}:${change.after}`} userId={userId} source={isOtani?'otani':'goal'} before={change.before} initialAfter={change.after} buttonLabel={`Запомнить: ${change.label}`} preferenceHint="Что учитывать в похожих предложениях? (необязательно)" />)}
+        </View>}
         {proposal&&proposal.directions.length>0&&<View style={styles.review}>
           <Text style={styles.label}>Проверь и поправь предложения</Text>
           {(planScope==='full-map'||isOtani)&&<Text style={styles.count}>{proposal.directions.length} {isOtani?'факторов':'этапов'} · {proposal.directions.reduce((count,direction)=>count+direction.actions.length,0)} {isOtani?'действий':'шагов'}</Text>}
@@ -206,5 +217,5 @@ const styles=StyleSheet.create({
   input:{backgroundColor:panel,borderColor:line,borderWidth:1,borderRadius:12,minHeight:44,paddingHorizontal:12,paddingVertical:9,color:text,fontSize:16},multiline:{minHeight:84,textAlignVertical:'top'},
   secondary:{minHeight:48,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,borderColor:line,borderWidth:1,borderRadius:16,padding:12},secondaryText:{color:accent,fontSize:14,fontWeight:'600'},
   review:{gap:14,paddingTop:8},direction:{gap:8,borderTopColor:line,borderTopWidth:1,paddingTop:14},actionRow:{gap:2},copyDetailFields:{gap:6,paddingLeft:50},copyDetailLabel:{color:text,fontSize:12,fontWeight:'600'},preservedDescription:{gap:4,padding:10,borderRadius:10,borderWidth:1,borderColor:line,backgroundColor:panel},descriptionText:{color:text,fontSize:13,lineHeight:18},protectedLabel:{color:accent,fontSize:12,fontWeight:'600',paddingLeft:50},protectedInput:{opacity:0.76},row:{flexDirection:'row',alignItems:'center',gap:4},flex:{flex:1,minWidth:0},expandButton:{width:36,height:44,alignItems:'center',justifyContent:'center'},expandSummary:{alignSelf:'flex-start',paddingLeft:38,minHeight:36,justifyContent:'center'},expandText:{color:accent,fontSize:12,fontWeight:'600'},
-  primary:{minHeight:48,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,backgroundColor:activeBg,borderRadius:12,padding:12},primaryText:{color:activeText,fontSize:14,fontWeight:'700'},disabled:{opacity:0.5},
+  rememberBox:{gap:4,padding:12,borderRadius:12,borderWidth:1,borderColor:line,backgroundColor:panel},primary:{minHeight:48,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,backgroundColor:activeBg,borderRadius:12,padding:12},primaryText:{color:activeText,fontSize:14,fontWeight:'700'},disabled:{opacity:0.5},
 });

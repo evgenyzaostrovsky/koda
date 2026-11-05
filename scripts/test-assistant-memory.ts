@@ -87,6 +87,12 @@ async function testClient() {
   const added = await service.addAssistantMemory(' Факт после удаления ');
   assert.equal(added.content, 'Факт после удаления');
   state.owner = b;
+  const beforeStaleDraft = state.mutations;
+  await assert.rejects(service.addAssistantMemory('Черновик аккаунта A', a), /Аккаунт изменился/);
+  await assert.rejects(service.listAssistantMemories(a), /Аккаунт изменился/);
+  await assert.rejects(service.updateAssistantMemory(memoryId, 'Правка A', added.updatedAt, a), /Аккаунт изменился/);
+  await assert.rejects(service.deleteAssistantMemory(memoryId, added.updatedAt, a), /Аккаунт изменился/);
+  assert.equal(state.mutations, beforeStaleDraft, 'stale displayed-account drafts never write to the new account');
   assert.deepEqual(await service.listAssistantMemories(), []);
   await assert.rejects(service.updateAssistantMemory(memoryId, 'Чужая правка', added.updatedAt), /изменён или удалён/);
   await service.deleteAssistantMemory(memoryId);

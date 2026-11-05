@@ -11,13 +11,13 @@ export function AssistantMemory({userId,suggestion,onDismissSuggestion}:{userId?
   useEffect(()=>{generation.current++;setOpen(false);setItems([]);setDraft('');setEditing(null);setLoaded(false);setBusy(false);setError('');return()=>{generation.current++;};},[userId]);
   async function refresh(){
     const epoch=generation.current;setBusy(true);setError('');setLoaded(false);
-    try {const next=await listAssistantMemories();if(epoch===generation.current){setItems(next);setLoaded(true);}}
+    try {const next=await listAssistantMemories(userId||undefined);if(epoch===generation.current){setItems(next);setLoaded(true);}}
     catch {if(epoch===generation.current)setError('Не удалось загрузить память. Проверь подключение и повтори.');}
     finally {if(epoch===generation.current)setBusy(false);}
   }
   async function change(action:()=>Promise<unknown>){
     if(busy)return;const epoch=generation.current;setBusy(true);setError('');
-    try {await action();if(epoch!==generation.current)return;setDraft('');setEditing(null);onDismissSuggestion?.();const next=await listAssistantMemories();if(epoch===generation.current)setItems(next);}
+    try {await action();if(epoch!==generation.current)return;setDraft('');setEditing(null);onDismissSuggestion?.();const next=await listAssistantMemories(userId||undefined);if(epoch===generation.current)setItems(next);}
     catch {if(epoch===generation.current){setLoaded(false);setError('Изменение не подтверждено. Обнови память и попробуй ещё раз.');}}
     finally {if(epoch===generation.current)setBusy(false);}
   }
@@ -36,7 +36,7 @@ export function AssistantMemory({userId,suggestion,onDismissSuggestion}:{userId?
       <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.35)',justifyContent:'center',alignItems:'center',padding:20}}>
         <View style={{width:'100%',maxWidth:600,maxHeight:'90%',backgroundColor:panel,borderRadius:24,padding:20,gap:14}}>
           <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}><Text accessibilityRole="header" style={{fontSize:23,fontWeight:'600',color:text}}>Память помощника</Text>{button('Закрыть',()=>setOpen(false))}</View>
-          <Text style={{color:muted,fontSize:14,lineHeight:20}}>Общая для чата, целей и квадратов, только в этом аккаунте. Здесь — подтверждённые факты о тебе. Актуальные цели, действия и их прогресс помощник учитывает автоматически; изменить их можно в разделе целей.</Text>
+          <Text style={{color:muted,fontSize:14,lineHeight:20}}>Общая для чата, целей и квадратов ОТАНИ, только в этом аккаунте. Здесь — подтверждённые факты, исправления ответов и предпочтения. Цели, действия и прогресс помощник учитывает автоматически; изменить их можно в разделе целей.</Text>
           <Text style={{color:muted,fontSize:12}}>Для ответа используем до 20 последних фактов в пределах объёма контекста. Удаление факта не удаляет сообщения в истории чата. Дневник в память не передаётся.</Text>
           {!!error&&<Text accessibilityLiveRegion="polite" style={{color:text}}>{error}</Text>}
           {busy&&<Text accessibilityLiveRegion="polite" style={{color:muted}}>Сохраняю или загружаю…</Text>}
@@ -44,12 +44,12 @@ export function AssistantMemory({userId,suggestion,onDismissSuggestion}:{userId?
             {loaded&&!items.length&&<Text style={{color:muted}}>Пока ничего не запомнено. Добавь важное для планирования — например, сколько времени есть и что уже умеешь.</Text>}
             {items.map(item=><View key={item.id} style={{padding:14,borderWidth:1,borderColor:line,borderRadius:16,gap:10}}>
               <Text style={{color:text,lineHeight:21}}>{item.content}</Text>
-              <View style={{flexDirection:'row',gap:8}}>{button('Изменить',()=>{setEditing(item);setDraft(item.content);},busy||!loaded)}{button('Удалить',()=>{void change(()=>deleteAssistantMemory(item.id,item.updatedAt));},busy||!loaded)}</View>
+              <View style={{flexDirection:'row',gap:8}}>{button('Изменить',()=>{setEditing(item);setDraft(item.content);},busy||!loaded)}{button('Удалить',()=>{void change(()=>deleteAssistantMemory(item.id,item.updatedAt,userId||undefined));},busy||!loaded)}</View>
             </View>)}
           </ScrollView>
           <TextInput accessibilityLabel={editing?'Исправить факт памяти':'Новый факт памяти'} placeholder="Например: могу заниматься по 20 минут вечером" placeholderTextColor={muted} multiline maxLength={1000} value={draft} onChangeText={setDraft} editable={!busy&&loaded} style={{minHeight:80,maxHeight:160,borderWidth:1,borderColor:line,borderRadius:14,padding:12,color:text}}/>
           <View style={{flexDirection:'row',gap:8,flexWrap:'wrap'}}>
-            <Pressable accessibilityRole="button" disabled={busy||!loaded||!draft.trim()} onPress={()=>void change(()=>editing?updateAssistantMemory(editing.id,draft,editing.updatedAt):addAssistantMemory(draft))} style={{padding:13,borderRadius:14,backgroundColor:accent,opacity:busy||!loaded||!draft.trim()?0.5:1}}><Text style={{color:activeText,fontWeight:'600'}}>{editing?'Сохранить исправление':'Запомнить'}</Text></Pressable>
+            <Pressable accessibilityRole="button" disabled={busy||!loaded||!draft.trim()} onPress={()=>void change(()=>editing?updateAssistantMemory(editing.id,draft,editing.updatedAt,userId||undefined):addAssistantMemory(draft,userId||undefined))} style={{padding:13,borderRadius:14,backgroundColor:accent,opacity:busy||!loaded||!draft.trim()?0.5:1}}><Text style={{color:activeText,fontWeight:'600'}}>{editing?'Сохранить исправление':'Запомнить'}</Text></Pressable>
             {editing&&button('Отменить правку',()=>{setEditing(null);setDraft('');},busy)}
             {button('Обновить',()=>void refresh(),busy)}
           </View>

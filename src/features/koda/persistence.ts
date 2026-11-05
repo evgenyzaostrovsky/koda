@@ -7,6 +7,7 @@ import { mergeDayPlans, parseDayPlanState } from './dayPlanSync';
 import { mergeHabits } from './habitSync';
 import { normalizeHabitMetadata } from './habitModel';
 import { mergePetState, parsePetState } from './petState';
+import { mergeAutoPlans, parseAutoPlanState } from './autoPlan';
 import type { Goal, Habit, JournalEntry, KodaDay, Note, NoteBlock, NoteDocument, PlannerItem, PomodoroSettings, ProfileState, Project, ThemeId } from './types';
 import { todayDateKey } from './utils';
 
@@ -40,6 +41,14 @@ function restoreGoalActionCopy(goals: Goal[], value: unknown, ownerId: unknown):
   });
 }
 
+// JSONB reorders object keys. Compare transport contents, while keeping array
+// order and the difference between missing values, null and explicit clears.
+function sameJsonContents(first: unknown, second: unknown): boolean {
+  const ordered = (_key: string, value: unknown) => value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : value;
+  return JSON.stringify(first, ordered) === JSON.stringify(second, ordered);
+}
+
 /** Queue repaired goals even when the previous client already acknowledged its write. */
 export function shouldSyncRecoveredAppState(remoteValue: unknown, recovered: StoredKodaState): boolean {
   const remote = normalizeStoredKodaState(remoteValue);
@@ -48,9 +57,9 @@ export function shouldSyncRecoveredAppState(remoteValue: unknown, recovered: Sto
   const row = remoteValue as { user_id?: unknown; profile?: { __kodaActionCopy?: unknown } } | null;
   const backup = typeof row?.user_id === 'string' ? createGoalActionCopyBackup(recovered.goals, row.user_id) : null;
   const needsBackup = backup && (backup.goals.length > 0 || row?.profile?.__kodaActionCopy !== undefined)
-    && JSON.stringify(backup) !== JSON.stringify(row?.profile?.__kodaActionCopy);
-  return JSON.stringify(rawGoals) !== JSON.stringify(recovered.goals)
-    || JSON.stringify(remote?.projects ?? []) !== JSON.stringify(recovered.projects) || Boolean(needsBackup);
+    && !sameJsonContents(backup, row?.profile?.__kodaActionCopy);
+  return !sameJsonContents(rawGoals, recovered.goals)
+    || !sameJsonContents(remote?.projects ?? [], recovered.projects) || Boolean(needsBackup);
 }
 
 export const defaultPomodoroSettings: PomodoroSettings = {
@@ -155,15 +164,16 @@ export function mergeNotes(remoteNotes: Note[], localNotes: Note[]) {
 
 export function mergeStoredKodaState(remoteState: StoredKodaState, localState: StoredKodaState | null): StoredKodaState {
   if (!localState) return remoteState;
-  const { pet: _selectedPet, ...profile } = isProfileEmpty(localState.profile) ? remoteState.profile : localState.profile;
+  const { pet: _selectedPet, autoPlan: _selectedAutoPlan, ...profile } = isProfileEmpty(localState.profile) ? remoteState.profile : localState.profile;
   const pet = mergePetState(parsePetState(remoteState.profile.pet), parsePetState(localState.profile.pet));
+  const autoPlan = mergeAutoPlans(parseAutoPlanState(remoteState.profile.autoPlan), parseAutoPlanState(localState.profile.autoPlan));
 
   return {
     goals: mergeGoals(remoteState.goals, localState.goals),
     habits: mergeHabits(remoteState.habits, localState.habits),
     kodaDays: mergeKodaDays(remoteState.kodaDays, localState.kodaDays),
     pomodoro: isDefaultPomodoroSettings(localState.pomodoro) ? remoteState.pomodoro : localState.pomodoro,
-    profile: { ...profile, emotionEntries: mergeEmotionEntries(remoteState.profile.emotionEntries, localState.profile.emotionEntries), ...(pet ? { pet } : {}) },
+    profile: { ...profile, emotionEntries: mergeEmotionEntries(remoteState.profile.emotionEntries, localState.profile.emotionEntries), ...(pet ? { pet } : {}), ...(autoPlan ? { autoPlan } : {}) },
     projects: mergeProjects(remoteState.projects, localState.projects),
   };
 }
@@ -215,6 +225,7 @@ export function normalizeStoredKodaState(value: unknown): StoredKodaState | null
   const profile = normalizeProfileState(state.profile);
   // Cloud rows carry their account boundary; a foreign embedded pet must not cross it.
   if (profile.pet && typeof state.user_id === 'string' && profile.pet.ownerId !== state.user_id) delete profile.pet;
+  if (profile.autoPlan && typeof state.user_id === 'string' && profile.autoPlan.ownerId !== state.user_id) delete profile.autoPlan;
   // Keep the compatibility copy readable after the projects column is added.
   const embeddedProjects = rawProfile && typeof rawProfile === 'object'
     ? (rawProfile as { __kodaProjects?: unknown }).__kodaProjects : undefined;
@@ -396,12 +407,16 @@ function clampPomodoroMinutes(value: unknown, fallback: number, min: number, max
 }
 
 function normalizeProfileState(value: unknown): ProfileState {
-  if (!isProfileState(value)) return defaultProfile;
+  if (!isProfileState(value)) {
+    const autoPlan = value && typeof value === 'object' ? parseAutoPlanState((value as { autoPlan?: unknown }).autoPlan) : undefined;
+    return autoPlan ? { ...defaultProfile, autoPlan } : defaultProfile;
+  }
   // The cloud backup is transport metadata, not editable profile state. Keeping
   // it out of local snapshots prevents a stale modern client from echoing it back.
-  const { pet: rawPet, __kodaActionCopy: _actionCopy, ...profile } = value as ProfileState & { __kodaActionCopy?: unknown };
+  const { pet: rawPet, autoPlan: rawAutoPlan, __kodaActionCopy: _actionCopy, ...profile } = value as ProfileState & { __kodaActionCopy?: unknown };
   const pet = parsePetState(rawPet);
-  return { ...defaultProfile, ...profile, themeId: normalizeThemeId(value.themeId), emotionEntries: parseEmotionEntries(value.emotionEntries), ...(pet ? { pet } : {}) };
+  const autoPlan = parseAutoPlanState(rawAutoPlan);
+  return { ...defaultProfile, ...profile, themeId: normalizeThemeId(value.themeId), emotionEntries: parseEmotionEntries(value.emotionEntries), ...(pet ? { pet } : {}), ...(autoPlan ? { autoPlan } : {}) };
 }
 
 function normalizeThemeId(value: unknown): ThemeId {

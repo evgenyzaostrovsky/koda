@@ -1,4 +1,5 @@
 import { createElement, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type NativeSyntheticEvent, type LayoutChangeEvent, type NativeTouchEvent } from 'react-native';
 import { ArrowLeft, ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
 import type { PlannerItem } from '../types';
@@ -17,6 +18,7 @@ type Props = {
   onMoveItem?: (item: PlannerItem, date: string, time: string) => void;
   onOpenWorkspace?: () => void;
   syncText?: string;
+  toolbarActions?: ReactNode;
 };
 
 const HOUR = 60;
@@ -39,7 +41,7 @@ const timeMinutes = (value: string) => {
 };
 const dayTitle = (d: Date) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 
-export function PlannerCalendar({ mode, onModeChange, selectedDate, onSelectDate, items, onNewItem, onOpenItem, onMoveItem, onOpenWorkspace, syncText }: Props) {
+export function PlannerCalendar({ mode, onModeChange, selectedDate, onSelectDate, items, onNewItem, onOpenItem, onMoveItem, onOpenWorkspace, syncText, toolbarActions }: Props) {
   const { width } = useWindowDimensions();
   const compact = width < 700;
   const selected = useMemo(() => parseDate(selectedDate), [selectedDate]);
@@ -226,6 +228,7 @@ export function PlannerCalendar({ mode, onModeChange, selectedDate, onSelectDate
       <View style={styles.navGroup}><Pressable accessibilityRole="button" accessibilityLabel="Предыдущий период" onPress={() => navigate(-1)} style={styles.navButton}><ChevronLeft size={18} color={text} /></Pressable><Pressable accessibilityRole="button" onPress={() => onSelectDate(today)} style={styles.todayButton}><Text style={styles.todayButtonText}>Сегодня</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Следующий период" onPress={() => navigate(1)} style={styles.navButton}><ChevronRight size={18} color={text} /></Pressable></View>
       <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>{title}</Text>
       <View style={styles.modeGroup}>{(['day', 'week', 'month', 'year'] as CalendarMode[]).map((value, i) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: mode === value }} onPress={() => onModeChange(value)} style={[styles.modeButton, mode === value && styles.modeSelected, i === 0 && styles.modeLeft, i === 3 && styles.modeRight]}><Text style={[styles.modeText, mode === value && styles.modeTextSelected]}>{({ day: 'День', week: 'Неделя', month: 'Месяц', year: 'Год' })[value]}</Text></Pressable>)}</View>
+      {toolbarActions ? <View style={styles.toolbarActions}>{toolbarActions}</View> : null}
       <Pressable accessibilityRole="button" accessibilityLabel="Новая задача" onPress={createAtNextSlot} style={styles.addButton}><Plus size={17} color="#fff" /></Pressable>
     </View>
     <View style={styles.calendarBody}>
@@ -247,6 +250,7 @@ const styles = StyleSheet.create({
   todayButtonText: { color: text, fontSize: 12, fontWeight: '600' },
   iconButton: { width: 34, height: 34, justifyContent: 'center', alignItems: 'center' },
   modeGroup: { flexDirection: 'row', alignItems: 'center', marginLeft: 'auto', borderWidth: 1, borderColor: line, borderRadius: 9, overflow: 'hidden' },
+  toolbarActions: { flexDirection: 'row', alignItems: 'center' },
   modeButton: { minHeight: 32, paddingHorizontal: 10, justifyContent: 'center', borderRightWidth: 1, borderColor: line, backgroundColor: panel },
   modeLeft: {}, modeRight: { borderRightWidth: 0 }, modeSelected: { backgroundColor: accentSoft },
   modeText: { fontSize: 13, color: muted, fontWeight: '500' }, modeTextSelected: { color: accent, fontWeight: '700' },

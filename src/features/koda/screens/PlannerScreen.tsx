@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { parseQuickTaskInput } from '../quickTaskInput';
 export { parseQuickTaskInput } from '../quickTaskInput';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
@@ -32,9 +33,10 @@ type Props = {
   onOpenSection?: (tab: TabKey) => void;
   onOpenWorkspace?: () => void;
   syncText?: string;
+  autoPlanControl?: ReactNode;
 };
 
-export function PlannerScreen({ initialFocus, isDesktop = false, items, projectItems = [], onAddItem, onDeleteItem, onMoveProjectedItemDate, onToggleProjectedItem, onToggleItem, onSetItemFailed, onToggleSubtask, onUpdateItem, onOpenSection, onOpenWorkspace, syncText }: Props) {
+export function PlannerScreen({ initialFocus, isDesktop = false, items, projectItems = [], onAddItem, onDeleteItem, onMoveProjectedItemDate, onToggleProjectedItem, onToggleItem, onSetItemFailed, onToggleSubtask, onUpdateItem, onOpenSection, onOpenWorkspace, syncText, autoPlanControl }: Props) {
   const [selectedDate, setSelectedDate] = useState(normalizeDateKey(initialFocus?.date ?? '') ?? todayDateKey());
   const [mode, setMode] = useState<CalendarMode>(initialFocus ? 'day' : isDesktop ? 'week' : 'day');
   useEffect(() => {
@@ -52,6 +54,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
   const [deleteCandidate, setDeleteCandidate] = useState<PlannerItem | null>(null);
   const displayItems = useMemo(() => [...items, ...projectItems].filter(item => !item.deletedAt), [items, projectItems]);
   const projected = Boolean(editor?.item && isProjectedPlannerItem(editor.item));
+  const goalProjected = Boolean(projected && editor?.item?.sourceType === 'goal');
   const parsedNewItem = parseQuickTaskInput(title, date, time);
   const valid = projected ? Boolean(normalizeDateKey(date)) : editor?.item ? canSubmitPlannerItem(date, time, title) : Boolean(parsedNewItem);
 
@@ -117,6 +120,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
         }}
         onOpenWorkspace={onOpenWorkspace}
         syncText={syncText}
+        toolbarActions={autoPlanControl}
       />
       <Modal transparent animationType="fade" visible={Boolean(editor)} onRequestClose={() => setEditor(null)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: 'rgba(0,0,0,0.3)' }}>
@@ -124,10 +128,14 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
           <View style={{ width: '100%', maxWidth: 460, maxHeight: '92%', backgroundColor: panel, borderRadius: 20, borderWidth: 1, borderColor: line, overflow: 'hidden' }}>
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, gap: 16 }}>
               <View style={styles.rowBetween}>
-                <Text style={{ color: text, fontSize: 18, fontWeight: '700' }}>{projected ? 'Задача проекта' : editor?.item ? 'Задача' : 'Новая задача'}</Text>
+                <Text style={{ color: text, fontSize: 18, fontWeight: '700' }}>{goalProjected ? 'Шаг цели' : projected ? 'Задача проекта' : editor?.item ? 'Задача' : 'Новая задача'}</Text>
                 <Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактор" onPress={() => setEditor(null)} style={styles.iconButton}><X color={muted} size={19} /></Pressable>
               </View>
               <TextInput autoFocus={!projected} editable={!projected} accessibilityLabel="Название задачи" placeholder="Название задачи" placeholderTextColor={faint} value={title} onChangeText={setTitle} onSubmitEditing={() => saveEditor()} style={[styles.modalInput, { fontSize: 18 }]} />
+              {editor?.item?.sourceType === 'goal' && <View style={{ gap: 6 }}>
+                {editor.item.goalTitle ? <Text style={{ color: accent, fontWeight: '600' }}>{editor.item.goalTitle}</Text> : null}
+                {editor.item.description ? <Text style={{ color: text, fontSize: 14, lineHeight: 21 }}>{editor.item.description}</Text> : null}
+              </View>}
               <Pressable accessibilityRole="button" accessibilityLabel="Изменить дату и время" onPress={() => setPickerOpen(open => !open)} style={[styles.plannerDateTimeButton, { minHeight: 44 }]}>
                 <Calendar color={accent} size={17} /><Text style={styles.plannerDateTimeText}>{formatShortDateTime(date, time)}</Text>
               </Pressable>
@@ -149,7 +157,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
                   <TextInput accessibilityLabel="Новая подзадача" placeholder="Добавить подзадачу" placeholderTextColor={faint} value={subtaskDraft} onChangeText={setSubtaskDraft} onSubmitEditing={addSubtask} style={styles.plannerTaskInput} />
                   <Pressable accessibilityRole="button" accessibilityLabel="Добавить подзадачу" disabled={!subtaskDraft.trim()} onPress={addSubtask} style={styles.iconButton}><Plus color={subtaskDraft.trim() ? accent : faint} size={18} /></Pressable>
                 </View>
-              </> : <Pressable accessibilityRole="button" onPress={() => { setEditor(null); onOpenSection?.('projects'); }}><Text style={{ color: accent }}>Открыть проект</Text></Pressable>}
+              </> : goalProjected ? <View style={{ gap: 4, padding: 12, borderRadius: 12, backgroundColor: 'var(--koda-surface-2, #f8f9f6)' }}><Text style={{ color: accent, fontSize: 12, fontWeight: '700' }}>Шаг из автоплана главной цели</Text><Text style={styles.cardText}>После выполнения следующий шаг этой цели появится завтра.</Text></View> : <Pressable accessibilityRole="button" onPress={() => { setEditor(null); onOpenSection?.('projects'); }}><Text style={{ color: accent }}>Открыть проект</Text></Pressable>}
               <Pressable accessibilityRole="button" disabled={!valid} onPress={() => saveEditor()} style={[styles.notificationButton, !valid && styles.notificationButtonDisabled]}><Text style={styles.notificationButtonText}>{editor?.item ? 'Сохранить' : 'Добавить'}</Text></Pressable>
               {editor?.item ? <View style={{ borderTopWidth: 1, borderColor: line, paddingTop: 8, gap: 4 }}>
                 <Pressable accessibilityRole="button" disabled={!valid} onPress={toggleCompletion} style={styles.taskContextAction}><Check color={accent} size={18} /><Text style={styles.plannerTitle}>{editor.item.done ? 'Вернуть в работу' : 'Отметить выполненной'}</Text></Pressable>

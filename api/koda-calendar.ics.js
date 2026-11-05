@@ -3,6 +3,8 @@ const DEFAULT_DAYS = 30;
 const DEFAULT_PAST_DAYS = 14;
 const { createClient } = require('@supabase/supabase-js');
 const { validateBearerToken } = require('../src/server/aiSecurity');
+const { parseAutoPlanState, buildAutoPlanItems } = require('../src/features/koda/autoPlan');
+const { normalizeGoal } = require('../src/features/koda/goalLogic');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -90,13 +92,18 @@ async function loadPlannerItems(key, startDate, days, token) {
 
   if (error || !Array.isArray(data)) return [];
 
-  return data.map((item) => ({
+  const account = await client.from('user_app_state').select('user_id,goals,profile_auto_plan:profile->autoPlan').eq('user_id', key.slice(5)).maybeSingle();
+  const autoPlan = !account.error && account.data?.user_id === key.slice(5) ? parseAutoPlanState(account.data.profile_auto_plan, key.slice(5)) : undefined;
+  const goals = Array.isArray(account.data?.goals) ? account.data.goals.map(normalizeGoal).filter(Boolean) : [];
+  const today = formatIsoDate(startOfToday(autoPlan?.settings.timezone || DEFAULT_TIMEZONE));
+  const automatic = buildAutoPlanItems(autoPlan, goals, today).filter(item => item.date >= start && item.date <= end);
+  return [...data.map((item) => ({
     id: String(item.id),
     date: String(item.event_date),
     time: item.event_time ? String(item.event_time).slice(0, 5) : '',
     title: String(item.title),
     done: Boolean(item.done),
-  }));
+  })), ...automatic];
 }
 
 function createAllDayEvent({ date, description, summary, uidPrefix }) {

@@ -124,7 +124,7 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline,
   if (selectedGoal) {
     return (
       <>
-        <GoalDetails goal={selectedGoal} hasCloudSync={hasCloudSync} isDesktop={isDesktop} isOnline={isOnline} onBack={() => setSelectedGoalId(null)} onGoalsChange={onGoalsChange} />
+        <GoalDetails goal={selectedGoal} userId={userId} hasCloudSync={hasCloudSync} isDesktop={isDesktop} isOnline={isOnline} onBack={() => setSelectedGoalId(null)} onGoalsChange={onGoalsChange} />
         <GoalWizard open={createOpen} userId={userId} onClose={() => setCreateOpen(false)} onSave={saveWizardGoal} />
         <CreateGoalFlow open={legacyCreateOpen} onClose={() => setLegacyCreateOpen(false)} onSave={saveGoal} />
         <ConfirmSheet title="Сделать цель главной?" text="Предыдущая главная цель станет важной. Одновременно активной главной может быть только одна." visible={Boolean(confirmMainGoal)} onCancel={() => setConfirmMainGoal(null)} onConfirm={confirmMainGoalSave} />
@@ -197,7 +197,7 @@ function GoalCard({ desktop, goal, featured, onPress }: { desktop?: boolean; goa
   );
 }
 
-function GoalDetails({ goal, isDesktop = false, hasCloudSync = true, onBack, onGoalsChange }: { goal: Goal; isDesktop?: boolean; hasCloudSync?: boolean; isOnline: boolean; onBack: () => void; onGoalsChange: GoalsChange }) {
+function GoalDetails({ goal, userId, isDesktop = false, hasCloudSync = true, onBack, onGoalsChange }: { goal: Goal; userId?:string|null; isDesktop?: boolean; hasCloudSync?: boolean; isOnline: boolean; onBack: () => void; onGoalsChange: GoalsChange }) {
   const [structureOpen,setStructureOpen]=useState(false);
   const [detailTab, setDetailTab] = useState<'roadmap' | 'actions' | 'matrix' | 'context'>('matrix');
   useEffect(()=>{setStructureOpen(false);setDetailTab('matrix');},[goal.id]);
@@ -318,7 +318,7 @@ function GoalDetails({ goal, isDesktop = false, hasCloudSync = true, onBack, onG
                 </Pressable>
               ))}
             </View>
-            <GoalStructureAssistant key={goal.id+detailTab} planningMethod={detailTab==='matrix'?'otani':'roadmap'} open={structureOpen} goal={goal} onClose={()=>setStructureOpen(false)} onUpdateGoal={updateGoal}/>
+            <GoalStructureAssistant key={goal.id+detailTab} userId={userId} planningMethod={detailTab==='matrix'?'otani':'roadmap'} open={structureOpen} goal={goal} onClose={()=>setStructureOpen(false)} onUpdateGoal={updateGoal}/>
 
             {detailTab === 'roadmap' ? (
               <View style={local.tabContent}>

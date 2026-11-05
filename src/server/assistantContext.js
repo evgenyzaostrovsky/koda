@@ -1,6 +1,8 @@
 const { createClient } = require('@supabase/supabase-js');
 const { createAuthFetch } = require('./aiSecurity');
 const { buildAssistantContext, normalizeAssistantMemoryRow, ASSISTANT_CONTEXT_MEMORY_LIMIT } = require('../ai/assistantMemory');
+const { parseAutoPlanState, applyAutoPlanProgress } = require('../features/koda/autoPlan');
+const { normalizeGoal } = require('../features/koda/goalLogic');
 
 function createUserContextClient(token, env = process.env) {
   const url = env.SUPABASE_URL || env.EXPO_PUBLIC_SUPABASE_URL;
@@ -25,14 +27,14 @@ async function loadAssistantContext(req, dependencies = {}) {
     client.from('assistant_memories').select('id,user_id,content,created_at,updated_at').eq('user_id', owner)
       .order('updated_at', { ascending: false }).order('id', { ascending: false }).limit(ASSISTANT_CONTEXT_MEMORY_LIMIT + 1),
     // Explicit columns; never query diary/journal tables or pass through embedded profile state.
-    client.from('user_app_state').select('user_id,goals,habits,updated_at,profile_values:profile->>values,profile_future_self:profile->>futureSelf,profile_focus:profile->>focus,profile_milestone:profile->>milestone').eq('user_id', owner).maybeSingle(),
+    client.from('user_app_state').select('user_id,goals,habits,updated_at,profile_auto_plan:profile->autoPlan,profile_values:profile->>values,profile_future_self:profile->>futureSelf,profile_focus:profile->>focus,profile_milestone:profile->>milestone').eq('user_id', owner).maybeSingle(),
   ]);
   if (memoryResult.error || stateResult.error || !Array.isArray(memoryResult.data)) throw new Error('Assistant context could not be loaded.');
   if (stateResult.data && stateResult.data.user_id !== owner) throw new Error('Assistant context account mismatch.');
   const memories = memoryResult.data.map(row => normalizeAssistantMemoryRow(row, owner));
   const state = stateResult.data;
   return buildAssistantContext({ memories, state: state ? {
-    goals: state.goals, habits: state.habits, updated_at: state.updated_at,
+    goals: state.profile_auto_plan ? applyAutoPlanProgress(parseAutoPlanState(state.profile_auto_plan, owner), Array.isArray(state.goals) ? state.goals.map(normalizeGoal).filter(Boolean) : []) : state.goals, habits: state.habits, updated_at: state.updated_at,
     profile: { values: state.profile_values, futureSelf: state.profile_future_self, focus: state.profile_focus, milestone: state.profile_milestone },
   } : null });
 }

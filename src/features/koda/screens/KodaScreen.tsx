@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Send } from 'lucide-react-native';
 import { AssistantMemory } from '../components/AssistantMemory';
+import { AssistantCorrection } from '../components/AssistantCorrection';
 import type { ChatMessage } from '../types';
 import { SectionTitle } from '../components';
 import { BentoPage, bentoWidths } from '../components/Bento';
@@ -135,6 +136,7 @@ export function KodaScreen({
         {(showWelcome ? [] : chat).map((message) => (
           <View key={message.id} {...({dataSet:{petSurface:'assistant-message'}} as any)} style={[styles.chatBubble, isDesktop && styles.chatBubbleDesktop, message.role === 'user' && styles.chatBubbleUser]}>
             <Text style={styles.chatText}>{message.text}</Text>
+            {message.role==='koda'&&userId?<AssistantCorrection userId={userId} source="chat" before={message.text} />:null}
           </View>
         ))}
         {isSending && (

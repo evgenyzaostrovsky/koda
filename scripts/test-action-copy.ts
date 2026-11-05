@@ -4,7 +4,7 @@ import {createGoal,createGoalAction,normalizeGoal} from '../src/features/koda/go
 import {addGoalStructure,rebuildGoalStructure} from '../src/features/koda/goalStructure';
 import {buildGoalPlanContext} from '../src/features/koda/goalPlanContext';
 import {createOpenWindow} from '../src/features/koda/openWindow';
-import {mergeGoals,mergeStoredKodaState,normalizeStoredKodaState,parseStoredKodaState,shouldSyncRecoveredAppState} from '../src/features/koda/persistence';
+import {createGoalActionCopyBackup,mergeGoals,mergeStoredKodaState,normalizeStoredKodaState,parseStoredKodaState,shouldSyncRecoveredAppState} from '../src/features/koda/persistence';
 import {SyncCoordinator,writeAppStateSnapshot} from '../src/features/koda/syncCoordinator';
 
 const originalTitle='Открыть программу выбранного курса и выделить обязательные разделы';
@@ -98,6 +98,12 @@ assert.equal(mergeGoals([updated],[differentId])[0].actions[0].shortTitle,undefi
 assert.deepEqual(mergeGoals([newerLegacy],[updated]),mergeGoals([updated],[newerLegacy]));
 
 // Local PostgREST boundary: no credentials, network, or real account records.
+// Model JSONB transport reordering at every nesting level, including backups,
+// retained action history, and project/task objects. Arrays keep their order.
+function jsonbRoundtrip(value:unknown):any {
+  return JSON.parse(JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)
+    ?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.length-b.length||a.localeCompare(b))):item));
+}
 class CopyBackend {
   rows=new Map<string,Record<string,any>>();offline=false;writes=0;conflicts=0;
   beforeWrite?:()=>Promise<void>;
@@ -118,7 +124,7 @@ class CopyBackend {
         await beforeWrite?.();current=this.rows.get(userId);
         if(operation==='insert'&&current){this.conflicts++;return {data:null,error:{code:'23505',message:'duplicate'}};}
         if(operation==='update'&&current?.updated_at!==filters.updated_at){this.conflicts++;return {data:null,error:null};}
-        this.rows.set(userId,JSON.parse(JSON.stringify({...current,...payload,updated_at:`server-${++this.writes}`})));
+        this.rows.set(userId,jsonbRoundtrip({...current,...payload,updated_at:`server-${++this.writes}`}));
         return {data:{user_id:userId},error:null};
       },
     };return query;
@@ -145,6 +151,34 @@ async function verifyCopyPersistence(){
   assert.equal(backend.label('copy-a'),'','Retry and stale writes cannot resurrect a cleared label');
   assert.equal(normalizeStoredKodaState(backend.rows.get('copy-a'))!.goals.length,1,'Retry does not duplicate goals');
   await verifyLegacyRoundtrip(backend,snapshot);
+  const project={id:'project',title:'Fixture',description:'',status:'active',createdAt:'2026-11-05T00:00:00Z',updatedAt:'2026-11-05T00:00:00Z',completedAt:null,tasks:[]};
+  let stable=normalizeStoredKodaState({goals:[updated],projects:[project]})!;
+  await writeAppStateSnapshot(backend,'jsonb-loop',stable);
+  const backup=createGoalActionCopyBackup(stable.goals,'jsonb-loop');
+  const jsonbRow=backend.rows.get('jsonb-loop')!;
+  assert.notEqual(JSON.stringify(jsonbRow.profile.__kodaActionCopy),JSON.stringify(backup),'Fixture must really reorder object keys');
+  assert.deepEqual(jsonbRow.profile.__kodaActionCopy,backup,'Only key order changes, not the backup values');
+  for(let i=0;i<4;i++){
+    const row=backend.rows.get('jsonb-loop')!;
+    stable=mergeStoredKodaState(normalizeStoredKodaState(row)!,parseStoredKodaState(JSON.stringify(stable))!);
+    assert.equal(shouldSyncRecoveredAppState(row,stable),false,'An acknowledged JSONB roundtrip must not requeue on pull');
+    await writeAppStateSnapshot(backend,'jsonb-loop',stable);
+  }
+  const row=backend.rows.get('jsonb-loop')!;
+  const damagedBackup=structuredClone(row);damagedBackup.profile.__kodaActionCopy.goals[0].actions[0].shortTitle='Wrong copy';
+  assert.equal(shouldSyncRecoveredAppState(damagedBackup,stable),true,'Real backup changes still require repair');
+  const foreignBackup=structuredClone(row);foreignBackup.profile.__kodaActionCopy.ownerId='another-account';
+  assert.equal(shouldSyncRecoveredAppState(foreignBackup,stable),true,'Backup owner identity remains significant');
+  const cleared=structuredClone(stable);cleared.goals[0].actions[0].shortTitle='';
+  assert.equal(shouldSyncRecoveredAppState(row,cleared),true,'Explicit clear is not confused with a missing or nonempty label');
+  const changedProject=structuredClone(stable);changedProject.projects[0].title='Changed project';
+  assert.equal(shouldSyncRecoveredAppState(row,changedProject),true,'Real project edits still require sync');
+  const historyOrder=structuredClone(stable);
+  historyOrder.goals[0].openWindow!.history.push({...historyOrder.goals[0].openWindow!.history[0],id:'second-history-item'});
+  const historyRow=jsonbRoundtrip({...row,goals:historyOrder.goals});
+  historyOrder.goals[0].openWindow!.history.reverse();
+  assert.equal(shouldSyncRecoveredAppState(historyRow,historyOrder),true,'Array order is not discarded by semantic object comparison');
+  console.log('PASS JSONB recovery: reordered backup/history/projects do not requeue; four write-pull cycles converge; genuine edits, owners, clears and array order remain significant.');
   console.log('PASS action copy persistence: legacy omission vs explicit clear, bounded original notes context, account isolation, failed request, local queue/retry and stale cloud writes.');
 }
 
