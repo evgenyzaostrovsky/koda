@@ -273,7 +273,16 @@ export function mergeGoals(remote: Goal[], local: Goal[]) {
     // Older clients omit this field. Only an explicit empty string clears context.
     const planningContext = merged.planningContext ?? previous?.planningContext ?? goal.planningContext;
     const roadmapClarifications = mergeRoadmapClarifications(previous?.roadmapClarifications, goal.roadmapClarifications);
-    byId.set(goal.id, { ...merged, ...(planningContext === undefined ? {} : { planningContext }),
+    // Older clients do not know shortTitle. Preserve it by stable action ID only
+    // when the winning record omits it; an explicit empty string remains a clear.
+    // Never revive actions absent from the winning goal or replace its progress/notes.
+    const actions=merged.actions.map(action=>{
+      if(typeof action.shortTitle==='string')return action;
+      const saved=previous?.actions.find(item=>item.id===action.id&&typeof item.shortTitle==='string')
+        ??goal.actions.find(item=>item.id===action.id&&typeof item.shortTitle==='string');
+      return saved?{...action,shortTitle:saved.shortTitle}:action;
+    });
+    byId.set(goal.id, { ...merged, actions, ...(planningContext === undefined ? {} : { planningContext }),
       ...(roadmapClarifications === undefined ? {} : { roadmapClarifications }) });
   }
   return [...byId.values()];

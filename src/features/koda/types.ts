@@ -24,6 +24,7 @@ export type GoalMilestone = {
 export type GoalAction = {
   id: string;
   title: string;
+  shortTitle?: string;
   description: string;
   dueDate: string;
   estimatedMinutes: number | null;

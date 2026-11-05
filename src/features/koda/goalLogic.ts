@@ -77,6 +77,7 @@ export function createMilestone(title: string, description = '', deadline = '', 
 
 export function createGoalAction(input: {
   title: string;
+  shortTitle?: string;
   description?: string;
   dueDate?: string;
   estimatedMinutes?: number | null;
@@ -87,6 +88,7 @@ export function createGoalAction(input: {
   return {
     id: createStableGoalId(),
     title: input.title.trim(),
+    ...(typeof input.shortTitle === 'string' && input.shortTitle.trim().length <= 48 ? {shortTitle: input.shortTitle.trim()} : {}),
     description: input.description?.trim() ?? '',
     dueDate: input.dueDate ?? '',
     estimatedMinutes: input.estimatedMinutes ?? null,
@@ -274,6 +276,7 @@ function normalizeActions(value: unknown): GoalAction[] {
       return {
         id: typeof raw.id === 'string' ? raw.id : uid('goal-action'),
         title: raw.title.trim(),
+        ...(typeof raw.shortTitle === 'string' && raw.shortTitle.trim().length <= 48 ? {shortTitle: raw.shortTitle.trim()} : {}),
         description: typeof raw.description === 'string' ? raw.description : '',
         dueDate: typeof raw.dueDate === 'string' ? raw.dueDate : '',
         estimatedMinutes: typeof raw.estimatedMinutes === 'number' ? raw.estimatedMinutes : null,

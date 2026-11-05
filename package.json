@@ -52,7 +52,7 @@
     "typecheck": "node --stack-size=8192 node_modules/typescript/bin/tsc --noEmit",
     "test": "npm run test:score && npm run test:day-plan && npm run test:open-window && npm run test:goal-ai && npm run test:koda-day-sync && npm run test:emotions && npm run test:timer && npm run test:offline && npm run test:sync && npm run test:themes && npm run test:chat-history && npm run test:chat-sync && npm run test:chat-offline && npm run test:widgets && npm run test:pet",
     "test:day-plan": "tsx scripts/test-day-plan.ts && tsx scripts/test-koda2-integration.ts",
-    "test:open-window": "tsx scripts/test-open-window.ts && tsx scripts/test-goal-structure.ts",
+    "test:open-window": "tsx scripts/test-open-window.ts && tsx scripts/test-goal-structure.ts && tsx scripts/test-action-copy.ts",
     "test:goal-context": "tsx scripts/test-goal-context.ts",
     "test:assistant-memory": "tsx scripts/test-assistant-memory.ts && tsx scripts/test-assistant-memory-rls.ts && tsx scripts/test-otani-assistant.ts",
     "test:goal-ai": "tsx scripts/test-ai-api-security.ts && tsx scripts/test-goal-context.ts && tsx scripts/test-roadmap-answer-sync.ts && tsx scripts/test-goal-plan.ts && tsx scripts/test-goal-roadmap.ts && tsx scripts/test-roadmap-clarification.ts && tsx scripts/test-roadmap-review.ts && tsx scripts/test-wizard-draft.ts && tsx scripts/test-wizard-draft-sync.ts && tsx scripts/test-openrouter.ts && tsx scripts/test-yandex.ts && tsx scripts/test-ai-request-deadlines.ts && tsx scripts/test-chat-ai.ts",

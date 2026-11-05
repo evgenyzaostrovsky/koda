@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { normalizeGoalPlanInput } from '../src/ai/goalPlanContract';
-import { constrainOtaniPlan, createGoalPlanGenerator } from '../src/ai/goalPlanProvider';
+import { constrainOtaniPlan, createGoalPlanGenerator, validateOtaniActionCopy } from '../src/ai/goalPlanProvider';
 import { otaniGuidance } from '../src/ai/otaniGuidance';
 import { buildAssistantContext } from '../src/ai/assistantMemory';
 
@@ -11,7 +11,7 @@ assert.match(otaniGuidance,/параллельные области/);
 assert.match(otaniGuidance,/НЕ последовательные этапы/);
 assert.match(otaniGuidance,/не заполняй все 64 ячейки/i);
 const assistantUi=readFileSync('src/features/koda/components/GoalStructureAssistant.tsx','utf8');
-assert.match(assistantUi,/planningMethod:'otani' as const,clarifyGoal:true,planScope:'full-map' as const,clarifications/u,'OTANI clarification answers must reach follow-up requests');
+assert.match(assistantUi,/planningMethod:'otani' as const,[^}]*planScope:'full-map' as const,clarifications:/u,'OTANI clarification answers must reach follow-up requests');
 
 const preserved=constrainOtaniPlan({desiredResult:'Результат',directions:[{slotIndex:0,title:'Переименованный фактор',actions:['Новое действие']}]},{
   wish:'Достичь результата',planningMethod:'otani',desiredResult:'Мой результат',
@@ -34,6 +34,9 @@ globalThis.fetch=async(input,init)=>{
   requests.push({system:messages[0].content,user:JSON.parse(messages[1].content)});
   const reply=String(input).includes('api.openai.com')&&messages[0].content.includes('Проведи независимую короткую проверку')
     ?{issues:[],missingQuestions:[],conflicting:false}:(queuedReplies.shift()??response);
+  if(Array.isArray(reply.directions)) for(const direction of reply.directions as Array<{actions:string[];actionDetails?:unknown}>) {
+    direction.actionDetails??=direction.actions.map(title=>({title,shortTitle:title.length<=48?title:'Выполнить упражнение по материалу',description:title}));
+  }
   const body=String(input).includes('api.openai.com')
     ?{output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(reply)}]}]}
     :{choices:[{message:{content:JSON.stringify(reply)},finish_reason:'stop'}]};
@@ -83,6 +86,15 @@ try{
   await assert.rejects(createGoalPlanGenerator({openAiApiKey:'test-key',preferredProvider:'openai'})(followUp),/повторять уточняющий круг/);
   assert.equal(requests.length-beforeFailure,2,'Repeated invalid output fails safely after exactly one repair');
 }finally{globalThis.fetch=originalFetch;}
+
+const copyInput={wish:'Цель',planningMethod:'otani' as const,actionCopyOnly:true,existingDirections:[{title:'Навык',actions:['Старое длинное название'],routineTitles:[],archived:false}]};
+const copyPlan={desiredResult:'Результат',directions:[{slotIndex:0,title:'Навык',actions:['Старое длинное название'],actionDetails:[{title:'Старое длинное название',shortTitle:'Решить упражнение по Python',description:'Старое длинное название с условиями'}]}]};
+assert.equal(validateOtaniActionCopy(copyPlan,copyInput),copyPlan);
+assert.throws(()=>validateOtaniActionCopy({...copyPlan,directions:[{...copyPlan.directions[0],actions:['Новое дело']}]},copyInput),/исходные действия/);
+assert.throws(()=>validateOtaniActionCopy({...copyPlan,directions:[{...copyPlan.directions[0],actionDetails:[]}]},copyInput),/короткое законченное/);
+assert.throws(()=>validateOtaniActionCopy({...copyPlan,directions:[{...copyPlan.directions[0],actionDetails:[{...copyPlan.directions[0].actionDetails[0],shortTitle:'Сокращённая строка…'}]}]},copyInput),/короткое законченное/);
+assert.match(otaniGuidance,/actionCopyOnly=true/);
+assert.match(otaniGuidance,/не механическое обрезание/);
 
 console.log('OTANI assistant: mode-specific prompt, sparse output, clarification limits, and protected progress passed');
 }

@@ -1,6 +1,41 @@
-export type GoalPlanInput = { wish: string; desiredResult?: string; availableMinutes?: number; planningMethod?:'otani'|'roadmap'; clarifyGoal?:boolean; clarifyRoadmap?:boolean; clarifications?:Array<{question:string;answer:string}>; planScope?:'starter'|'full-map'; stepDensity?:'adaptive'; currentState?:string; revisionMode?:'rebuild-pending'; goalProgress?:{completedActions:string[];pendingActions:string[];milestones:Array<{title:string;status:'not_started'|'in_progress'|'completed'}>;deadline?:string}; existingDirections?:Array<{title:string;actions:string[];completedActions?:string[];routineTitles:string[];archived:boolean}> };
+export type GoalActionDetail = {title:string;shortTitle:string;description:string};
+export type GoalActionContextDetail = {title:string;shortTitle?:string;description:string};
+export type GoalPlanInput = { wish: string; desiredResult?: string; availableMinutes?: number; planningMethod?:'otani'|'roadmap'; actionCopyOnly?:boolean; clarifyGoal?:boolean; clarifyRoadmap?:boolean; clarifications?:Array<{question:string;answer:string}>; planScope?:'starter'|'full-map'; stepDensity?:'adaptive'; currentState?:string; revisionMode?:'rebuild-pending'; goalProgress?:{completedActions:string[];pendingActions:string[];milestones:Array<{title:string;status:'not_started'|'in_progress'|'completed'}>;deadline?:string}; existingDirections?:Array<{title:string;actions:string[];actionDetails?:GoalActionContextDetail[];completedActions?:string[];routineTitles:string[];archived:boolean}> };
 export type GoalAssistantContext = { memory?:string[]; goals?:Array<{title:string;desiredResult?:string}>; squares?:Array<{title:string;actions:string[];completedActions?:string[]}>; progress?:Array<{title:string;completedActions:string[];pendingActions:string[]}> };
-export type GoalPlanSuggestion = { goalTitle?: string; desiredResult: string; directions: Array<{ title: string; actions: string[];slotIndex?:number;groundingEvidence?:string;groundingSourceId?:number }>; clarificationQuestions?:string[]; planningNote?:string };
+export type GoalPlanSuggestion = { goalTitle?: string; desiredResult: string; directions: Array<{ title: string; actions: string[];actionDetails?:GoalActionDetail[];slotIndex?:number;groundingEvidence?:string;groundingSourceId?:number }>; clarificationQuestions?:string[]; planningNote?:string };
+
+/** Metadata never establishes identity: only exact, retained action titles may be addressed. */
+export function normalizeGoalActionDetails(value:unknown,actions:readonly string[]):GoalActionDetail[] {
+  if(!Array.isArray(value))return [];
+  const allowed=new Set(actions),seen=new Set<string>();
+  return value.slice(0,32).flatMap(item=>{
+    if(!item||typeof item!=='object')return [];
+    const raw=item as Record<string,unknown>;
+    if(typeof raw.title!=='string'||!allowed.has(raw.title)||seen.has(raw.title))return [];
+    const shortTitle=typeof raw.shortTitle==='string'?raw.shortTitle.trim().replace(/\s+/g,' '):'';
+    const description=typeof raw.description==='string'?raw.description.trim().slice(0,1000):'';
+    // Reject an overlong label rather than cutting a meaningful phrase mid-word.
+    if(!shortTitle||shortTitle.length>48||!description)return [];
+    seen.add(raw.title);
+    return [{title:raw.title,shortTitle,description}];
+  }).slice(0,8);
+}
+
+/** Saved notes are useful context even before an AI label exists. Never synthesize one. */
+function normalizeGoalActionContextDetails(value:unknown,actions:readonly string[]):GoalActionContextDetail[] {
+  if(!Array.isArray(value))return [];
+  const allowed=new Set(actions),seen=new Set<string>();
+  return value.slice(0,32).flatMap(item=>{
+    if(!item||typeof item!=='object')return [];
+    const raw=item as Record<string,unknown>;
+    if(typeof raw.title!=='string'||!allowed.has(raw.title)||seen.has(raw.title))return [];
+    const shortTitle=typeof raw.shortTitle==='string'?raw.shortTitle.trim().replace(/\s+/g,' '):undefined;
+    const description=typeof raw.description==='string'?raw.description.trim().slice(0,1000):'';
+    if(!description&&!shortTitle)return [];
+    seen.add(raw.title);
+    return [{title:raw.title,...(shortTitle!==undefined&&shortTitle.length<=48?{shortTitle}:{}),description}];
+  }).slice(0,8);
+}
 
 export function validateGoalPlan(value: unknown): GoalPlanSuggestion {
   if (!value || typeof value !== 'object') throw new Error('Ответ помощника не удалось разобрать. Можно продолжить вручную.');
@@ -24,7 +59,8 @@ export function validateGoalPlan(value: unknown): GoalPlanSuggestion {
     const slotIndex=(item as Record<string,unknown>).slotIndex;
     const groundingEvidence=clean((item as Record<string,unknown>).groundingEvidence,300);
     const groundingSourceId=(item as Record<string,unknown>).groundingSourceId;
-    directions.push({ title, actions: next,...(typeof slotIndex==='number'&&Number.isInteger(slotIndex)&&slotIndex>=0&&slotIndex<8?{slotIndex}:{}),...(groundingEvidence?{groundingEvidence}:{}),...(typeof groundingSourceId==='number'&&Number.isInteger(groundingSourceId)&&groundingSourceId>=0?{groundingSourceId}:{}) });
+    const actionDetails=normalizeGoalActionDetails((item as Record<string,unknown>).actionDetails,next);
+    directions.push({ title, actions: next,...(actionDetails.length?{actionDetails}:{}),...(typeof slotIndex==='number'&&Number.isInteger(slotIndex)&&slotIndex>=0&&slotIndex<8?{slotIndex}:{}),...(groundingEvidence?{groundingEvidence}:{}),...(typeof groundingSourceId==='number'&&Number.isInteger(groundingSourceId)&&groundingSourceId>=0?{groundingSourceId}:{}) });
     if (directions.length === 8) break;
   }
   const goalTitle=clean(raw.goalTitle,300);
@@ -49,7 +85,8 @@ export function normalizeGoalPlanInput(value: unknown): GoalPlanInput {
     if(!value||typeof value!=='object')return [];
     const d=value as Record<string,unknown>;
     const texts=(v:unknown)=>Array.isArray(v)?v.filter((x):x is string=>typeof x==='string').slice(0,8).map(x=>x.trim().slice(0,300)).filter(Boolean):[];
-    return [{title:typeof d.title==='string'?d.title.trim().slice(0,200):'',actions:texts(d.actions),completedActions:texts(d.completedActions),routineTitles:texts(d.routineTitles),archived:d.archived===true}];
+    const actions=texts(d.actions),actionDetails=normalizeGoalActionContextDetails(d.actionDetails,actions);
+    return [{title:typeof d.title==='string'?d.title.trim().slice(0,200):'',actions,...(actionDetails.length?{actionDetails}:{}),completedActions:texts(d.completedActions),routineTitles:texts(d.routineTitles),archived:d.archived===true}];
   }):[];
   const currentState=typeof raw.currentState==='string'?raw.currentState.trim().slice(0,2000):'';
   const p=raw.goalProgress&&typeof raw.goalProgress==='object'?raw.goalProgress as Record<string,unknown>:null;
@@ -60,5 +97,5 @@ export function normalizeGoalPlanInput(value: unknown): GoalPlanInput {
     return title&&['not_started','in_progress','completed'].includes(String(m.status))?[{title,status:m.status as 'not_started'|'in_progress'|'completed'}]:[];
   }):[];
   const goalProgress=p?{completedActions:progressTexts(p.completedActions),pendingActions:progressTexts(p.pendingActions),milestones,...(typeof p.deadline==='string'?{deadline:p.deadline.trim().slice(0,30)}:{})}:undefined;
-  return { wish, desiredResult: typeof raw.desiredResult === 'string' ? raw.desiredResult.trim().slice(0, 1000) : '', availableMinutes: typeof raw.availableMinutes === 'number' && Number.isFinite(raw.availableMinutes) ? Math.max(10, Math.min(480, raw.availableMinutes)) : 60,...(raw.planningMethod==='otani'||raw.planningMethod==='roadmap'?{planningMethod:raw.planningMethod}:{}),...(raw.clarifyGoal===true?{clarifyGoal:true}:{}),...(raw.clarifyRoadmap===true&&raw.planScope==='full-map'?{clarifyRoadmap:true}:{}),...(clarifications.length?{clarifications}:{}),...(raw.planScope==='full-map'?{planScope:'full-map' as const}:{}),...(existingDirections.length?{existingDirections}:{}),...(raw.stepDensity==='adaptive'&&raw.planScope==='full-map'?{stepDensity:'adaptive' as const}:{}),...(currentState?{currentState}:{}),...(goalProgress?{goalProgress}:{}),...(raw.revisionMode==='rebuild-pending'&&raw.planScope==='full-map'?{revisionMode:'rebuild-pending' as const}:{}) };
+  return { wish, desiredResult: typeof raw.desiredResult === 'string' ? raw.desiredResult.trim().slice(0, 1000) : '', availableMinutes: typeof raw.availableMinutes === 'number' && Number.isFinite(raw.availableMinutes) ? Math.max(10, Math.min(480, raw.availableMinutes)) : 60,...(raw.planningMethod==='otani'||raw.planningMethod==='roadmap'?{planningMethod:raw.planningMethod}:{}),...(raw.actionCopyOnly===true&&raw.planningMethod==='otani'?{actionCopyOnly:true}:{}),...(raw.clarifyGoal===true?{clarifyGoal:true}:{}),...(raw.clarifyRoadmap===true&&raw.planScope==='full-map'?{clarifyRoadmap:true}:{}),...(clarifications.length?{clarifications}:{}),...(raw.planScope==='full-map'?{planScope:'full-map' as const}:{}),...(existingDirections.length?{existingDirections}:{}),...(raw.stepDensity==='adaptive'&&raw.planScope==='full-map'?{stepDensity:'adaptive' as const}:{}),...(currentState?{currentState}:{}),...(goalProgress?{goalProgress}:{}),...(raw.revisionMode==='rebuild-pending'&&raw.planScope==='full-map'?{revisionMode:'rebuild-pending' as const}:{}) };
 }
