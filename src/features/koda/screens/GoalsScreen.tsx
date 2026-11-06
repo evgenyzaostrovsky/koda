@@ -201,7 +201,10 @@ function GoalCard({ desktop, goal, featured, onPress }: { desktop?: boolean; goa
 function GoalDetails({ goal, userId, isDesktop = false, hasCloudSync = true, onBack, onGoalsChange }: { goal: Goal; userId?:string|null; isDesktop?: boolean; hasCloudSync?: boolean; isOnline: boolean; onBack: () => void; onGoalsChange: GoalsChange }) {
   const [structureOpen,setStructureOpen]=useState(false);
   const [detailTab, setDetailTab] = useState<'roadmap' | 'actions' | 'matrix' | 'context'>('matrix');
-  useEffect(()=>{setStructureOpen(false);setDetailTab('matrix');},[goal.id]);
+  const [matrixFullGrid, setMatrixFullGrid] = useState(false);
+  const compactMatrixPage = isDesktop && detailTab === 'matrix' && matrixFullGrid;
+  useEffect(()=>{setStructureOpen(false);setDetailTab('matrix');setMatrixFullGrid(false);},[goal.id]);
+  useEffect(()=>{if(detailTab!=='matrix')setMatrixFullGrid(false);},[detailTab]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [addKind, setAddKind] = useState<AddKind | null>(null);
   const [manageStages, setManageStages] = useState(false);
@@ -278,12 +281,13 @@ function GoalDetails({ goal, userId, isDesktop = false, hasCloudSync = true, onB
   }
 
   return (
-    <BentoPage maxWidth={1100} scroll={false} style={local.screen} contentStyle={local.detailPage}>
-      <View style={local.detailsHeader}>
+    <BentoPage maxWidth={1100} scroll={false} style={local.screen} contentStyle={[local.detailPage, compactMatrixPage && local.detailPageMatrixFull]}>
+      <View style={[local.detailsHeader, compactMatrixPage && local.detailsHeaderMatrixFull]}>
         <Pressable accessibilityRole="button" accessibilityLabel="К списку целей" onPress={onBack} style={local.iconButton}>
           <ArrowLeft color={text} size={19} />
         </Pressable>
-        <Text numberOfLines={2} style={local.detailsTitle}>{goal.title}</Text>
+        <Text numberOfLines={compactMatrixPage ? 1 : 2} style={[local.detailsTitle, compactMatrixPage && local.detailsTitleMatrixFull]}>{goal.title}</Text>
+        {compactMatrixPage ? <Text style={local.matrixProgress}>{progress}%</Text> : null}
         <Pressable accessibilityRole="button" accessibilityLabel="Действия с целью" accessibilityState={{ expanded: menuOpen }} aria-expanded={menuOpen} onPress={() => setMenuOpen((value) => !value)} style={local.iconButton}>
           <MoreHorizontal color={text} size={19} />
         </Pressable>
@@ -297,8 +301,8 @@ function GoalDetails({ goal, userId, isDesktop = false, hasCloudSync = true, onB
         </View>
       ) : null}
 
-      <ScrollView contentContainerStyle={[local.scrollContent, local.detailsContent]} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
-        <BentoCard testID="goal-hero" tone="light" style={local.goalSummaryCard}>
+      <ScrollView style={compactMatrixPage && local.matrixFullScroll} contentContainerStyle={[local.scrollContent, local.detailsContent, compactMatrixPage && local.detailsContentMatrixFull]} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
+        {!compactMatrixPage ? <BentoCard testID="goal-hero" tone="light" style={local.goalSummaryCard}>
           <View style={local.goalSummaryRow}>
             <View style={local.flexText}>
               <Text style={local.goalMeta}>{goal.desiredResult || 'Результат пока не задан'}</Text>
@@ -309,13 +313,13 @@ function GoalDetails({ goal, userId, isDesktop = false, hasCloudSync = true, onB
           <View accessibilityRole="progressbar" accessibilityLabel={`Прогресс цели: ${progress}%`} accessibilityValue={{min:0,max:100,now:progress}} style={local.summaryTrack}><View style={[local.summaryFill,{width:`${progress}%`}]}/></View>
           {currentStage ? <Text style={local.goalSummaryMeta}>Сейчас: {currentStage}</Text> : null}
           {nextAction ? <Pressable accessibilityRole="button" accessibilityLabel={`Открыть следующий шаг: ${nextAction.title}`} onPress={()=>{if(actionMilestone){setFocusRoadmapStageId(actionMilestone.id);setDetailTab('roadmap')}else if(actionDirection){setFocusDirectionId(actionDirection.id);setDetailTab('matrix')}else setDetailTab('actions')}} style={local.nextStepStrip}><View style={local.flexText}><Text style={local.nextStepLabel}>{roadmapNext.fromOtherStage ? `Следующий шаг · ${nextActionLocation}` : 'Следующий шаг'}</Text><Text numberOfLines={1} style={local.nextStepTitle}>{nextAction.title}</Text></View><ChevronRight color={muted} size={18}/></Pressable> : currentMilestone ? <Pressable accessibilityRole="button" onPress={()=>{setDetailTab('actions');setAddKind('action')}} style={local.nextStepStrip}><Text style={local.nextStepTitle}>Добавить действие к этапу «{currentMilestone.title}»</Text><ChevronRight color={muted} size={18}/></Pressable> : null}
-        </BentoCard>
+        </BentoCard> : null}
 
-            <View style={local.detailTabs} accessibilityRole="tablist">
+            <View style={[local.detailTabs, compactMatrixPage && local.detailTabsMatrixFull]} accessibilityRole="tablist">
               {([
                 ['matrix', 'Квадраты ОТАНИ'], ['roadmap', 'Путь'], ['actions', 'Действия'], ['context', 'Контекст'],
               ] as const).map(([key, label]) => (
-                <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: detailTab === key }} onPress={() => setDetailTab(key)} style={[local.detailTab, detailTab === key && local.detailTabActive]}>
+                <Pressable key={key} accessibilityRole="tab" accessibilityState={{ selected: detailTab === key }} onPress={() => setDetailTab(key)} style={[local.detailTab, compactMatrixPage && local.detailTabMatrixFull, detailTab === key && local.detailTabActive]}>
                   <Text style={[local.detailTabText, detailTab === key && local.detailTabTextActive]}>{label}</Text>
                 </Pressable>
               ))}
@@ -376,7 +380,7 @@ function GoalDetails({ goal, userId, isDesktop = false, hasCloudSync = true, onB
               </View>
             ) : null}
 
-            {detailTab === 'matrix' ? <View style={local.tabContent}><GoalMatrix initialDirectionId={focusDirectionId} goal={goal} isDesktop={isDesktop} onUpdateGoal={updateGoal} onRequestAI={() => setStructureOpen(true)} /></View> : null}
+            {detailTab === 'matrix' ? <View style={[local.tabContent, compactMatrixPage && local.matrixFullTabContent]}><GoalMatrix initialDirectionId={focusDirectionId} goal={goal} isDesktop={isDesktop} onUpdateGoal={updateGoal} onRequestAI={() => setStructureOpen(true)} onFullModeChange={setMatrixFullGrid} /></View> : null}
 
             {detailTab === 'context' ? (
               <View style={local.tabContent}>
@@ -1128,7 +1132,10 @@ function MenuButton({ label, onPress, danger }: { label: string; onPress: () => 
 const local = StyleSheet.create({
   screen: { flex: 1, minHeight: 0 },
   detailPage: { alignSelf: 'center', gap: 8, maxWidth: 1100, padding: 20, paddingTop: 8, width: '100%' },
+  detailPageMatrixFull: { gap: 4, paddingHorizontal: 14, paddingTop: 4, paddingBottom: 6 },
   detailsContent: { alignSelf: 'center', gap: 12, maxWidth: 1100, paddingBottom: 90, width: '100%' },
+  matrixFullScroll: { flex: 1, minHeight: 0 },
+  detailsContentMatrixFull: { flex: 1, minHeight: 0, gap: 5, paddingBottom: 4 },
   goalSummaryCard: { gap: 8, padding: 14 },
   goalSummaryRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
   goalSummaryMeta: { color: muted, fontSize: 12, lineHeight: 17 },
@@ -1212,6 +1219,9 @@ const local = StyleSheet.create({
   formPrimaryButton: { flex: 1 },
   disabledButton: { opacity: 0.4 },
   detailsHeader: { alignItems: 'center', flexDirection: 'row', gap: 10, paddingBottom: 8 },
+  detailsHeaderMatrixFull: { gap: 7, paddingBottom: 0 },
+  detailsTitleMatrixFull: { fontSize: 16, lineHeight: 20 },
+  matrixProgress: { color: accent, fontSize: 12, fontWeight: '700' },
   iconButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, height: 36, justifyContent: 'center', width: 36 },
   inlineMenu: { borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8, padding: 8 },
   menuButton: { alignItems: 'center', borderColor: line, borderRadius: 999, borderWidth: 1, flexDirection: 'row', gap: 5, minHeight: 34, paddingHorizontal: 10 },
@@ -1222,11 +1232,14 @@ const local = StyleSheet.create({
   block: { gap: 12 },
   blockTitle: { color: text, fontSize: 19, fontWeight: '700', lineHeight: 25, marginTop: 4 },
   detailTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 2 },
+  detailTabsMatrixFull: { flexWrap: 'nowrap', gap: 4, marginVertical: 0 },
   detailTab: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 999, borderWidth: 1, justifyContent: 'center', minHeight: 38, paddingHorizontal: 12 },
+  detailTabMatrixFull: { minHeight: 32, paddingHorizontal: 9 },
   detailTabActive: { backgroundColor: activeBg, borderColor: activeBg },
   detailTabText: { color: muted, fontSize: 12, fontWeight: '600' },
   detailTabTextActive: { color: activeText, fontWeight: '700' },
   tabContent: { gap: 16 },
+  matrixFullTabContent: { flex: 1, flexBasis: 0, flexShrink: 1, minHeight: 0, gap: 3 },
   blockHeadingRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between' },
   roadmapButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 999, justifyContent: 'center', minHeight: 42, paddingHorizontal: 14 },
   roadmapButtonText: { color: activeText, fontSize: 12, fontWeight: '700' },
