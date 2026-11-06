@@ -6,26 +6,26 @@ import {assertDiscussionCapacity,goalDiscussionContext,normalizeGoalDiscussion,v
 import {uid} from '../utils';
 import {accent,activeBg,activeText,line,muted,panel,text} from '../theme';
 
-type Props={userId?:string|null;goalId?:string;title:string;desiredResult?:string;value?:GoalDiscussionData;onChange:(recipe:(data:GoalDiscussionData)=>GoalDiscussionData)=>void;onSuggest:()=>void;disabled?:boolean};
-export function GoalDiscussion({userId,goalId,title,desiredResult,value,onChange,onSuggest,disabled}:Props){
+type Props={userId?:string|null;goalId?:string;title:string;desiredResult?:string;planningContext?:string;value?:GoalDiscussionData;onChange:(recipe:(data:GoalDiscussionData)=>GoalDiscussionData)=>void;onSuggest:()=>void;disabled?:boolean};
+export function GoalDiscussion({userId,goalId,title,desiredResult,planningContext,value,onChange,onSuggest,disabled}:Props){
  const [expanded,setExpanded]=useState(false),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const data=normalizeGoalDiscussion(value),epoch=useRef(0),inflight=useRef(false);
- const latest=useRef({data,title,desiredResult,userId,goalId});latest.current={data,title,desiredResult,userId,goalId};
+ const latest=useRef({data,title,desiredResult,planningContext,userId,goalId});latest.current={data,title,desiredResult,planningContext,userId,goalId};
  useEffect(()=>{epoch.current++;inflight.current=false;setBusy(false);setError('');setDraft('');return()=>{epoch.current++;};},[userId,goalId]);
  function change(recipe:(data:GoalDiscussionData)=>GoalDiscussionData){const next=normalizeGoalDiscussion(recipe(latest.current.data));if(JSON.stringify(next).length>JSON.stringify(latest.current.data).length)assertDiscussionCapacity(next);latest.current={...latest.current,data:next};onChange(current=>recipe(normalizeGoalDiscussion(current)));}
  function remove(id:string){change(current=>normalizeGoalDiscussion({...current,removedIds:[...current.removedIds,id]}));}
  async function send(retry=false){
   const content=retry?data.messages.at(-1)?.content:draft.trim();
   if(!userId||!content||inflight.current||disabled)return;
-  const owner=userId,requestEpoch=epoch.current,sourceTitle=title,sourceResult=desiredResult,sourceMaterials=JSON.stringify(data.materials);
+  const owner=userId,requestEpoch=epoch.current,sourceTitle=title,sourceResult=desiredResult,sourcePlanningContext=planningContext,sourceMaterials=JSON.stringify(data.materials);
   const message={id:uid('goal-chat'),role:'user' as const,content:content.slice(0,2000),at:new Date().toISOString()};
   const messages=retry?data.messages:[...data.messages,message];
   if(!retry){try{assertDiscussionCapacity({...data,messages:[...messages,{id:'reserved-reply',role:'assistant',content:'я'.repeat(4000),at:new Date().toISOString()}]});change(current=>({...current,messages:[...current.messages,message]}));setDraft('');}catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить сообщение.');return;}}
   inflight.current=true;setBusy(true);setError('');
   try{
-   const reply=await requestChat(messages.map(({role,content})=>({role,content})),{contextScope:{kind:'goal',...(goalId?{goalId}:{})},goalTitle:[title,desiredResult].filter(Boolean).join(' · '),discussionContext:goalDiscussionContext({...data,messages})});
+   const reply=await requestChat(messages.map(({role,content})=>({role,content})),{contextScope:{kind:'goal',...(goalId?{goalId}:{})},goalTitle:[title,desiredResult].filter(Boolean).join(' · '),discussionContext:goalDiscussionContext({...data,messages},sourcePlanningContext)});
    if(requestEpoch!==epoch.current||owner!==latest.current.userId)return;
-   if(sourceTitle!==latest.current.title||sourceResult!==latest.current.desiredResult||sourceMaterials!==JSON.stringify(latest.current.data.materials)||JSON.stringify(normalizeGoalDiscussion({messages}).messages)!==JSON.stringify(normalizeGoalDiscussion(latest.current.data).messages)){setError('Контекст изменился. Отправь сообщение ещё раз с актуальными материалами.');return;}
+   if(sourceTitle!==latest.current.title||sourceResult!==latest.current.desiredResult||sourcePlanningContext!==latest.current.planningContext||sourceMaterials!==JSON.stringify(latest.current.data.materials)||JSON.stringify(normalizeGoalDiscussion({messages}).messages)!==JSON.stringify(normalizeGoalDiscussion(latest.current.data).messages)){setError('Контекст изменился. Отправь сообщение ещё раз с актуальными материалами.');return;}
    const answer={id:uid('goal-reply'),role:'assistant' as const,content:reply.reply,at:new Date().toISOString()};
    change(current=>({...current,messages:[...current.messages,answer]}));
   }catch{if(requestEpoch===epoch.current)setError('Ответ не получен. Сообщение осталось в беседе; можно повторить запрос.');}
@@ -60,4 +60,4 @@ export function GoalDiscussion({userId,goalId,title,desiredResult,value,onChange
   </View>}
  </View>;
 }
-const styles=StyleSheet.create({box:{borderColor:line,borderWidth:1,borderRadius:12,backgroundColor:panel},toggle:{flexDirection:'row',alignItems:'center',gap:8,minHeight:44,paddingHorizontal:10},heading:{color:accent,fontSize:12,fontWeight:'600',flexShrink:1},hint:{color:muted,fontSize:11,lineHeight:16},body:{padding:10,gap:8},row:{flexDirection:'row',alignItems:'center',gap:6,flexWrap:'wrap'},message:{borderTopWidth:1,borderColor:line,paddingTop:4},label:{color:muted,fontSize:11,fontWeight:'600',flex:1},copy:{color:text,fontSize:13,lineHeight:19},icon:{width:44,height:44,alignItems:'center',justifyContent:'center'},input:{minHeight:72,maxHeight:160,borderWidth:1,borderColor:line,borderRadius:10,padding:10,color:text,fontSize:13,textAlignVertical:'top'},send:{width:44,height:44,borderRadius:12,backgroundColor:activeBg,alignItems:'center',justifyContent:'center'},action:{minHeight:44,flexDirection:'row',alignItems:'center',gap:5,paddingHorizontal:4}});
+const styles=StyleSheet.create({box:{borderColor:line,borderWidth:1,borderRadius:18,backgroundColor:panel},toggle:{flexDirection:'row',alignItems:'center',gap:8,minHeight:44,paddingHorizontal:10},heading:{color:accent,fontSize:12,fontWeight:'600',flexShrink:1},hint:{color:muted,fontSize:11,lineHeight:16},body:{padding:10,gap:8},row:{flexDirection:'row',alignItems:'center',gap:6,flexWrap:'wrap'},message:{borderTopWidth:1,borderColor:line,paddingTop:4},label:{color:muted,fontSize:11,fontWeight:'600',flex:1},copy:{color:text,fontSize:13,lineHeight:19},icon:{width:44,height:44,alignItems:'center',justifyContent:'center'},input:{minHeight:72,maxHeight:160,borderWidth:1,borderColor:line,borderRadius:14,padding:10,color:text,fontSize:13,textAlignVertical:'top'},send:{width:44,height:44,borderRadius:14,backgroundColor:activeBg,alignItems:'center',justifyContent:'center'},action:{minHeight:44,flexDirection:'row',alignItems:'center',gap:5,paddingHorizontal:4}});

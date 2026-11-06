@@ -15,16 +15,17 @@ export function mergeGoalDiscussion(a:unknown,b:unknown):GoalDiscussionData {
   const union=<T extends {id:string;at:string}>(a:T[],b:T[])=>Array.from(new Map([...a,...b].sort((a,b)=>a.at.localeCompare(b.at)||JSON.stringify(a).localeCompare(JSON.stringify(b))).map(item=>[item.id,item])).values()).sort((a,b)=>a.at.localeCompare(b.at)||a.id.localeCompare(b.id));
   return normalizeGoalDiscussion({messages:union(left.messages,right.messages),materials:union(left.materials,right.materials),removedIds:[...left.removedIds,...right.removedIds]});
 }
-export function goalDiscussionContext(raw:unknown):string {
+export function goalDiscussionContext(raw:unknown,currentDraft?:string):string {
   const data=normalizeGoalDiscussion(raw);
+  const draft=currentDraft?.slice(0,4000);
   // Latest user corrections are included last and take priority; never silently treat course contents as completed work.
   const materials=data.materials.map(m=>({name:m.name,text:m.content}));
   const history=data.messages.slice(-12).map(m=>({role:m.role,text:m.content,at:m.at}));
-  let result=JSON.stringify({materials,history});
+  let result=JSON.stringify({currentDraft:draft,materials,history});
   const lastUser=history.findLast(m=>m.role==='user');
-  while(result.length>24000&&history.length>1){const index=history.findIndex(m=>m!==lastUser);if(index<0)break;history.splice(index,1);result=JSON.stringify({materials,history,earlierMessagesOmitted:true});}
-  while(result.length>24000&&materials.some(m=>m.text.length>100)){const longest=[...materials].sort((a,b)=>b.text.length-a.text.length)[0];longest.text=longest.text.slice(0,Math.floor(longest.text.length*0.8));result=JSON.stringify({materials,history,contextShortened:true});}
-  while(result.length>24000&&materials.length){materials.shift();result=JSON.stringify({materials,history,contextShortened:true});}
+  while(result.length>24000&&history.length>1){const index=history.findIndex(m=>m!==lastUser);if(index<0)break;history.splice(index,1);result=JSON.stringify({currentDraft:draft,materials,history,earlierMessagesOmitted:true});}
+  while(result.length>24000&&materials.some(m=>m.text.length>100)){const longest=[...materials].sort((a,b)=>b.text.length-a.text.length)[0];longest.text=longest.text.slice(0,Math.floor(longest.text.length*0.8));result=JSON.stringify({currentDraft:draft,materials,history,contextShortened:true});}
+  while(result.length>24000&&materials.length){materials.shift();result=JSON.stringify({currentDraft:draft,materials,history,contextShortened:true});}
   return result;
 }
 export function validateDiscussionMaterial(name:string,content:string,existing:GoalDiscussionData):void {

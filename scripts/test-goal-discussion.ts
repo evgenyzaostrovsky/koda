@@ -25,6 +25,7 @@ assert.throws(()=>validateDiscussionMaterial('course.txt','\u0000',left));
 validateDiscussionMaterial('course.md','# 30 уроков',left);
 assert.throws(()=>assertDiscussionCapacity({...left,messages:Array.from({length:10},(_,i)=>({...a,id:String(i),content:'я'.repeat(4000)}))}));
 const huge={...merged,materials:Array.from({length:2000},(_,i)=>({id:String(i),name:'course.txt',content:'quote " '.repeat(10),at:a.at}))};
-const context=goalDiscussionContext(huge);
+const context=goalDiscussionContext(huge,'Направление: Python; действие: проверить merge');
+assert.equal(JSON.parse(context).currentDraft,'Направление: Python; действие: проверить merge');
 assert.ok(context.length<=24000);assert.equal(JSON.parse(context).history.at(-1).text,b.content);
 console.log('Goal discussion persistence, concurrent merge, deletion, material validation and bounded context PASS');
