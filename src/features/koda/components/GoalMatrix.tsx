@@ -1,14 +1,16 @@
 import { changedDraftFields } from '../entitySync';
 import {activeBg} from '../theme';
 import { webSpaceActivationProps } from './keyboard';
-import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions, type ViewStyle } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, Animated, Easing, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import { Check, Plus, RotateCcw, Sparkles, X } from 'lucide-react-native';
 import { createGoalAction, createGoalRoutine, wouldCreateDependencyCycle, routineLogValue, upsertRoutineLog } from '../goalLogic';
 import { createOpenWindow, getOpenWindowCells, updateOpenWindow } from '../openWindow';
 import type { Goal, GoalAction, GoalRoutine, OpenWindowChange, OpenWindowDirection } from '../types';
 import { todayDateKey } from '../utils';
 import { accent, accentBorder, accentFaint, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const WebCaptureView = View as React.ComponentType<any>;
 
 type Props = { initialDirectionId?: string | null; goal: Goal; isDesktop?: boolean; onUpdateGoal: (recipe: (goal: Goal) => Goal) => void; onRequestAI?: () => void };
 type Cell = ReturnType<typeof getOpenWindowCells>[number];
@@ -29,8 +31,18 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
   const [selectedDirectionId, setSelectedDirectionId] = useState<string | null>(null);
   const [directionEditorOpen, setDirectionEditorOpen] = useState(false);
   const [fullscreenAreaSize, setFullscreenAreaSize] = useState({ width: 0, height: 0 });
+  const [overviewAreaSize, setOverviewAreaSize] = useState({ width: 0, height: 0 });
   const [fullscreenPreview, setFullscreenPreview] = useState<{ index: number; title: string; detail: string } | null>(null);
+  const focusProgress = useRef(new Animated.Value(0)).current;
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [animatedDirectionId, setAnimatedDirectionId] = useState<string | null>(null);
   useEffect(()=>{if(initialDirectionId)setSelectedDirectionId(initialDirectionId);},[initialDirectionId]);
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => { if (mounted) setReduceMotion(enabled); }).catch(() => {});
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => { mounted = false; subscription.remove(); };
+  }, []);
   const [gridMode, setGridMode] = useState<'compact' | 'full'>('compact');
   const [expandedGrid, setExpandedGrid] = useState(false);
   const [notice, setNotice] = useState('');
@@ -44,6 +56,48 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
   const activeDirections = directions.filter((direction) => !direction.archivedAt);
   const selectedDirection = directions.find((direction) => direction.id === selectedDirectionId) ?? null;
   const cells = useMemo(() => getOpenWindowCells(goal), [goal]);
+  useEffect(() => {
+    if (selectedDirectionId) setAnimatedDirectionId(selectedDirectionId);
+    const animation = Animated.timing(focusProgress, {
+      toValue: gridMode === 'full' && selectedDirectionId ? 1 : 0,
+      duration: reduceMotion ? 0 : 460,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== 'web',
+    });
+    animation.start(({ finished }) => {
+      if (finished && !selectedDirectionId) setAnimatedDirectionId(null);
+    });
+    return () => animation.stop();
+  }, [focusProgress, gridMode, reduceMotion, selectedDirectionId]);
+  useEffect(() => {
+    if (gridMode !== 'full' || typeof document === 'undefined') return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (editingActionId) {
+        setEditingActionId(null);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (directionEditorOpen) {
+        setDirectionEditorOpen(false);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (selectedDirectionId) {
+        setSelectedDirectionId(null);
+        event.preventDefault();
+        event.stopPropagation();
+      } else {
+        setExpandedGrid(false);
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    document.addEventListener('keyup', onKeyDown, true);
+    return () => document.removeEventListener('keyup', onKeyDown, true);
+  }, [directionEditorOpen, editingActionId, gridMode, selectedDirectionId]);
   const activeActions = (direction: OpenWindowDirection) => direction.actionIds.map((id) => goal.actions.find((item) => item.id === id)).filter((item): item is GoalAction => Boolean(item));
   const activeRoutines = (direction: OpenWindowDirection) => direction.routineIds.map((id) => goal.routines.find((item) => item.id === id)).filter((item): item is GoalRoutine => Boolean(item));
 
@@ -193,10 +247,13 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
   ];
 
   function renderMatrixCell(cell: Cell, index: number, overviewGrid = false, fullscreenBlock = false) {
+    const focusGrid = overviewGrid || fullscreenBlock;
+    const gridAreaSize = fullscreenBlock ? fullscreenAreaSize : overviewAreaSize;
     const isGoal = cell.kind === 'goal';
     const direction = cell.kind !== 'goal' ? directions.find((item) => item.id === cell.directionId) : undefined;
     const directionColor = direction ? directionColors[direction.position % directionColors.length]! : undefined;
     const isSelected = Boolean(selectedDirection && direction?.id === selectedDirection.id);
+    const isFocusedBranchCell = Boolean(direction && direction.id === animatedDirectionId);
     const action = cell.kind === 'action' && cell.actionId ? goal.actions.find((item) => item.id === cell.actionId) : undefined;
     const routine = cell.kind === 'action' && cell.actionId ? goal.routines.find((item) => item.id === cell.actionId) : undefined;
     const displayActionTitle = action?.shortTitle?.trim() || action?.title;
@@ -209,7 +266,7 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
     const isOuterDirectionCenter = cell.kind === 'direction' && (Math.floor(row / 3) * 3 + Math.floor(column / 3) !== 4) && row % 3 === 1 && column % 3 === 1;
     const previewRole = isGoal ? 'Главная цель' : cell.kind === 'direction' ? isOuterDirectionCenter ? 'Действия направления' : 'Направление' : routine ? 'Регулярное действие' : 'Действие';
     const previewCell = () => {
-      if (!fullscreenBlock) return;
+      if (!focusGrid) return;
       const fullText = action?.description?.trim() || action?.title || cellLabel;
       const shortText = action?.shortTitle?.trim();
       setFullscreenPreview({ index: cell.index, title: fullText, detail: `${shortText ? `Коротко: ${shortText} · ` : ''}${previewRole}${status ? ` · ${status}` : ''}` });
@@ -217,27 +274,59 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
     const fullscreenLineHeight = compactFullscreen ? 15 : 16;
     const fullscreenStatusHeight = isGoal || cell.kind === 'direction' && Boolean(direction?.title && actionCount) ? 12 : cell.kind === 'action' && !action && !routine ? 15 : (action || routine) && visibleStatus ? 12 : 0;
     const fullscreenReservedHeight = 8 + (cell.kind === 'direction' ? 12 : 0) + fullscreenStatusHeight;
-    const fullscreenTextLines = Math.max(1, Math.floor((fullscreenAreaSize.height / 9 - fullscreenReservedHeight) / fullscreenLineHeight));
+    const fullscreenTextLines = Math.max(1, Math.floor((gridAreaSize.height / 9 - fullscreenReservedHeight) / fullscreenLineHeight));
     const onCellPress = () => {
       previewCell();
-      if (isGoal) { onRequestAI?.(); return; }
+      if (isGoal) { if (focusGrid && selectedDirectionId) setSelectedDirectionId(null); else onRequestAI?.(); return; }
+      if (focusGrid && direction) {
+        if (!selectedDirectionId) {
+          setSelectedDirectionId(direction.id);
+          setDirectionEditorOpen(false);
+          return;
+        }
+        if (selectedDirectionId !== direction.id) {
+          setSelectedDirectionId(null);
+          return;
+        }
+      }
       if (action) { setEditingActionId(action.id); return; }
       if (routine) { toggleRoutine(routine); setNotice(`Обновлён статус «${routine.title}».`); return; }
       if (direction) { setSelectedDirectionId((current) => current === direction.id ? null : direction.id); setDirectionEditorOpen(false); setDirectionTitleDraft(direction.title ?? ''); }
     };
-    const cellSize = fullscreenAreaSize.width > 0 && fullscreenAreaSize.height > 0 ? { width: fullscreenAreaSize.width / 9, height: fullscreenAreaSize.height / 9, flexBasis: fullscreenAreaSize.width / 9 } : {};
+    const fullscreenCellWidth = (gridAreaSize.width - 24) / 9;
+    const fullscreenCellHeight = (gridAreaSize.height - 24) / 9;
+    const cellSize = fullscreenCellWidth > 0 && fullscreenCellHeight > 0 ? { width: fullscreenCellWidth, height: fullscreenCellHeight, flexBasis: fullscreenCellWidth } : {};
     const accessibilityCellLabel = action ? `${action.title}${action.shortTitle ? `. Коротко: ${action.shortTitle}` : ''}${action.description ? `. Подробности: ${action.description}` : ''}` : cellLabel;
-    const cellBaseStyle: (ViewStyle | false | undefined)[] = [styles.cell, isGoal && styles.goalCell, cell.kind === 'direction' && styles.directionCell, cell.kind === 'action' && (action || routine) && styles.filledCell, cell.kind === 'action' && !action && !routine && styles.emptyCell, gridMode === 'full' && overviewGrid ? fullscreenBlock ? { ...styles.fullscreenCell, ...cellSize, borderTopWidth: row % 3 === 0 ? 2 : 0.5, borderLeftWidth: column % 3 === 0 ? 2 : 0.5, borderRightWidth: column === 8 ? 2 : 0.5, borderBottomWidth: row === 8 ? 2 : 0.5 } : { borderTopWidth: [3,6].includes(Math.floor(cell.index/9)) ? 2 : 1, borderLeftWidth: [3,6].includes(cell.index%9) ? 2 : 1, flexBasis: isDesktop ? '10%' : 154, flexGrow: isDesktop ? 1 : 0, flexShrink: 0, minHeight: action || routine ? 52 : 38, height: 'auto', padding: isDesktop ? 6 : 5, borderRadius: 7 } : styles.mobileCell];
+    const cellBaseStyle: (ViewStyle | false | undefined)[] = [styles.cell, isGoal && styles.goalCell, cell.kind === 'direction' && styles.directionCell, cell.kind === 'action' && (action || routine) && styles.filledCell, cell.kind === 'action' && !action && !routine && styles.emptyCell, gridMode === 'full' && overviewGrid ? { ...styles.fullscreenCell, ...cellSize, borderTopWidth: row % 3 === 0 ? 2 : 0.5, borderLeftWidth: column % 3 === 0 ? 2 : 0.5, borderRightWidth: column === 8 ? 2 : 0.5, borderBottomWidth: row === 8 ? 2 : 0.5 } : styles.mobileCell];
+    // Keep the outer 3×3 sector intact; the duplicate in the central map
+    // converges on its centre and fades away instead of leaving a tenth tile.
+    const outerCenter = direction ? cells.find((item) => item.kind === 'direction' && item.directionId === direction.id && Math.floor(Math.floor(item.index / 9) / 3) * 3 + Math.floor((item.index % 9) / 3) !== 4) : undefined;
+    const originColumn = outerCenter ? outerCenter.index % 9 : column;
+    const originRow = outerCenter ? Math.floor(outerCenter.index / 9) : row;
+    const duplicateDirection = cell.kind === 'direction' && !isOuterDirectionCenter;
+    const cellCenterX = column * (fullscreenCellWidth + 3) + fullscreenCellWidth / 2;
+    const cellCenterY = row * (fullscreenCellHeight + 3) + fullscreenCellHeight / 2;
+    const focusScale = 1.08;
+    const targetX = gridAreaSize.width / 2 + (duplicateDirection ? 0 : column - originColumn) * (fullscreenCellWidth + 3) * focusScale;
+    const targetY = gridAreaSize.height / 2 + (duplicateDirection ? 0 : row - originRow) * (fullscreenCellHeight + 3) * focusScale;
+    const focusedCellMotion = focusGrid && animatedDirectionId ? {
+      opacity: focusProgress.interpolate({ inputRange: [0, 1], outputRange: [1, isFocusedBranchCell ? duplicateDirection ? 0 : 1 : 0.24] }),
+      transform: [
+        { translateX: isFocusedBranchCell ? focusProgress.interpolate({ inputRange: [0, 1], outputRange: [0, targetX - cellCenterX] }) : 0 },
+        { translateY: isFocusedBranchCell ? focusProgress.interpolate({ inputRange: [0, 1], outputRange: [0, targetY - cellCenterY] }) : 0 },
+        { scale: focusProgress.interpolate({ inputRange: [0, 1], outputRange: [1, isFocusedBranchCell ? 1.08 : 0.985] }) },
+      ],
+    } : undefined;
     return (
-      <Pressable {...webSpaceActivationProps(onCellPress)} key={`${cell.kind}-${index}-${direction?.id ?? ''}`} testID={fullscreenBlock ? `goal-matrix-fullscreen-cell-${cell.index}` : undefined} accessibilityRole="button" accessibilityLabel={isGoal ? `Цель: ${goal.title}. Помочь с направлениями` : `${cell.kind === 'direction' ? `${isOuterDirectionCenter ? 'Действия' : 'Направление'} ${direction ? direction.position + 1 : 1}` : `Действие направления ${direction ? direction.position + 1 : ''}`}: ${accessibilityCellLabel}${status ? `, ${status}` : ''}`} accessibilityHint={fullscreenBlock ? 'Наведи, сфокусируйся или удерживай, чтобы прочитать полный текст' : undefined} accessibilityActions={fullscreenBlock ? [{ name: 'showFullText', label: 'Показать полный текст' }] : undefined} onAccessibilityAction={({ nativeEvent }) => { if (nativeEvent.actionName === 'showFullText') previewCell(); }} onFocus={previewCell} onHoverIn={previewCell} onLongPress={previewCell} accessibilityState={{ selected: isSelected }} onPress={onCellPress} style={[...cellBaseStyle, fullscreenBlock && styles.fullscreenCellOverflow, isSelected && { borderColor: directionColor!.color, backgroundColor: directionColor!.backgroundColor }]}>
-        {isGoal ? <><Text numberOfLines={fullscreenBlock ? fullscreenTextLines : gridMode === 'full' ? undefined : 2} style={[styles.goalCellText, fullscreenBlock && { fontSize: fullscreenLineHeight - 1, lineHeight: fullscreenLineHeight }]}>{goal.title}</Text><Text style={[styles.goalCellStatus, fullscreenBlock && { fontSize: 10, lineHeight: 12 }]}>Главная цель</Text></> : (
+      <AnimatedPressable {...(Platform.OS === 'web' ? { title: action?.description || action?.title || cellLabel } : {})} {...webSpaceActivationProps(onCellPress)} key={`${cell.kind}-${index}-${direction?.id ?? ''}`} testID={focusGrid ? `goal-matrix-${fullscreenBlock ? 'fullscreen-' : 'overview-'}cell-${cell.index}` : undefined} accessibilityRole="button" accessibilityLabel={isGoal ? `Цель: ${goal.title}. Помочь с направлениями` : `${cell.kind === 'direction' ? `${isOuterDirectionCenter ? 'Действия' : 'Направление'} ${direction ? direction.position + 1 : 1}` : `Действие направления ${direction ? direction.position + 1 : ''}`}: ${accessibilityCellLabel}${status ? `, ${status}` : ''}`} accessibilityHint={focusGrid ? 'Наведи, сфокусируйся или удерживай ячейку, чтобы прочитать полный текст' : undefined} accessibilityActions={focusGrid ? [{ name: 'showFullText', label: 'Показать полный текст' }] : undefined} onAccessibilityAction={({ nativeEvent }) => { if (nativeEvent.actionName === 'showFullText') previewCell(); }} onFocus={previewCell} onHoverIn={previewCell} onLongPress={previewCell} accessibilityState={{ selected: isSelected }} onPress={onCellPress} style={[...cellBaseStyle, focusGrid && !reduceMotion && styles.fullscreenCellTransition, focusGrid && animatedDirectionId && isFocusedBranchCell && styles.focusedBranchCell, focusGrid && animatedDirectionId && !isFocusedBranchCell && styles.dimmedFocusCell, focusedCellMotion, fullscreenBlock && styles.fullscreenCellOverflow, (focusGrid ? isFocusedBranchCell : isSelected) && { borderColor: directionColor!.color, backgroundColor: directionColor!.backgroundColor }]}>
+        {isGoal ? <><Text numberOfLines={focusGrid ? fullscreenTextLines : gridMode === 'full' ? undefined : 2} style={[styles.goalCellText, fullscreenBlock && { fontSize: fullscreenLineHeight - 1, lineHeight: fullscreenLineHeight }]}>{goal.title}</Text><Text style={[styles.goalCellStatus, fullscreenBlock && { fontSize: 10, lineHeight: 12 }]}>Главная цель</Text></> : (
           <>
-            {direction && (cell.kind === 'direction' || action || routine) ? <View style={styles.cellDirectionLabel}>{!fullscreenBlock || cell.kind === 'direction' ? <View style={[styles.directionBadge, fullscreenBlock && styles.smallDirectionBadge, { backgroundColor: directionColor!.backgroundColor }]}><Text style={[styles.directionBadgeText, fullscreenBlock && styles.smallDirectionBadgeText, { color: directionColor!.color }]}>{direction.position + 1}</Text></View> : null}{!fullscreenBlock ? <Text numberOfLines={1} style={[styles.cellRole, isSelected && styles.selectedCellText]}>{cell.kind === 'action' ? 'Действие' : isOuterDirectionCenter ? 'Действия' : 'Направление'}</Text> : cell.kind === 'direction' ? <Text numberOfLines={1} style={[styles.cellRole, isSelected && styles.selectedCellText]}>{isOuterDirectionCenter ? 'Действия' : 'Направление'}</Text> : null}</View> : null}
-            {cell.kind === 'direction' || action || routine ? <Text numberOfLines={fullscreenBlock ? fullscreenTextLines : gridMode === 'full' && overviewGrid ? undefined : 2} style={[styles.cellTitle, cell.kind === 'direction' && styles.directionTitle, gridMode === 'full' && overviewGrid && { fontSize: fullscreenBlock ? fullscreenLineHeight - 3 : 14, lineHeight: fullscreenBlock ? fullscreenLineHeight : 18 }, fullscreenBlock && { textAlign: 'center', width: '100%' }, isSelected && styles.selectedCellText]}>{fullscreenBlock && cell.kind === 'action' && direction ? `${direction.position + 1} · ${displayActionTitle ?? routine?.title ?? ''}` : action ? displayActionTitle : routine?.title ?? (cell.kind === 'direction' ? cellLabel : '')}</Text> : null}
+            {direction && (cell.kind === 'direction' || action || routine) ? <View style={styles.cellDirectionLabel}>{!focusGrid || cell.kind === 'direction' ? <View style={[styles.directionBadge, focusGrid && styles.smallDirectionBadge, { backgroundColor: directionColor!.backgroundColor }]}><Text style={[styles.directionBadgeText, focusGrid && styles.smallDirectionBadgeText, { color: directionColor!.color }]}>{direction.position + 1}</Text></View> : null}{!focusGrid ? <Text numberOfLines={1} style={[styles.cellRole, isSelected && styles.selectedCellText]}>{cell.kind === 'action' ? 'Действие' : isOuterDirectionCenter ? 'Действия' : 'Направление'}</Text> : cell.kind === 'direction' ? <Text numberOfLines={1} style={[styles.cellRole, isSelected && styles.selectedCellText]}>{isOuterDirectionCenter ? 'Действия' : 'Направление'}</Text> : null}</View> : null}
+            {cell.kind === 'direction' || action || routine ? <Text numberOfLines={focusGrid ? fullscreenTextLines : gridMode === 'full' && overviewGrid ? undefined : 2} style={[styles.cellTitle, cell.kind === 'direction' && styles.directionTitle, gridMode === 'full' && overviewGrid && { fontSize: fullscreenLineHeight - 3, lineHeight: fullscreenLineHeight }, focusGrid && { textAlign: 'center', width: '100%' }, isSelected && styles.selectedCellText]}>{fullscreenBlock && cell.kind === 'action' && direction ? `${direction.position + 1} · ${displayActionTitle ?? routine?.title ?? ''}` : action ? displayActionTitle : routine?.title ?? (cell.kind === 'direction' ? cellLabel : '')}</Text> : null}
             {cell.kind === 'direction' ? direction?.title && actionCount ? <Text numberOfLines={1} style={[styles.cellStatus, isSelected && styles.selectedStatus]}>{completedCount}/{actionCount}</Text> : null : action || routine ? visibleStatus ? <Text numberOfLines={1} style={[styles.cellStatus, isSelected && styles.selectedStatus]}>{visibleStatus}</Text> : null : cell.kind === 'action' ? <View style={styles.emptyActionLabel}>{direction && <View style={[styles.directionBadge, styles.smallDirectionBadge, { backgroundColor: directionColor!.backgroundColor }]}><Text style={[styles.directionBadgeText, styles.smallDirectionBadgeText, { color: directionColor!.color }]}>{direction.position + 1}</Text></View>}<Text numberOfLines={1} style={[styles.cellStatus, isSelected && styles.selectedStatus]}>+ действие</Text></View> : null}
           </>
         )}
-      </Pressable>
+      </AnimatedPressable>
     );
   }
 
@@ -248,6 +337,13 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
   );
 
   const renderSelectionBar = (compact = false) => selectedDirection ? <View style={[styles.selectionBar, compact && styles.compactSelectionBar]}><View style={[styles.directionBadge, compact && styles.smallDirectionBadge, { backgroundColor: directionColors[selectedDirection.position % directionColors.length]!.backgroundColor }]}><Text style={[styles.directionBadgeText, compact && styles.smallDirectionBadgeText, { color: directionColors[selectedDirection.position % directionColors.length]!.color }]}>{selectedDirection.position + 1}</Text></View><Text numberOfLines={1} style={[styles.selectedTitle, compact && styles.compactSelectedTitle]}>{selectedDirection.title || `Направление ${selectedDirection.position + 1}`}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Редактировать направление ${selectedDirection.position + 1}`} onPress={() => setDirectionEditorOpen(true)} style={[styles.editDirectionButton, compact && styles.compactSelectionAction]}><Text style={[styles.editDirectionButtonText, compact && {color: text}]}>Изменить</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Сбросить выбор направления" onPress={() => setSelectedDirectionId(null)} style={[styles.clearSelectionButton, compact && styles.compactSelectionAction]}><Text style={styles.clearSelectionText}>Сброс</Text></Pressable></View> : compact ? <Text style={styles.fullscreenLegend}>Цель → направления → действия</Text> : null;
+
+  const dismissFocusWhenClickingOutsideCells = (event: any) => {
+    const target = event?.target as HTMLElement | undefined;
+    if (typeof document === 'undefined' || typeof target?.closest !== 'function') return;
+    if (!target.closest('[role="button"]')) setSelectedDirectionId(null);
+  };
+  const outsideDismissCapture = Platform.OS === 'web' ? { onClickCapture: dismissFocusWhenClickingOutsideCells } : {};
 
   return (
     <View style={styles.container}>
@@ -263,13 +359,13 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
       <View style={styles.mobileTabs} accessibilityRole="tablist"><Pressable accessibilityRole="tab" aria-pressed={gridMode === 'compact'} accessibilityState={{ selected: gridMode === 'compact' }} onPress={() => setGridMode('compact')} style={[styles.mobileTab, gridMode === 'compact' && styles.mobileTabActive]}><Text style={[styles.mobileTabText, gridMode === 'compact' && styles.mobileTabTextActive]}>Направления</Text></Pressable><Pressable accessibilityRole="tab" aria-pressed={gridMode === 'full'} accessibilityState={{ selected: gridMode === 'full' }} onPress={() => setGridMode('full')} style={[styles.mobileTab, gridMode === 'full' && styles.mobileTabActive]}><Text style={[styles.mobileTabText, gridMode === 'full' && styles.mobileTabTextActive]}>Все 64 шага</Text></Pressable></View>
 
       {gridMode === 'full' ? (
-        <View style={styles.overview}>
-          <Text style={styles.overviewHint}>Выбери направление: подсветится его квадрат действий. Цвет и номер связывают ячейки.</Text>
-          {isDesktop ? grid(cells, true, true) : <ScrollView horizontal showsHorizontalScrollIndicator><View style={styles.mobileOverviewGrid}>{grid(cells, false, true)}</View></ScrollView>}
-        </View>
+        <WebCaptureView {...outsideDismissCapture} style={styles.overview}>
+          <Text style={styles.overviewHint}>Выбери ячейку — её направление соберётся в центре. Клик мимо вернёт сетку.</Text>
+          {isDesktop ? <View style={[styles.overviewGridArea, { height: Math.min(648, Math.max(450, viewportHeight - 270)) }]} onLayout={({ nativeEvent }) => { const { width, height } = nativeEvent.layout; setOverviewAreaSize((current) => current.width === width && current.height === height ? current : { width, height }); }}><View style={styles.overviewGridContent}>{grid(cells, true, true)}</View></View> : <ScrollView horizontal showsHorizontalScrollIndicator><View style={styles.mobileOverviewArea} onLayout={({ nativeEvent }) => { const { width, height } = nativeEvent.layout; setOverviewAreaSize((current) => current.width === width && current.height === height ? current : { width, height }); }}><View style={styles.mobileOverviewGrid}>{grid(cells, false, true)}</View></View></ScrollView>}
+        </WebCaptureView>
       ) : <View style={styles.compactGridWrap}><View style={styles.desktopGridWrap}>{grid(compactGridCells, false)}</View></View>}
 
-      {expandedGrid && gridMode === 'full' ? <Modal animationType="fade" onRequestClose={() => setExpandedGrid(false)} visible><View style={styles.fullscreenContainer}><View style={styles.fullscreenHeader}><Text accessibilityRole="header" numberOfLines={1} style={styles.fullscreenTitle}>ОТАНИ · 9×9</Text>{renderSelectionBar(true)}<Pressable accessibilityRole="button" accessibilityLabel="Закрыть полноэкранную сетку" onPress={() => setExpandedGrid(false)} style={styles.fullscreenClose}><X color={text} size={18}/></Pressable></View><View accessibilityLiveRegion="polite" style={styles.fullscreenPreviewPanel}>{fullscreenPreview ? <ScrollView style={styles.fullscreenPreviewScroll} contentContainerStyle={styles.fullscreenPreviewContent}><Text style={styles.fullscreenPreviewTitle}>{fullscreenPreview.title}</Text><Text style={styles.fullscreenPreviewDetail}>{fullscreenPreview.detail}</Text></ScrollView> : <Text style={styles.fullscreenPreviewHint}>Наведи, сфокусируйся или удерживай ячейку — полный текст появится здесь.</Text>}</View><View testID="goal-matrix-fullscreen-grid" style={styles.fullscreenGridArea} onLayout={({ nativeEvent }) => { const { width, height } = nativeEvent.layout; setFullscreenAreaSize((current) => current.width === width && current.height === height ? current : { width, height }); }}><View style={styles.fullscreenGrid}>{cells.map((cell, index) => renderMatrixCell(cell, index, true, true))}</View></View></View></Modal> : null}
+      {expandedGrid && gridMode === 'full' ? <Modal animationType="fade" onRequestClose={() => { if (selectedDirectionId) setSelectedDirectionId(null); else setExpandedGrid(false); }} visible><WebCaptureView {...outsideDismissCapture} style={styles.fullscreenContainer}><View style={styles.fullscreenHeader}><Text accessibilityRole="header" numberOfLines={1} style={styles.fullscreenTitle}>ОТАНИ · 9×9</Text>{renderSelectionBar(true)}<Pressable accessibilityRole="button" accessibilityLabel="Закрыть полноэкранную сетку" onPress={() => setExpandedGrid(false)} style={styles.fullscreenClose}><X color={text} size={18}/></Pressable></View><View accessibilityLiveRegion="polite" style={styles.fullscreenPreviewPanel}>{fullscreenPreview ? <ScrollView style={styles.fullscreenPreviewScroll} contentContainerStyle={styles.fullscreenPreviewContent}><Text style={styles.fullscreenPreviewTitle}>{fullscreenPreview.title}</Text><Text style={styles.fullscreenPreviewDetail}>{fullscreenPreview.detail}</Text></ScrollView> : <Text style={styles.fullscreenPreviewHint}>Наведи, сфокусируйся или удерживай ячейку — полный текст появится здесь.</Text>}</View><View testID="goal-matrix-fullscreen-grid" style={styles.fullscreenGridArea} onLayout={({ nativeEvent }) => { const { width, height } = nativeEvent.layout; setFullscreenAreaSize((current) => current.width === width && current.height === height ? current : { width, height }); }}><View style={styles.fullscreenGrid}>{cells.map((cell, index) => renderMatrixCell(cell, index, true, true))}</View></View></WebCaptureView></Modal> : null}
 
       {selectedDirection && directionEditorOpen ? <Modal animationType="none" onRequestClose={() => setDirectionEditorOpen(false)} transparent visible><View accessibilityViewIsModal accessibilityLabel={`Редактор направления ${selectedDirection.title || selectedDirection.position + 1}`} style={styles.editorOverlay}><ScrollView keyboardShouldPersistTaps="handled" style={styles.directionModalScroll} contentContainerStyle={styles.directionModalContent}><View style={styles.editor}>
           <View style={styles.editorHeader}><Text accessibilityRole="header" style={styles.editorTitle}>Направление {selectedDirection.position + 1}</Text><View style={styles.editorHeaderActions}>{selectedDirection.archivedAt ? <Pressable accessibilityRole="button" onPress={() => restoreDirection(selectedDirection)} style={styles.smallButton}><RotateCcw color={accent} size={14} /><Text style={styles.smallButtonText}>Восстановить</Text></Pressable> : <Pressable accessibilityRole="button" onPress={() => archiveDirection(selectedDirection)} style={styles.smallButton}><X color={muted} size={14} /><Text style={styles.smallButtonText}>В архив</Text></Pressable>}<Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактор направления" onPress={() => setDirectionEditorOpen(false)} style={styles.unlinkButton}><X color={muted} size={16} /></Pressable></View></View>
@@ -341,9 +437,9 @@ function ActionQuickEditor({ action, allActions, onClose, onSave }: { action: Go
 
 const styles = StyleSheet.create({
   container: { gap: 9, minWidth: 0 }, header: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between' }, headerText: { flexBasis: 180, flexGrow: 1, flexShrink: 1, gap: 2, minWidth: 0 }, title: { color: text, fontSize: 16, fontWeight: '700' }, subtitle: { color: muted, fontSize: 11 }, zoom: { alignItems: 'center', flexDirection: 'row', flexShrink: 0, gap: 6 }, zoomButton: { alignItems: 'center', borderColor: line, borderRadius: 12, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 }, zoomText: { color: text, fontSize: 20 }, zoomLabel: { color: muted, fontSize: 12, minWidth: 42, textAlign: 'center' },
-  desktopGridWrap: { alignItems: 'center', padding: 2 }, grid: { gap: 3 }, desktopGrid: { flexDirection: 'row', flexWrap: 'wrap', width: 9 * 102 + 8 * 3 }, mobileGrid: { flexDirection: 'row', flexWrap: 'wrap', width: '100%' }, cell: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 11, borderWidth: 1, flexBasis: '10.7%', flexGrow: 1, height: 64, justifyContent: 'center', margin: 0, minWidth: 0, padding: 5 }, mobileCell: { flexBasis: '32.7%', flexGrow: 0, height: 96, minHeight: 96 }, goalCell: { backgroundColor: activeBg, borderColor: accent, flexBasis: '32.7%', flexGrow: 1.05 }, mobileGoalCell: { flexBasis: '31.8%', flexGrow: 0 }, directionCell: { backgroundColor: panelSoft, borderColor: line }, filledCell: { borderColor: accentBorder }, emptyCell: { backgroundColor: panel, borderStyle: 'dashed' }, directionBadge: { alignItems: 'center', borderRadius: 99, height: 20, justifyContent: 'center', width: 20 }, smallDirectionBadge: { height: 15, width: 15 }, smallDirectionBadgeText: { fontSize: 9, lineHeight: 12 }, directionBadgeText: { fontSize: 11, fontWeight: '800', lineHeight: 14 }, cellDirectionLabel: { alignItems: 'center', flexDirection: 'row', gap: 3, justifyContent: 'center', maxWidth: '100%' }, cellRole: { color: muted, flexShrink: 1, fontSize: 9, fontWeight: '700', lineHeight: 12 }, emptyActionLabel: { alignItems: 'center', flexDirection: 'row', gap: 3, justifyContent: 'center' }, selectedCellText: { color: '#172033' }, selectedStatus: { color: '#344054' }, goalCellText: { color: activeText, fontSize: 12, fontWeight: '700', lineHeight: 15, textAlign: 'center' }, goalCellStatus: { color: activeText, fontSize: 10, lineHeight: 13, textAlign: 'center' }, cellTitle: { color: text, fontSize: 12, lineHeight: 16, textAlign: 'center' }, directionTitle: { color: text, fontSize: 12, fontWeight: '700' }, cellStatus: { color: muted, fontSize: 10, lineHeight: 13, textAlign: 'center' }, mobileTabs: { alignSelf: 'flex-start', backgroundColor: panel, borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 3, padding: 3 }, mobileTab: { alignItems: 'center', borderRadius: 9, justifyContent: 'center', minHeight: 40, paddingHorizontal: 12 }, mobileTabActive: { backgroundColor: panelSoft }, mobileTabText: { color: muted, fontSize: 12, lineHeight: 16, textAlign: 'center' }, mobileTabTextActive: { color: text, fontWeight: '700' }, overview: { gap: 8 }, overviewHint: { color: muted, fontSize: 11, lineHeight: 15, paddingVertical: 2 }, overviewRow: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 18, borderWidth: 1, flexDirection: 'row', gap: 10, minHeight: 64, padding: 10 }, overviewIcon: { alignItems: 'center', backgroundColor: accentFaint, borderRadius: 20, height: 36, justifyContent: 'center', width: 36 }, overviewIndex: { color: accent, fontWeight: '700' }, directionCopy: { flex: 1, gap: 3, minWidth: 0 }, directionRowTitle: { color: text, fontSize: 13, fontWeight: '600' }, mobileBackRow: { alignItems: 'center', flexDirection: 'row', gap: 8, minHeight: 44 }, backButton: { alignItems: 'center', flexDirection: 'row', minHeight: 44 }, backText: { color: accent, fontSize: 12 }, selectedTitle: { color: text, flex: 1, fontSize: 13, fontWeight: '700' },
+  desktopGridWrap: { alignItems: 'center', padding: 2 }, grid: { gap: 3 }, desktopGrid: { flexDirection: 'row', flexWrap: 'wrap', width: 9 * 102 + 8 * 3 }, mobileGrid: { flexDirection: 'row', flexWrap: 'wrap', width: '100%' }, cell: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 11, borderWidth: 1, flexBasis: '10.7%', flexGrow: 1, height: 64, justifyContent: 'center', margin: 0, minWidth: 0, padding: 5 }, mobileCell: { flexBasis: '32.7%', flexGrow: 0, height: 96, minHeight: 96 }, goalCell: { backgroundColor: activeBg, borderColor: accent, flexBasis: '32.7%', flexGrow: 1.05 }, mobileGoalCell: { flexBasis: '31.8%', flexGrow: 0 }, directionCell: { backgroundColor: panelSoft, borderColor: line }, filledCell: { borderColor: accentBorder }, emptyCell: { backgroundColor: panel, borderStyle: 'dashed' }, directionBadge: { alignItems: 'center', borderRadius: 99, height: 20, justifyContent: 'center', width: 20 }, smallDirectionBadge: { height: 15, width: 15 }, smallDirectionBadgeText: { fontSize: 9, lineHeight: 12 }, directionBadgeText: { fontSize: 11, fontWeight: '800', lineHeight: 14 }, cellDirectionLabel: { alignItems: 'center', flexDirection: 'row', gap: 3, justifyContent: 'center', maxWidth: '100%' }, cellRole: { color: muted, flexShrink: 1, fontSize: 9, fontWeight: '700', lineHeight: 12 }, emptyActionLabel: { alignItems: 'center', flexDirection: 'row', gap: 3, justifyContent: 'center' }, selectedCellText: { color: '#172033' }, selectedStatus: { color: '#344054' }, goalCellText: { color: activeText, fontSize: 12, fontWeight: '700', lineHeight: 15, textAlign: 'center' }, goalCellStatus: { color: activeText, fontSize: 10, lineHeight: 13, textAlign: 'center' }, cellTitle: { color: text, fontSize: 12, lineHeight: 16, textAlign: 'center' }, directionTitle: { color: text, fontSize: 12, fontWeight: '700' }, cellStatus: { color: muted, fontSize: 10, lineHeight: 13, textAlign: 'center' }, mobileTabs: { alignSelf: 'flex-start', backgroundColor: panel, borderColor: line, borderRadius: 12, borderWidth: 1, flexDirection: 'row', gap: 3, padding: 3 }, mobileTab: { alignItems: 'center', borderRadius: 9, justifyContent: 'center', minHeight: 40, paddingHorizontal: 12 }, mobileTabActive: { backgroundColor: panelSoft }, mobileTabText: { color: muted, fontSize: 12, lineHeight: 16, textAlign: 'center' }, mobileTabTextActive: { color: text, fontWeight: '700' }, overview: { gap: 8 }, overviewHint: { color: muted, fontSize: 11, lineHeight: 15, paddingVertical: 2 }, overviewGridArea: { alignSelf: 'center', maxWidth: 942, width: '100%' }, overviewGridContent: { height: '100%', width: '100%' }, overviewRow: { alignItems: 'center', backgroundColor: panelSoft, borderColor: line, borderRadius: 18, borderWidth: 1, flexDirection: 'row', gap: 10, minHeight: 64, padding: 10 }, overviewIcon: { alignItems: 'center', backgroundColor: accentFaint, borderRadius: 20, height: 36, justifyContent: 'center', width: 36 }, overviewIndex: { color: accent, fontWeight: '700' }, directionCopy: { flex: 1, gap: 3, minWidth: 0 }, directionRowTitle: { color: text, fontSize: 13, fontWeight: '600' }, mobileBackRow: { alignItems: 'center', flexDirection: 'row', gap: 8, minHeight: 44 }, backButton: { alignItems: 'center', flexDirection: 'row', minHeight: 44 }, backText: { color: accent, fontSize: 12 }, selectedTitle: { color: text, flex: 1, fontSize: 13, fontWeight: '700' },
   editor: { backgroundColor: panelSoft, borderColor: line, borderRadius: 18, borderWidth: 1, gap: 9, padding: 12 }, editorHeader: { alignItems: 'center', flexDirection: 'row', gap: 8, justifyContent: 'space-between' }, editorTitle: { color: text, fontSize: 14, fontWeight: '700' }, directionInput: { backgroundColor: panel, borderColor: line, borderRadius: 16, borderWidth: 1, color: text, fontSize: 16, minHeight: 44, paddingHorizontal: 11 }, sectionTitle: { color: text, fontSize: 12, fontWeight: '700', marginTop: 3 }, taskRow: { alignItems: 'center', backgroundColor: panel, borderColor: line, borderRadius: 16, borderWidth: 1, flexDirection: 'row', gap: 8, minHeight: 52, paddingHorizontal: 8, paddingVertical: 5 }, taskCheck: { alignItems: 'center', borderColor: muted, borderRadius: 99, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 }, taskCheckDone: { backgroundColor: activeBg, borderColor: accent }, taskCopy: { flex: 1, gap: 2, minWidth: 0 }, taskTitle: { color: text, fontSize: 12, lineHeight: 16 }, taskTitleDone: { color: muted, textDecorationLine: 'line-through' }, taskMeta: { color: muted, fontSize: 12, lineHeight: 16 }, existingBox: { backgroundColor: accentFaint, borderRadius: 16, gap: 3, padding: 7 }, existingRow: { alignItems: 'center', flexDirection: 'row', gap: 7, minHeight: 44 }, existingText: { color: text, flex: 1, fontSize: 11 }, smallButton: { alignItems: 'center', borderColor: accentBorder, borderRadius: 9, borderWidth: 1, flexDirection: 'row', gap: 4, justifyContent: 'center', minHeight: 44, paddingHorizontal: 8 }, smallButtonText: { color: accent, fontSize: 11 }, unlinkButton: { alignItems: 'center', borderRadius: 14, height: 44, justifyContent: 'center', width: 44 }, addRow: { alignItems: 'center', flexDirection: 'row', gap: 6 }, addInput: { backgroundColor: panel, borderColor: line, borderRadius: 16, borderWidth: 1, color: text, flex: 1, fontSize: 16, minHeight: 44, minWidth: 0, paddingHorizontal: 10 }, addButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 16, justifyContent: 'center', minHeight: 44, paddingHorizontal: 11 }, addButtonText: { color: activeText, fontSize: 11, fontWeight: '700' }, disabled: { opacity: 0.5 }, notice: { color: muted, fontSize: 11, lineHeight: 16 }, moveBox: { borderTopColor: line, borderTopWidth: 1, gap: 6, paddingTop: 7 }, moveRow: { alignItems: 'center', flexDirection: 'row', gap: 6, minHeight: 44 }, moveTitle: { color: text, fontSize: 10, maxWidth: 140 }, moveChoices: { alignItems: 'center', gap: 5 }, moveChoice: { borderColor: line, borderRadius: 99, borderWidth: 1, justifyContent: 'center', minHeight: 36, maxWidth: 100, paddingHorizontal: 8 }, moveChoiceText: { color: accent, fontSize: 10 }, toast: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 16, flexDirection: 'row', gap: 8, paddingHorizontal: 10, paddingVertical: 8 }, toastText: { color: activeText, flex: 1, fontSize: 11 }, toastClose: { alignItems: 'center', height: 32, justifyContent: 'center', width: 32 }, editorOverlay: { alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.48)', bottom: 0, justifyContent: 'center', left: 0, position: 'absolute', right: 0, top: 0 }, quickEditor: { backgroundColor: panelSoft, borderColor: line, borderRadius: 14, borderWidth: 1, gap: 12, maxWidth: 420, padding: 14, width: '94%' }, editorActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }, secondaryButton: { alignItems: 'center', borderColor: line, borderRadius: 16, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 12 }, secondaryText: { color: text, fontSize: 12 }, primaryButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 16, justifyContent: 'center', minHeight: 44, paddingHorizontal: 14 }, primaryText: { color: activeText, fontSize: 12, fontWeight: '700' },
-  conflicts: { backgroundColor: panelSoft, borderColor: accentBorder, borderRadius: 18, borderWidth: 1, gap: 7, padding: 11 }, conflictRow: { alignItems: 'center', borderTopColor: line, borderTopWidth: 1, flexDirection: 'row', gap: 8, minHeight: 48, paddingTop: 6 }, conflictLabel: { color: text, flex: 1, fontSize: 11, lineHeight: 15 }, restoreButton: { alignItems: 'center', borderColor: accentBorder, borderRadius: 9, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 9 }, restoreText: { color: accent, fontSize: 11, fontWeight: '700' }, history: { backgroundColor: panelSoft, borderColor: line, borderRadius: 18, borderWidth: 1, gap: 5, padding: 10 }, historyToggle: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 44 }, historyToggleText: { color: accent, fontSize: 11 }, mobileOverviewScroll: { maxHeight: 490, minHeight: 260 }, mobileOverviewGrid: { paddingBottom: 6, paddingRight: 6 }, extraField: { gap: 5 }, dependencies: { gap: 5, maxHeight: 156 }, dependencyOption: { borderColor: line, borderRadius: 9, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 9, paddingVertical: 5 }, dependencyOptionActive: { backgroundColor: accentFaint, borderColor: accentBorder }, dependencyText: { color: text, fontSize: 11, lineHeight: 15 }, dependencyTextActive: { color: accent, fontWeight: '700' }, archiveAction: { alignItems: 'center', borderColor: line, borderRadius: 9, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 10 }, archivedActionActive: { backgroundColor: accentFaint, borderColor: accentBorder }, archiveActionText: { color: muted, fontSize: 11 }, archivedActionTextActive: { color: accent, fontWeight: '700' },
+  conflicts: { backgroundColor: panelSoft, borderColor: accentBorder, borderRadius: 18, borderWidth: 1, gap: 7, padding: 11 }, conflictRow: { alignItems: 'center', borderTopColor: line, borderTopWidth: 1, flexDirection: 'row', gap: 8, minHeight: 48, paddingTop: 6 }, conflictLabel: { color: text, flex: 1, fontSize: 11, lineHeight: 15 }, restoreButton: { alignItems: 'center', borderColor: accentBorder, borderRadius: 9, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 9 }, restoreText: { color: accent, fontSize: 11, fontWeight: '700' }, history: { backgroundColor: panelSoft, borderColor: line, borderRadius: 18, borderWidth: 1, gap: 5, padding: 10 }, historyToggle: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 44 }, historyToggleText: { color: accent, fontSize: 11 }, mobileOverviewScroll: { maxHeight: 490, minHeight: 260 }, mobileOverviewArea: { height: 9 * 70 + 8 * 3, width: 9 * 154 + 8 * 3 }, mobileOverviewGrid: { height: '100%', width: '100%' }, extraField: { gap: 5 }, dependencies: { gap: 5, maxHeight: 156 }, dependencyOption: { borderColor: line, borderRadius: 9, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 9, paddingVertical: 5 }, dependencyOptionActive: { backgroundColor: accentFaint, borderColor: accentBorder }, dependencyText: { color: text, fontSize: 11, lineHeight: 15 }, dependencyTextActive: { color: accent, fontWeight: '700' }, archiveAction: { alignItems: 'center', borderColor: line, borderRadius: 9, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: 10 }, archivedActionActive: { backgroundColor: accentFaint, borderColor: accentBorder }, archiveActionText: { color: muted, fontSize: 11 }, archivedActionTextActive: { color: accent, fontWeight: '700' },
   aiButton: { alignItems: 'center', alignSelf: 'flex-start', backgroundColor: activeBg, borderRadius: 12, flexDirection: 'row', gap: 7, justifyContent: 'center', minHeight: 40, paddingHorizontal: 12 },
   aiButtonText: { color: activeText, fontSize: 13, fontWeight: '700' },
   fullscreenContainer: { backgroundColor: panel, flex: 1, gap: 6, paddingHorizontal: 10, paddingVertical: 6 },
@@ -358,8 +454,11 @@ const styles = StyleSheet.create({
   fullscreenPreviewDetail: { color: muted, fontSize: 10, lineHeight: 12 },
   fullscreenPreviewHint: { color: muted, fontSize: 11, lineHeight: 14 },
   fullscreenGridArea: { flex: 1, minHeight: 0, width: '100%' },
-  fullscreenGrid: { alignContent: 'stretch', alignItems: 'stretch', flex: 1, flexDirection: 'row', flexWrap: 'wrap', width: '100%' },
+  fullscreenGrid: { gap: 3, alignContent: 'stretch', alignItems: 'stretch', flex: 1, flexDirection: 'row', flexWrap: 'wrap', width: '100%' },
   fullscreenCell: { borderRadius: 0, borderWidth: 0.5, flexBasis: '11.111%', flexGrow: 0, flexShrink: 0, height: 'auto', alignItems: 'center', justifyContent: 'center', minHeight: 24, padding: 2 },
+  focusedBranchCell: { elevation: 8, zIndex: 2, boxShadow: '0 8px 24px rgba(15,23,42,0.28)' } as ViewStyle,
+  dimmedFocusCell: { filter: 'blur(1px)' } as ViewStyle,
+  fullscreenCellTransition: { transition: 'filter 460ms ease, box-shadow 460ms ease' } as ViewStyle,
   fullscreenCellOverflow: { overflow: 'hidden' },
   quickEditorScroll: { maxHeight: '92%', width: '94%' },
   quickEditorScrollContent: { paddingVertical: 8 },
