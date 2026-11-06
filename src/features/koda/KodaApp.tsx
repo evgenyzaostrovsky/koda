@@ -1,4 +1,5 @@
 import { useAutoPlan } from './useAutoPlan';
+import { recordGoalListChanges, visibleGoals, withoutDeletedGoalItems } from './goalDeletion';
 import { applyAutoPlanProgress } from './autoPlan';
 import { AutoPlanControl } from './components/AutoPlanControl';
 import { habitIsDue, habitDoneOn } from './habitModel';
@@ -129,7 +130,10 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   const [calendarSync, setCalendarSync] = useState<CalendarSyncState>({ count: 0, message: 'Готовлю календарь...', status: 'idle' });
   const [deletedJournalItemIds, setDeletedJournalItemIds] = useState<string[]>([]);
   const [deletedPlannerItemIds, setDeletedPlannerItemIds] = useState<string[]>([]);
-  const [goals, setGoals] = useState<Goal[]>(initialGoals);
+  const [allGoals, setGoals] = useState<Goal[]>(initialGoals);
+  const canonicalGoals = useRef(allGoals);
+  const goals = useMemo(() => visibleGoals(allGoals), [allGoals]);
+  useLayoutEffect(() => { canonicalGoals.current = allGoals; }, [allGoals]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [habits, setHabits] = useState<Habit[]>(initialHabits);
   const [kodaDays, setKodaDays] = useState<KodaDay[]>([]);
@@ -185,7 +189,8 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
     onChange: updater => { markSyncQueued('appState'); setProfile(current => ({ ...current, autoPlan: updater(current.autoPlan) })); },
   });
   const effectiveGoals = autoPlan.displayGoals;
-  const projectPlannerItems = useMemo(() => [...baseProjectPlannerItems, ...autoPlan.items], [baseProjectPlannerItems, autoPlan.items]);
+  const autoPlanItems = useMemo(() => withoutDeletedGoalItems(autoPlan.items, allGoals), [autoPlan.items, allGoals]);
+  const projectPlannerItems = useMemo(() => [...baseProjectPlannerItems, ...autoPlanItems], [baseProjectPlannerItems, autoPlanItems]);
   const plannerDayItems = useMemo(() => [...plannerItems, ...projectPlannerItems], [plannerItems, projectPlannerItems]);
   const completedTasks = useMemo(() => plannerDayItems.filter((item) => !item.deletedAt && item.done).length, [plannerDayItems]);
   const habitScore = useMemo(() => {
@@ -471,6 +476,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   }, [userId]);
 
   function applyStoredKodaState(state: StoredKodaState) {
+    canonicalGoals.current = state.goals;
     setGoals(state.goals);
     setProjects(state.projects);
     setHabits(state.habits);
@@ -491,7 +497,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
         markSyncQueued('appState');
         const storageKey = scopedStorageKey(kodaStateStorageKey, userId);
         if (appStateLoadedStorageKey === storageKey) {
-          const state: StoredKodaState = { goals, habits, kodaDays: nextDays, pomodoro, profile, projects };
+          const state: StoredKodaState = { goals: canonicalGoals.current, habits, kodaDays: nextDays, pomodoro, profile, projects };
           void AsyncStorage.setItem(storageKey, JSON.stringify(state));
         }
         return nextDays;
@@ -516,18 +522,18 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
     const storageKey = scopedStorageKey(kodaStateStorageKey, userId);
     if (appStateLoadedStorageKey !== storageKey) return;
 
-    const state: StoredKodaState = { goals, habits, kodaDays, pomodoro, profile, projects };
+    const state: StoredKodaState = { goals: allGoals, habits, kodaDays, pomodoro, profile, projects };
     void AsyncStorage.setItem(storageKey, JSON.stringify(state));
 
     if (!userId || !isSupabaseConfigured()) return;
 
     async function syncAppState() {
-      await atSyncStage('snapshot', () => writeAppStateSnapshot(supabase, userId!, state));
-      await atSyncStage('goalMirror', () => syncGoalsToBackend(goals));
+      const saved = await atSyncStage('snapshot', () => writeAppStateSnapshot(supabase, userId!, state));
+      await atSyncStage('goalMirror', () => syncGoalsToBackend(saved.goals));
     }
 
     return scheduleDomainSync('appState', syncAppState);
-  }, [appStateLoaded, appStateLoadedStorageKey, goals, habits, kodaDays, pomodoro, profile, projects, syncRetryToken, userId, syncQueueLoaded, isOnline, syncQueue, syncCoordinator]);
+  }, [appStateLoaded, appStateLoadedStorageKey, allGoals, habits, kodaDays, pomodoro, profile, projects, syncRetryToken, userId, syncQueueLoaded, isOnline, syncQueue, syncCoordinator]);
 
   useEffect(() => {
     if (!appStateLoaded || !userId || !isSupabaseConfigured()) return;
@@ -915,7 +921,17 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   async function syncGoalsToBackend(nextGoals: Goal[]) {
     if (!userId || !isSupabaseConfigured()) return;
 
-    const accountGoals = nextGoals.filter((goal) => isUuid(goal.id));
+    const deletedGoals = nextGoals.filter(goal => goal.deletedAt && isUuid(goal.id));
+    if (deletedGoals.length) {
+      await atSyncStage('goals', async () => {
+        const { error } = await (supabase as any).from('goals').upsert(deletedGoals.map(goal => ({
+          id: goal.id, user_id: userId, title: goal.title, status: 'archived',
+          archived_at: goal.deletedAt, updated_at: goal.deletedAt,
+        })), { onConflict: 'id' });
+        if (error) throw error;
+      });
+    }
+    const accountGoals = visibleGoals(nextGoals).filter((goal) => isUuid(goal.id));
     if (!accountGoals.length) return;
 
     const now = new Date().toISOString();
@@ -1245,14 +1261,16 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   function updateGoals(updater: (items: Goal[]) => Goal[]) {
     markSyncQueued('appState');
     const currentGoals = applyAutoPlanProgress(profile.autoPlan, editSources.current?.goals ?? goals);
-    const next = updater(currentGoals);
-    for (const item of autoPlan.items) {
+    const changed = recordGoalListChanges(canonicalGoals.current, updater(currentGoals), new Date().toISOString());
+    canonicalGoals.current = changed;
+    const next = visibleGoals(changed);
+    for (const item of autoPlanItems) {
       const before = currentGoals.find(g => g.id === item.goalId)?.actions.find(a => a.id === item.goalActionId);
       const after = next.find(g => g.id === item.goalId)?.actions.find(a => a.id === item.goalActionId);
       if (before && after && before.status !== after.status) autoPlan.complete(item, after.status === 'completed');
     }
     commitExplicitSources({ goals: next });
-    setGoals(next);
+    setGoals(changed);
   }
 
   function commitExplicitSources(patch: Partial<{goals:Goal[];plannerItems:PlannerItem[];projects:Project[];habits:Habit[]}>) {
@@ -1305,7 +1323,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
       const storageKey = scopedStorageKey(kodaStateStorageKey, userId);
       if (appStateLoaded && appStateLoadedStorageKey === storageKey) {
         const sources = editSources.current;
-        const state: StoredKodaState = { goals: sources?.goals ?? goals, habits: sources?.habits ?? habits, kodaDays: nextKodaDays, pomodoro, profile, projects: sources?.projects ?? projects };
+        const state: StoredKodaState = { goals: canonicalGoals.current, habits: sources?.habits ?? habits, kodaDays: nextKodaDays, pomodoro, profile, projects: sources?.projects ?? projects };
         void AsyncStorage.setItem(storageKey, JSON.stringify(state));
       }
       return nextKodaDays;
@@ -1558,7 +1576,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
     }
   }
   const widgetItems = useMemo(() => [...plannerDayItems, ...buildHabitPlannerItems(habits, localDate)], [plannerDayItems, habits, localDate]);
-  const overviewItems = useMemo(() => [...plannerDayItems, ...goalOverviewItems(effectiveGoals, localDate).filter(item => !autoPlan.items.some(auto => auto.goalId === item.goalId && auto.goalActionId === item.goalActionId))], [plannerDayItems, effectiveGoals, localDate, autoPlan.items]);
+  const overviewItems = useMemo(() => [...plannerDayItems, ...goalOverviewItems(effectiveGoals, localDate).filter(item => !autoPlanItems.some(auto => auto.goalId === item.goalId && auto.goalActionId === item.goalActionId))], [plannerDayItems, effectiveGoals, localDate, autoPlanItems]);
   useEffect(() => {
     if (!appStateLoaded || !plannerLoaded || appStateLoadedStorageKey !== scopedStorageKey(kodaStateStorageKey,userId)) return;
     const day=kodaDays.find(d=>d.localDate===localDate&&d.status==='active'&&d.plan);

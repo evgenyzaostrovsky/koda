@@ -5,7 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { escapeIcs } = require('../src/server/ics');
 const { calendarOwnerFromToken } = require('./_calendarTokens');
 const { validateBearerToken } = require('../src/server/aiSecurity');
-const { parseAutoPlanState, buildAutoPlanItems, normalizeGoal } = require('../src/server/kodaDomain.cjs');
+const { parseAutoPlanState, buildAutoPlanItems, normalizeGoal, visibleGoals, withoutDeletedGoalItems } = require('../src/server/kodaDomain.cjs');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -109,9 +109,10 @@ async function loadPlannerItems(key, startDate, days, token) {
 
   const account = await client.from('user_app_state').select('user_id,goals,profile_auto_plan:profile->autoPlan').eq('user_id', key.slice(5)).maybeSingle();
   const autoPlan = !account.error && account.data?.user_id === key.slice(5) ? parseAutoPlanState(account.data.profile_auto_plan, key.slice(5)) : undefined;
-  const goals = Array.isArray(account.data?.goals) ? account.data.goals.map(normalizeGoal).filter(Boolean) : [];
+  const allGoals = Array.isArray(account.data?.goals) ? account.data.goals.map(normalizeGoal).filter(Boolean) : [];
+  const goals = visibleGoals(allGoals);
   const today = formatIsoDate(startOfToday(autoPlan?.settings.timezone || DEFAULT_TIMEZONE));
-  const automatic = buildAutoPlanItems(autoPlan, goals, today).filter(item => item.date >= start && item.date <= end);
+  const automatic = withoutDeletedGoalItems(buildAutoPlanItems(autoPlan, goals, today), allGoals).filter(item => item.date >= start && item.date <= end);
   return [...data.map((item) => ({
     id: String(item.id),
     date: String(item.event_date),

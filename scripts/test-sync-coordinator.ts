@@ -5,6 +5,7 @@ import { SyncCoordinator, atSyncStage, syncFailureText, journalRowId, parseDelet
 import { normalizeStoredKodaState, parseStoredKodaState } from '../src/features/koda/persistence';
 import { normalizeGoal, calculateGoalProgress } from '../src/features/koda/goalLogic';
 import { kodaDayId } from '../src/features/koda/kodaDaySync';
+import { visibleGoals } from '../src/features/koda/goalDeletion';
 import { toNullableSqlDate, toLegacySqlDate, toRequiredSqlDate, RequiredSyncDateError } from '../src/features/koda/syncDate';
 import type { Project } from '../src/features/koda/types';
 
@@ -209,8 +210,8 @@ async function testGoalDatePayloads() {
     }
     payloads.set(table, structuredClone(rows)); return { error: null };
   } }) };
-  const syncGoals = new Function('userId', 'isSupabaseConfigured', 'supabase', 'isUuid', 'kodaDayId', 'calculateGoalProgress', 'atSyncStage', 'toNullableSqlDate', 'toRequiredSqlDate', `${js}; return syncGoalsToBackend;`)(
-    'owner', () => true, client, (value: string) => /^[0-9a-f-]{36}$/.test(value), kodaDayId, calculateGoalProgress, atSyncStage, toNullableSqlDate, toRequiredSqlDate,
+  const syncGoals = new Function('userId', 'isSupabaseConfigured', 'supabase', 'isUuid', 'kodaDayId', 'calculateGoalProgress', 'atSyncStage', 'toNullableSqlDate', 'toRequiredSqlDate', 'visibleGoals', `${js}; return syncGoalsToBackend;`)(
+    'owner', () => true, client, (value: string) => /^[0-9a-f-]{36}$/.test(value), kodaDayId, calculateGoalProgress, atSyncStage, toNullableSqlDate, toRequiredSqlDate, visibleGoals,
   );
   const deadlines = ['31.09', 'Ноябрь 2026', 'пока не получу оффер', '2026-02-30', '2026-11-05'];
   const goals = deadlines.map((deadline, index) => normalizeGoal({

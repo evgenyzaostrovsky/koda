@@ -8,6 +8,7 @@ import { mergeHabits } from './habitSync';
 import { normalizeHabitMetadata } from './habitModel';
 import { mergePetState, parsePetState } from './petState';
 import { mergeAutoPlans, parseAutoPlanState } from './autoPlan';
+import { mergeGoalTombstone } from './goalDeletion';
 import type { Goal, Habit, JournalEntry, KodaDay, Note, NoteBlock, NoteDocument, PlannerItem, PomodoroSettings, ProfileState, Project, ThemeId } from './types';
 import { todayDateKey } from './utils';
 
@@ -323,6 +324,8 @@ export function mergeGoals(remote: Goal[], local: Goal[]) {
   const byId = new Map<string, Goal>();
   for (const goal of [...remote, ...local]) {
     const previous = byId.get(goal.id);
+    const deleted = previous ? mergeGoalTombstone(previous, goal) : goal.deletedAt ? goal : undefined;
+    if (deleted) { byId.set(goal.id, deleted); continue; }
     const merged = previous ? mergeGoalWindows(previous, goal) : goal;
     // Older clients omit this field. Only an explicit empty string clears context.
     const planningContext = merged.planningContext ?? previous?.planningContext ?? goal.planningContext;

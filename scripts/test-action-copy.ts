@@ -225,7 +225,7 @@ async function verifyLegacyRoundtrip(backend:CopyBackend,snapshot:(goal:typeof u
 
   // Device A prepares a repair; device B clears the label after A's read.
   // The failed compare-and-swap must reread B's explicit clear and its backup.
-  backend.beforeWrite=()=>writeAppStateSnapshot(backend,'legacy',snapshot(clear));
+  backend.beforeWrite=async()=>{ await writeAppStateSnapshot(backend,'legacy',snapshot(clear)); };
   await writeAppStateSnapshot(backend,'legacy',freshDevice);
   assert.ok(backend.conflicts>0,'A real competing version must be exercised');
   assert.equal(backend.label('legacy'),'','Concurrent clear survives stale repair');

@@ -109,6 +109,7 @@ export type OpenWindow = {
 
 export type Goal = {
   id: string;
+  deletedAt?: string | null;
   title: string;
   desiredResult: string;
   planningContext?: string;

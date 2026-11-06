@@ -35,7 +35,9 @@ __export(kodaDomain_exports, {
   normalizeGoalPlanInput: () => normalizeGoalPlanInput,
   normalizeStoredKodaState: () => normalizeStoredKodaState,
   parseAutoPlanState: () => parseAutoPlanState,
-  readAiConfig: () => readAiConfig
+  readAiConfig: () => readAiConfig,
+  visibleGoals: () => visibleGoals,
+  withoutDeletedGoalItems: () => withoutDeletedGoalItems
 });
 module.exports = __toCommonJS(kodaDomain_exports);
 
@@ -403,19 +405,21 @@ function normalizeGoal(value) {
   if (!title) return null;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const deadline = typeof raw.deadline === "string" ? raw.deadline : legacyDeadline(raw.daysLeft);
+  const deletedAt = typeof raw.deletedAt === "string" && Number.isFinite(Date.parse(raw.deletedAt)) ? raw.deletedAt : null;
   return {
     id: typeof raw.id === "string" ? raw.id : uid("goal"),
+    ...deletedAt ? { deletedAt } : {},
     title,
     desiredResult: typeof raw.desiredResult === "string" ? raw.desiredResult : "",
     ...typeof raw.planningContext === "string" ? { planningContext: raw.planningContext.slice(0, 2e3) } : {},
     ...normalizeRoadmapClarifications(raw.roadmapClarifications) ? { roadmapClarifications: normalizeRoadmapClarifications(raw.roadmapClarifications) } : {},
     deadline,
     priority: isGoalPriority(raw.priority) ? raw.priority : "important",
-    status: isGoalStatus(raw.status) ? raw.status : raw.archived ? "archived" : "active",
+    status: deletedAt ? "archived" : isGoalStatus(raw.status) ? raw.status : raw.archived ? "archived" : "active",
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : now,
     completedAt: typeof raw.completedAt === "string" ? raw.completedAt : null,
-    archivedAt: typeof raw.archivedAt === "string" ? raw.archivedAt : raw.archived ? now : null,
+    archivedAt: deletedAt ?? (typeof raw.archivedAt === "string" ? raw.archivedAt : raw.archived ? now : null),
     milestones: normalizeMilestones(raw.milestones),
     actions: normalizeActions(raw.actions),
     routines: normalizeRoutines(raw.routines),
@@ -520,6 +524,15 @@ function isMetricType(value) {
 }
 function isFrequencyType(value) {
   return value === "daily" || value === "weekly" || value === "monthly" || value === "selected_weekdays";
+}
+
+// src/features/koda/goalDeletion.ts
+function visibleGoals(goals) {
+  return goals.filter((goal) => !goal.deletedAt);
+}
+function withoutDeletedGoalItems(items, goals) {
+  const deleted = new Set(goals.filter((goal) => goal.deletedAt).map((goal) => goal.id));
+  return items.filter((item) => !item.goalId || !deleted.has(item.goalId));
 }
 
 // src/features/koda/emotionJournal.ts
@@ -2500,5 +2513,7 @@ function withTimeout(promise, timeoutMs) {
   normalizeGoalPlanInput,
   normalizeStoredKodaState,
   parseAutoPlanState,
-  readAiConfig
+  readAiConfig,
+  visibleGoals,
+  withoutDeletedGoalItems
 });

@@ -1,3 +1,4 @@
+import { markGoalDeleted } from '../goalDeletion';
 import { currentGoalMilestone, nextAvailableGoalAction, nextRoadmapAction } from '../components/goalPresentation';
 import { BentoCard, BentoGrid, BentoPage, EmptyStateCard, SectionHeader } from '../components/Bento';
 import { ArrowLeft, Check, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-react-native';
@@ -230,7 +231,8 @@ function GoalDetails({ goal, userId, isDesktop = false, hasCloudSync = true, onB
   const nextActionLocation = actionMilestone ? `этапа «${actionMilestone.title}»` : actionDirection ? `направления «${actionDirection.title}»` : 'действий вне этапа';
 
   function deleteGoal() {
-    onGoalsChange((items) => items.filter((item) => item.id !== goal.id));
+    const at = new Date().toISOString();
+    onGoalsChange((items) => items.map((item) => item.id === goal.id ? markGoalDeleted(item, at) : item));
     setDeleteGoalOpen(false);
     onBack();
   }

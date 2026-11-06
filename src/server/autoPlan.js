@@ -1,4 +1,4 @@
-const { parseAutoPlanState, advanceAutoPlan, normalizeStoredKodaState } = require('./kodaDomain.cjs');
+const { parseAutoPlanState, advanceAutoPlan, normalizeStoredKodaState, visibleGoals } = require('./kodaDomain.cjs');
 
 function localPlanDate(now, timezone) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
@@ -21,7 +21,7 @@ async function advanceAccountAutoPlan(client, ownerId, now = new Date()) {
     const calendar = await client.from('planner_events').select('id,event_date,event_time,title,done').eq('owner_key', `user:${ownerId}`).eq('event_date', date);
     if (calendar.error) throw calendar.error;
     const items = (calendar.data || []).map(item => ({ id: item.id, date: item.event_date, time: item.event_time || '', title: item.title, done: item.done }));
-    const next = advanceAutoPlan(plan, state.goals, items, date, now.toISOString());
+    const next = advanceAutoPlan(plan, visibleGoals(state.goals), items, date, now.toISOString());
     if (JSON.stringify(next) === JSON.stringify(plan)) return { changed: false, reason: 'current', date };
     const updatedAt = new Date(Math.max(now.getTime(), Date.parse(row.data.updated_at) + 1)).toISOString();
     const write = await client.from('user_app_state').update({ profile: { ...row.data.profile, autoPlan: next }, updated_at: updatedAt })

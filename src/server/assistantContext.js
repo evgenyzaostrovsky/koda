@@ -32,7 +32,7 @@ async function loadAssistantContext(req, dependencies = {}) {
   const memories = memoryResult.data.map(row => normalizeAssistantMemoryRow(row, owner));
   const state = stateResult.data;
   return buildAssistantContext({ memories, state: state ? {
-    goals: state.profile_auto_plan ? applyAutoPlanProgress(parseAutoPlanState(state.profile_auto_plan, owner), Array.isArray(state.goals) ? state.goals.map(normalizeGoal).filter(Boolean) : []) : state.goals, habits: state.habits, updated_at: state.updated_at,
+    goals: state.profile_auto_plan ? applyAutoPlanProgress(parseAutoPlanState(state.profile_auto_plan, owner), Array.isArray(state.goals) ? state.goals.filter(goal => !goal?.deletedAt).map(normalizeGoal).filter(Boolean) : []) : Array.isArray(state.goals) ? state.goals.filter(goal => !goal?.deletedAt) : [], habits: state.habits, updated_at: state.updated_at,
     profile: { values: state.profile_values, futureSelf: state.profile_future_self, focus: state.profile_focus, milestone: state.profile_milestone },
   } : null });
 }

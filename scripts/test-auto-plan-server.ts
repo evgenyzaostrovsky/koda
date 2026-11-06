@@ -41,10 +41,19 @@ async function main(){
  const undone=recordAutoPlanCompletion(f.row.profile.autoPlan,f.row.profile.autoPlan.assignments[0].id,false,'2026-11-07','2026-11-07T11:00:00Z','undo-score');
  const reopened=syncExplicitSourceChanges(scored,completedGoals,applyAutoPlanProgress(undone,initialGoals),[],[]);
  assert.equal(calculatePlanScore(reopened).completedCount,0);
- const contextClient={auth:{async getUser(){return {data:{user:{id:owner}},error:null}}},from(table:string){const q:any={select(){return q},eq(){return q},order(){return q},limit(){return q},async maybeSingle(){return {data:{user_id:owner,goals:[goal],habits:[],profile_auto_plan:f.row.profile.autoPlan},error:null}},then(resolve:any,reject:any){return Promise.resolve({data:[],error:null}).then(resolve,reject)}};return q}};
+ let deletedContext = false;
+ const contextClient={auth:{async getUser(){return {data:{user:{id:owner}},error:null}}},from(table:string){const q:any={select(){return q},eq(){return q},order(){return q},limit(){return q},async maybeSingle(){return {data:{user_id:owner,goals:[deletedContext ? {...goal,deletedAt:at} : goal],habits:[],profile_auto_plan:f.row.profile.autoPlan},error:null}},then(resolve:any,reject:any){return Promise.resolve({data:[],error:null}).then(resolve,reject)}};return q}};
  const context=await loadAssistantContext({headers:{authorization:'Bearer test'}},{clientFactory:()=>contextClient});
  assert.ok(context.includes('Проверить столбец'));assert.match(context,/"actionsDone":1/);
 
+ deletedContext = true;
+ const deletedReplyContext=await loadAssistantContext({headers:{authorization:'Bearer test'}},{clientFactory:()=>contextClient});
+ assert.ok(!deletedReplyContext.includes('Учебная цель') && !deletedReplyContext.includes('Проверить столбец'), 'deleted goals must not reach assistant context');
+ const removed=fakeClient();
+ removed.row={...removed.row,goals:[{...goal,deletedAt:at}]};
+ await advanceAccountAutoPlan(removed.client,owner,new Date(at));
+ assert.equal(removed.row.profile.autoPlan.assignments.length,0,'cron must not schedule deleted goals');
+ assert.equal(removed.row.goals[0].deletedAt,at,'cron must preserve deletion markers');
  assert.equal(parseAutoPlanState(f.row.profile.autoPlan,'other'),undefined);
  const secret=process.env.CRON_SECRET;delete process.env.CRON_SECRET;
  const response:any={code:0,status(code:number){this.code=code;return this},json(_body:unknown){return this}};

@@ -130,20 +130,22 @@ export function normalizeGoal(value: unknown): Goal | null {
 
   const now = new Date().toISOString();
   const deadline = typeof raw.deadline === 'string' ? raw.deadline : legacyDeadline(raw.daysLeft);
+  const deletedAt = typeof raw.deletedAt === 'string' && Number.isFinite(Date.parse(raw.deletedAt)) ? raw.deletedAt : null;
 
   return {
     id: typeof raw.id === 'string' ? raw.id : uid('goal'),
+    ...(deletedAt ? { deletedAt } : {}),
     title,
     desiredResult: typeof raw.desiredResult === 'string' ? raw.desiredResult : '',
     ...(typeof raw.planningContext === 'string' ? { planningContext: raw.planningContext.slice(0, 2000) } : {}),
     ...(normalizeRoadmapClarifications(raw.roadmapClarifications) ? { roadmapClarifications: normalizeRoadmapClarifications(raw.roadmapClarifications) } : {}),
     deadline,
     priority: isGoalPriority(raw.priority) ? raw.priority : 'important',
-    status: isGoalStatus(raw.status) ? raw.status : raw.archived ? 'archived' : 'active',
+    status: deletedAt ? 'archived' : isGoalStatus(raw.status) ? raw.status : raw.archived ? 'archived' : 'active',
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : now,
     completedAt: typeof raw.completedAt === 'string' ? raw.completedAt : null,
-    archivedAt: typeof raw.archivedAt === 'string' ? raw.archivedAt : raw.archived ? now : null,
+    archivedAt: deletedAt ?? (typeof raw.archivedAt === 'string' ? raw.archivedAt : raw.archived ? now : null),
     milestones: normalizeMilestones(raw.milestones),
     actions: normalizeActions(raw.actions),
     routines: normalizeRoutines(raw.routines),

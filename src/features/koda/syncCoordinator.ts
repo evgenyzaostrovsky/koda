@@ -165,7 +165,7 @@ export async function writeAppStateSnapshot(client: any, userId: string, state: 
         if (!current.data && result.error.code === '23505') continue;
         throw result.error;
       }
-      if (result.data) return;
+      if (result.data) return merged;
     }
     phase = 'cas';
     throw new Error('App state changed on another device; retry required');
