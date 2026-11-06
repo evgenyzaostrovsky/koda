@@ -1,8 +1,9 @@
+import {findAccountCompletionCandidates} from './goalCompletion';
 import { recordGoalEdits, recordProjectEdits, recordProfileEdits, recordPomodoroEdits } from './entitySync';
 import { useSyncedRecords } from './useSyncedRecords';
-import { useAutoPlan } from './useAutoPlan';
+import { autoPlanLocalDate, useAutoPlan } from './useAutoPlan';
 import { visibleGoals, withoutDeletedGoalItems } from './goalDeletion';
-import { applyAutoPlanProgress } from './autoPlan';
+import { applyAutoPlanProgress, parseAutoPlanState, recordAutoPlanGoalChanges } from './autoPlan';
 import { AutoPlanControl } from './components/AutoPlanControl';
 import { habitIsDue, habitDoneOn } from './habitModel';
 import { adoptPet, customizePet, feedPet, getPetView, rebirthPet, recordPetSourceChanges, type PetAccessory, type PetSpecies, type PetState } from './petState';
@@ -840,10 +841,15 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
     const changed = recordGoalEdits(canonicalGoals.current, updater(currentGoals), new Date().toISOString());
     canonicalGoals.current = changed;
     const next = visibleGoals(changed);
-    for (const item of autoPlanItems) {
-      const before = currentGoals.find(g => g.id === item.goalId)?.actions.find(a => a.id === item.goalActionId);
-      const after = next.find(g => g.id === item.goalId)?.actions.find(a => a.id === item.goalActionId);
-      if (before && after && before.status !== after.status) autoPlan.complete(item, after.status === 'completed');
+    if (userId) {
+      const owner=userId, at=new Date().toISOString(), operationId=uid('goal-completion');
+      setProfile(current=>{
+        if(activeDataOwner.current!==owner)return current;
+        const state=parseAutoPlanState(current.autoPlan,owner);
+        if(!state)return current;
+        const updated=recordAutoPlanGoalChanges(state,currentGoals,next,autoPlanLocalDate(state.settings.timezone),at,operationId);
+        return updated===state?current:{...current,autoPlan:updated};
+      });
     }
     commitExplicitSources({ goals: next });
     setGoals(changed);
@@ -1158,7 +1164,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
       return <GoalsScreen onOpenWorkspace={()=>setActiveTab('habits')} goals={effectiveGoals} hasCloudSync={Boolean(userId) && isSupabaseConfigured()} isDesktop={isDesktopLayout} isOnline={isOnline} onGoalsChange={updateGoals} userId={userId} initialGoalId={focusedGoalId} initialDetailTab={focusedGoalView} />;
     }
     if (activeTab === 'projects') {
-      return <ProjectsScreen isDesktop={isDesktopLayout} onProjectsChange={updateProjects} projects={projects} />;
+      return <ProjectsScreen onOpenWorkspace={()=>setActiveTab('habits')} isDesktop={isDesktopLayout} onProjectsChange={updateProjects} projects={projects} />;
     }
     if (activeTab === 'notes') {
       return <NotesScreen isDesktop={isDesktopLayout} notes={notes} onNotesChange={updateNotes} saveState={notesSaveState} userId={userId ?? null} initialNoteId={focusedNoteId} />;
@@ -1211,9 +1217,9 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
       );
     }
     if (activeTab === 'progress') {
-      return <ProgressScreen completedTasks={completedTasks} goals={effectiveGoals} habitScore={habitScore} isDesktop={isDesktopLayout} totalTasks={plannerDayItems.filter(item=>!item.deletedAt).length} kodaDays={kodaDays} />;
+      return <ProgressScreen onOpenWorkspace={()=>setActiveTab('habits')} completedTasks={completedTasks} goals={effectiveGoals} habitScore={habitScore} isDesktop={isDesktopLayout} totalTasks={plannerDayItems.filter(item=>!item.deletedAt).length} kodaDays={kodaDays} />;
     }
-    return <KodaScreen key={userId || 'guest'} userId={userId} memorySuggestion={savedChat.memorySuggestion} onDismissMemorySuggestion={savedChat.clearMemorySuggestion} chat={savedChat.chat} composerValue={chatComposer.ownerId===(userId??null)?chatComposer.text:''} onComposerChange={(value)=>setChatComposer({ownerId:userId??null,text:value})} initialDraft={assistantDraft} onDraftConsumed={()=>setAssistantDraft('')} isDesktop={isDesktopLayout} onSend={savedChat.send} isSending={savedChat.busy} error={savedChat.error} provider={savedChat.provider} onRetry={savedChat.retry} retryLabel={savedChat.retryLabel} inputDisabled={savedChat.inputDisabled} historyStatus={savedChat.historyStatus} syncError={savedChat.cloudError} onSyncRetry={savedChat.retrySync} />;
+    return <KodaScreen goals={effectiveGoals} onCompleteAction={(goalId,actionId,message)=>{if(!userId||activeDataOwner.current!==userId)return;updateGoals(current=>{const match=findAccountCompletionCandidates(current,message)[0];if(match?.goalId!==goalId||match.action.id!==actionId)return current;return current.map(goal=>goal.id===goalId?{...goal,actions:goal.actions.map(action=>action.id===actionId?{...action,status:'completed' as const,completedAt:new Date().toISOString()}:action)}:goal);});}} key={userId || 'guest'} userId={userId} memorySuggestion={savedChat.memorySuggestion} onDismissMemorySuggestion={savedChat.clearMemorySuggestion} chat={savedChat.chat} composerValue={chatComposer.ownerId===(userId??null)?chatComposer.text:''} onComposerChange={(value)=>setChatComposer({ownerId:userId??null,text:value})} initialDraft={assistantDraft} onDraftConsumed={()=>setAssistantDraft('')} isDesktop={isDesktopLayout} onSend={savedChat.send} isSending={savedChat.busy} error={savedChat.error} provider={savedChat.provider} onRetry={savedChat.retry} retryLabel={savedChat.retryLabel} inputDisabled={savedChat.inputDisabled} historyStatus={savedChat.historyStatus} syncError={savedChat.cloudError} onSyncRetry={savedChat.retrySync} />;
   })();
 
   const petState = profile.pet?.ownerId === (userId ?? null) ? profile.pet : undefined;
@@ -1280,7 +1286,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
           </View>
         </View>
       </Modal>
-      <WidgetShell focused={activeTab==='planner'||activeTab==='routines'||activeTab==='goals'} key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults} onLaunchFinished={()=>setLaunchFinishedOwner(userId ?? null)}>
+      <WidgetShell focused={['planner','routines','goals','projects','progress'].includes(activeTab)} key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults} onLaunchFinished={()=>setLaunchFinishedOwner(userId ?? null)}>
         {activeTab==='habits'||activeTab==='planner'||activeTab==='routines'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
       </WidgetShell>
       {!launchPending && !petRoomOpen && !quickAddOpen && <PetWanderer name={petDisplayName} state={petLife} pose={petPose} onPress={()=>setPetRoomOpen(true)} />}

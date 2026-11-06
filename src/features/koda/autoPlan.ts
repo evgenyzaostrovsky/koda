@@ -148,6 +148,24 @@ export function recordAutoPlanCompletion(state: AutoPlanState, assignmentId: str
   if (state.completions.some(c => c.id === operationId)) return state;
   return canonical({ ...state, completions: [...state.completions, { id: operationId, assignmentId, done, date, at }] });
 }
+
+/** Bridge only an explicit goal edit, using its actual before/after snapshots.
+ * Include admitted assignments hidden by dependencies, dates or archived goals;
+ * calendar projection is not the source of truth for completion operations.
+ * Do not call during hydration/merge: stale snapshots are not explicit undo. */
+export function recordAutoPlanGoalChanges(state: AutoPlanState, before: Goal[], after: Goal[], date: string, at: string, operationId: string): AutoPlanState {
+  if (!validDate(date) || !timestamp(at) || !text(operationId)) throw new Error('Invalid auto plan goal edit');
+  let next = state;
+  for (const assignment of state.assignments) {
+    if (!admission(state, assignment.id)) continue;
+    const previous = before.find(goal => goal.id === assignment.goalId)?.actions.find(action => action.id === assignment.actionId);
+    const goal = after.find(goal => goal.id === assignment.goalId && !goal.deletedAt);
+    const action = goal?.actions.find(action => action.id === assignment.actionId);
+    if (!previous || !action || previous.status === action.status) continue;
+    next = recordAutoPlanCompletion(next, assignment.id, action.status === 'completed', date, at, `${operationId}:${encodeURIComponent(assignment.id)}`);
+  }
+  return next;
+}
 export function moveAutoPlanAssignment(state: AutoPlanState, assignmentId: string, date: string, at: string, operationId: string): AutoPlanState {
   if (!state.assignments.some(a => a.id === assignmentId) || !admission(state, assignmentId)) throw new Error('Unknown auto plan assignment');
   if (!validDate(date) || !timestamp(at) || !text(operationId)) throw new Error('Invalid auto plan date');

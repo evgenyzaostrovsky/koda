@@ -22,7 +22,8 @@ export function buildGoalPlanContext(goal:Goal,planningMethod:'otani'|'roadmap'=
       archived:Boolean(direction.archivedAt),
     })),
     goalProgress:{
-      completedActions:goal.actions.filter(action=>action.status==='completed'&&!action.archivedAt).map(action=>action.title),
+      // Archiving completed work does not make it future work again.
+      completedActions:goal.actions.filter(action=>action.status==='completed').map(action=>action.title),
       pendingActions:goal.actions.filter(action=>action.status==='pending'&&!action.archivedAt).map(action=>action.title),
       milestones:[...goal.milestones].sort((a,b)=>a.position-b.position).map(stage=>{
         if(planningMethod==='otani')return {title:stage.title,status:stage.status};

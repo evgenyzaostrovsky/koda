@@ -1,3 +1,4 @@
+import {findGoalCompletionCandidates} from '../goalCompletion';
 import {GoalDiscussion} from './GoalDiscussion';
 import {goalDiscussionContext,normalizeGoalDiscussion} from '../goalDiscussion';
 import {useEffect,useRef,useState} from 'react';
@@ -110,7 +111,7 @@ export function GoalStructureAssistant({open,goal,userId,planningMethod='roadmap
         {!!goal.desiredResult&&<Text style={styles.help}>{goal.desiredResult}</Text>}
         <Text style={styles.help}>{isOtani?'Расскажи о своей стартовой точке, времени и доступных ресурсах. KODA предложит независимые факторы и наблюдаемые действия; ты проверишь их до добавления в цель.':'Расскажи, где ты сейчас и чего уже достиг. KODA подготовит следующий план, а ты проверишь его до добавления в цель.'}</Text>
         {userId?<AssistantMemory key={userId} userId={userId}/>:null}
-        <GoalDiscussion key={`${userId}:${goal.id}`} userId={userId} goalId={goal.id} title={goal.title} desiredResult={goal.desiredResult} value={goal.assistantDiscussion} onChange={recipe=>onUpdateGoal(current=>({...current,assistantDiscussion:recipe(normalizeGoalDiscussion(current.assistantDiscussion))}))} onSuggest={()=>void suggest()} disabled={busy}/>
+        <GoalDiscussion completionGoal={goal} onCompleteAction={(_goalId,actionId,message)=>onUpdateGoal(current=>findGoalCompletionCandidates(current,message).some(action=>action.id===actionId)?{...current,actions:current.actions.map(action=>action.id===actionId?{...action,status:'completed' as const,completedAt:new Date().toISOString()}:action)}:current)} key={`${userId}:${goal.id}`} userId={userId} goalId={goal.id} title={goal.title} desiredResult={goal.desiredResult} value={goal.assistantDiscussion} onChange={recipe=>onUpdateGoal(current=>({...current,assistantDiscussion:recipe(normalizeGoalDiscussion(current.assistantDiscussion))}))} onSuggest={()=>void suggest()} disabled={busy}/>
         {!isOtani&&<Text style={styles.label}>Какую карту подготовить?</Text>}
         {!isOtani&&
         <View style={styles.scopeRow}>

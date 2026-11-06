@@ -1,5 +1,5 @@
 import { markGoalDeleted } from '../goalDeletion';
-import { currentGoalMilestone, nextAvailableGoalAction, nextRoadmapAction } from '../components/goalPresentation';
+import { compactGoalMilestones, currentGoalMilestone, nextAvailableGoalAction, nextRoadmapAction } from '../components/goalPresentation';
 import { BentoCard, BentoGrid, BentoPage, EmptyStateCard, SectionHeader } from '../components/Bento';
 import { ArrowLeft, Check, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-react-native';
 import type { ReactNode } from 'react';
@@ -81,6 +81,9 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline,
   const selectedGoal = goals.find((goal) => goal.id === selectedGoalId) ?? null;
   const activeGoals = goals.filter((goal) => goal.status === 'active');
   const averageProgress = activeGoals.length ? Math.round(activeGoals.reduce((sum, goal) => sum + calculateGoalProgress(goal), 0) / activeGoals.length) : 0;
+  const featuredGoal = !showCompleted ? sortedGoals.find((goal) => goal.status === 'active' && goal.priority === 'main') ?? activeGoals[0] : undefined;
+  const otherGoals = featuredGoal ? sortedGoals.filter((goal) => goal.id !== featuredGoal.id) : sortedGoals;
+  const nearestDeadlineGoal = activeGoals.filter((goal) => goal.deadline).sort((a, b) => (a.deadline ?? '').localeCompare(b.deadline ?? ''))[0];
 
   useEffect(() => {
     if (!initialGoalId) { lastInitialGoalId.current = null; return; }
@@ -149,10 +152,30 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline,
               <EmptyStateCard title={showCompleted ? 'Завершённых целей пока нет' : 'Пока нет целей в работе'} description={showCompleted ? 'Завершённые цели появятся здесь.' : 'Создай цель и добавь первый шаг, чтобы начать движение.'} action={!showCompleted ? <Pressable accessibilityRole="button" onPress={() => setCreateOpen(true)} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать цель</Text></Pressable> : null} />
               </View>
             ) : (
-              <BentoGrid columns={isDesktop ? 3 : 2} style={local.goalGrid}>
-                {sortedGoals.map((goal, index) => (
-                  <GoalCard key={goal.id} desktop={isDesktop} goal={goal} featured={index === 0 && goal.priority === 'main'} onPress={() => setSelectedGoalId(goal.id)} />
-                ))}
+              featuredGoal ? <View style={[local.overviewGrid, !isDesktop && local.overviewGridMobile]}>
+                  <View style={[local.overviewMain, !isDesktop && local.overviewMainMobile]}>
+                  <FeaturedGoalCard goal={featuredGoal} onPress={() => setSelectedGoalId(featuredGoal.id)} />
+                </View>
+                <View style={[local.overviewAside, !isDesktop && local.overviewAsideMobile]}>
+                  <View style={[local.goalFactTiles, !isDesktop && local.goalFactTilesCompact]}>
+                  <BentoCard tone="light" style={[local.goalFactCard, !isDesktop && local.goalFactCardCompact]}>
+                    <Text style={local.goalFactLabel}>БЛИЖАЙШИЙ СРОК</Text>
+                    <Text style={local.goalFactValue}>{nearestDeadlineGoal?.deadline ? goalDeadlineLabel(nearestDeadlineGoal.deadline) : '—'}</Text>
+                    <Text style={local.goalMeta}>{nearestDeadlineGoal ? `Цель · ${nearestDeadlineGoal.title}` : 'Сроки не заданы'}</Text>
+                  </BentoCard>
+                  <BentoCard tone="soft" style={[local.goalFactCard, !isDesktop && local.goalFactCardCompact]}>
+                    <Text style={local.goalFactLabel}>ЦЕЛИ В РАБОТЕ</Text>
+                    <Text style={local.goalFactValue}>{activeGoals.length}</Text>
+                    <Text style={local.goalMeta}>{activeGoals.length === 1 ? 'Одна активная цель' : 'Включая главную цель'}</Text>
+                  </BentoCard>
+                  </View>
+                  {otherGoals.length ? <BentoCard tone="light" style={local.goalOthersCard}>
+                    <Text style={local.goalOthersTitle}>Другие цели</Text>
+                    {otherGoals.map((goal) => <GoalListRow key={goal.id} goal={goal} onPress={() => setSelectedGoalId(goal.id)} />)}
+                  </BentoCard> : null}
+                </View>
+              </View> : <BentoGrid columns={isDesktop ? 3 : 2} style={local.goalGrid}>
+                {sortedGoals.map((goal) => <GoalCard key={goal.id} desktop={isDesktop} goal={goal} featured={false} onPress={() => setSelectedGoalId(goal.id)} />)}
               </BentoGrid>
             )}
           </View>
@@ -196,6 +219,55 @@ function GoalCard({ desktop, goal, featured, onPress }: { desktop?: boolean; goa
     </Pressable>
     </BentoCard>
   );
+}
+
+function FeaturedGoalCard({ goal, onPress }: { goal: Goal; onPress: () => void }) {
+  const compact = useWindowDimensions().width < 700;
+  const progress = calculateGoalProgress(goal);
+  const nextAction = nextAvailableGoalAction(goal);
+  const route = compactGoalMilestones(goal, 5);
+  const completedIds = new Set(goal.milestones.filter((stage) => calculateMilestoneProgress(stage, goal.actions) >= 100).map((stage) => stage.id));
+  const currentId = currentGoalMilestone(goal)?.id;
+  return <BentoCard tone="lime" style={[local.featuredOverviewCard, compact && local.featuredOverviewCardCompact]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`Открыть главную цель «${goal.title}»`} onPress={onPress} style={[local.featuredOverviewPress, compact && local.featuredOverviewPressCompact]}>
+      <View style={local.featuredOverviewTop}>
+        <View style={local.featuredOverviewText}>
+          <Text style={local.limeLabel}>{goal.priority === 'main' ? 'ГЛАВНАЯ ЦЕЛЬ' : 'В ФОКУСЕ'}{route.totalCount ? ` · ${route.completedCount} ИЗ ${route.totalCount} ЭТАПОВ` : ''}</Text>
+          <Text style={local.featuredOverviewTitle}>{goal.title}</Text>
+          <Text numberOfLines={2} style={local.limeMeta}>{goal.desiredResult || 'Результат пока не задан'}</Text>
+        </View>
+        <Text style={local.featuredOverviewPercent}>{progress}%</Text>
+      </View>
+      <View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: progress }} style={local.limeProgressTrack}>
+        <View style={[local.limeProgressFill, { width: `${progress}%` }]} />
+      </View>
+      {route.milestones.length ? <View style={[local.routeList, compact && local.routeListCompact]} accessibilityLabel="Этапы цели">
+                  {route.milestones.map((milestone, index) => <View key={milestone.id} style={[local.routeItem, compact && local.routeItemCompact]}>
+          {index > 0 ? <View style={[local.routeConnector, compact && local.routeConnectorCompact]} /> : null}
+          <View style={[local.routeDot, completedIds.has(milestone.id) && local.routeDotDone, currentId === milestone.id && local.routeDotCurrent]} />
+          <Text numberOfLines={2} style={[local.routeText, compact && local.routeTextCompact]}>{milestone.title}</Text>
+        </View>)}
+      </View> : null}
+      <View style={local.featuredNextAction}>
+        <View style={local.featuredNextText}>
+          <Text style={local.limeMeta}>{goal.deadline ? `Срок · ${goalDeadlineLabel(goal.deadline)}` : 'СЛЕДУЮЩИЙ ШАГ'}</Text>
+          <Text numberOfLines={2} style={local.limeTitle}>{nextAction ? nextAction.title : (goal.deadline ? 'Следующий шаг не задан' : 'Срок не задан · следующий шаг не задан')}</Text>
+        </View>
+        <ChevronRight color={muted} size={18} />
+      </View>
+    </Pressable>
+  </BentoCard>;
+}
+
+function GoalListRow({ goal, onPress }: { goal: Goal; onPress: () => void }) {
+  const nextAction = nextAvailableGoalAction(goal);
+  return <Pressable accessibilityRole="button" accessibilityLabel={`Открыть цель «${goal.title}»`} onPress={onPress} style={local.goalListRow}>
+    <View style={local.goalListText}>
+      <Text numberOfLines={1} style={local.goalListTitle}>{goal.title}</Text>
+      <Text numberOfLines={1} style={local.goalMeta}>{nextAction ? `Далее · ${nextAction.title}` : goal.status === 'paused' ? 'На паузе' : 'Следующий шаг не задан'}</Text>
+    </View>
+    <Text style={local.goalListPercent}>{calculateGoalProgress(goal)}%</Text>
+  </Pressable>;
 }
 
 function GoalDetails({ goal, initialDetailTab='matrix', userId, isDesktop = false, hasCloudSync = true, onBack, onGoalsChange }: { goal: Goal; initialDetailTab?: 'matrix'|'roadmap'; userId?:string|null; isDesktop?: boolean; hasCloudSync?: boolean; isOnline: boolean; onBack: () => void; onGoalsChange: GoalsChange }) {
@@ -1179,6 +1251,50 @@ const local = StyleSheet.create({
   navigationTextActive: { color: accent, fontWeight: '700' },
   desktopGoalGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, width: '100%' },
   goalGrid: { alignItems: 'stretch' },
+  overviewGrid: { alignItems: 'stretch', flexDirection: 'row', gap: 14, width: '100%' },
+  overviewGridMobile: { flexDirection: 'column' },
+  overviewMain: { flex: 1.25, minWidth: 0 },
+  overviewMainMobile: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto' },
+  overviewAside: { flex: 0.75, gap: 14, minWidth: 0 },
+  overviewAsideMobile: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto' },
+  featuredOverviewCard: { flex: 1, minHeight: 340, padding: 22 },
+  featuredOverviewCardCompact: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', minHeight: 0 },
+  featuredOverviewPress: { flex: 1, gap: 13, justifyContent: 'space-between' },
+  featuredOverviewPressCompact: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', gap: 13, justifyContent: 'flex-start' },
+  featuredOverviewTop: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
+  featuredOverviewText: { flex: 1, gap: 7, minWidth: 0 },
+  limeLabel: { color: '#435b31', fontSize: 11, fontWeight: '700', letterSpacing: 0.4, lineHeight: 15 },
+  limeMeta: { color: '#435b31', fontSize: 12, lineHeight: 17 },
+  limeTitle: { color: activeText, fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  featuredOverviewTitle: { color: activeText, fontSize: 24, fontWeight: '600', lineHeight: 29 },
+  featuredOverviewPercent: { color: activeText, fontSize: 24, fontWeight: '500', lineHeight: 30 },
+  goalFactTiles: { flexDirection: 'row', gap: 8 },
+  goalFactTilesCompact: { flexDirection: 'column' },
+  routeList: { flexDirection: 'row', gap: 4, maxWidth: '100%' },
+  routeListCompact: { flexDirection: 'column', gap: 2 },
+  routeItem: { alignItems: 'center', flex: 1, flexDirection: 'column', gap: 6, minHeight: 52, minWidth: 0, position: 'relative' },
+  routeItemCompact: { alignItems: 'flex-start', flex: 0, flexDirection: 'row', gap: 9, minHeight: 30 },
+  routeConnector: { backgroundColor: accentBorder, height: 2, left: '-50%', position: 'absolute', top: 6, width: '100%' },
+  routeConnectorCompact: { height: '100%', left: 6, top: -24, width: 2 },
+  routeDot: { backgroundColor: panel, borderColor: accentBorder, borderRadius: 99, borderWidth: 1.5, height: 14, width: 14 },
+  routeDotDone: { backgroundColor: '#435b31', borderColor: '#435b31' },
+  routeDotCurrent: { borderColor: '#435b31', borderWidth: 4 },
+  routeText: { color: '#435b31', fontSize: 11, lineHeight: 15, textAlign: 'center', width: '100%' },
+  routeTextCompact: { flex: 1, textAlign: 'left' },
+  limeProgressTrack: { backgroundColor: 'rgba(255,255,255,0.65)', borderRadius: 99, height: 8, overflow: 'hidden', width: '100%' },
+  limeProgressFill: { backgroundColor: '#435b31', borderRadius: 99, height: 8 },
+  featuredNextAction: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.55)', borderRadius: 16, flexDirection: 'row', gap: 10, justifyContent: 'space-between', minHeight: 64, paddingHorizontal: 13, paddingVertical: 10 },
+  featuredNextText: { flex: 1, gap: 3, minWidth: 0 },
+  goalFactCard: { flex: 1, gap: 7, justifyContent: 'space-between', minHeight: 128, minWidth: 0, padding: 16 },
+  goalFactCardCompact: { flexGrow: 0, flexShrink: 1, flexBasis: 'auto' },
+  goalFactLabel: { color: muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.4, lineHeight: 15 },
+  goalFactValue: { color: text, fontSize: 27, fontWeight: '600', lineHeight: 33 },
+  goalOthersCard: { gap: 3, padding: 16 },
+  goalOthersTitle: { color: text, fontSize: 15, fontWeight: '600', lineHeight: 21, marginBottom: 3 },
+  goalListRow: { alignItems: 'center', borderTopColor: line, borderTopWidth: 1, flexDirection: 'row', gap: 10, minHeight: 57, paddingVertical: 8 },
+  goalListText: { flex: 1, gap: 2, minWidth: 0 },
+  goalListTitle: { color: text, fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  goalListPercent: { backgroundColor: panelSoft, borderRadius: 10, color: text, fontSize: 12, fontWeight: '700', overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 5 },
   emptyComposition: { gap: 12 },
   goalCardShell: { minWidth: 0, maxWidth: 360, padding: 12, width: '100%' },
   featuredGoalCard: { borderColor: accentBorder, borderWidth: 1 },

@@ -1,3 +1,5 @@
+import {GoalCompletionPrompt,type CompletionMessage} from './GoalCompletionPrompt';
+import type {Goal} from '../types';
 import {useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,Platform,Pressable,StyleSheet,Text,TextInput,View} from 'react-native';
 import {MessageCircle,Paperclip,Send,X} from 'lucide-react-native';
@@ -6,8 +8,8 @@ import {assertDiscussionCapacity,goalDiscussionContext,normalizeGoalDiscussion,v
 import {uid} from '../utils';
 import {accent,activeBg,activeText,line,muted,panel,text} from '../theme';
 
-type Props={userId?:string|null;goalId?:string;title:string;desiredResult?:string;planningContext?:string;value?:GoalDiscussionData;onChange:(recipe:(data:GoalDiscussionData)=>GoalDiscussionData)=>void;onSuggest:()=>void;disabled?:boolean};
-export function GoalDiscussion({userId,goalId,title,desiredResult,planningContext,value,onChange,onSuggest,disabled}:Props){
+type Props={completionGoal?:Goal;onCompleteAction?:(goalId:string,actionId:string,message:CompletionMessage)=>void;userId?:string|null;goalId?:string;title:string;desiredResult?:string;planningContext?:string;value?:GoalDiscussionData;onChange:(recipe:(data:GoalDiscussionData)=>GoalDiscussionData)=>void;onSuggest:()=>void;disabled?:boolean};
+export function GoalDiscussion({completionGoal,onCompleteAction,userId,goalId,title,desiredResult,planningContext,value,onChange,onSuggest,disabled}:Props){
  const [expanded,setExpanded]=useState(false),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const data=normalizeGoalDiscussion(value),epoch=useRef(0),inflight=useRef(false);
  const latest=useRef({data,title,desiredResult,planningContext,userId,goalId});latest.current={data,title,desiredResult,planningContext,userId,goalId};
@@ -50,6 +52,7 @@ export function GoalDiscussion({userId,goalId,title,desiredResult,planningContex
    {data.materials.map(material=><View key={material.id} style={styles.row}><Paperclip size={15} color={muted}/><Text style={[styles.hint,{flex:1}]}>{material.name} · {material.content.length} символов</Text><Pressable accessibilityRole="button" accessibilityLabel={`Удалить материал ${material.name}`} disabled={busy} onPress={()=>remove(material.id)} style={styles.icon}><X size={16} color={muted}/></Pressable></View>)}
    {data.messages.length>12&&<Text style={styles.hint}>Показаны последние 12 сообщений. Для ответа используется недавняя беседа и материалы.</Text>}
    {data.messages.slice(-12).map(message=><View key={message.id} style={styles.message}><View style={styles.row}><Text style={styles.label}>{message.role==='user'?'Ты':'KODA'}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Удалить сообщение: ${message.content.slice(0,40)}`} disabled={busy} onPress={()=>remove(message.id)} style={styles.icon}><X size={14} color={muted}/></Pressable></View><Text selectable style={styles.copy}>{message.content}</Text></View>)}
+   {completionGoal&&<GoalCompletionPrompt goals={[completionGoal]} message={data.messages.findLast(message=>message.role==='user')} onConfirm={onCompleteAction} disabled={busy||disabled||!userId}/>}
    {!userId&&<Text style={styles.hint}>Войди в аккаунт, чтобы общаться с помощником.</Text>}
    <TextInput accessibilityLabel="Сообщение о текущей цели" multiline value={draft} onChangeText={setDraft} editable={!busy&&!disabled&&Boolean(userId)} maxLength={2000} placeholder="Где ты сейчас? Что уже сделал? Что нужно учесть?" placeholderTextColor={muted} style={styles.input}/>
    <View style={styles.row}><Pressable accessibilityRole="button" disabled={busy||disabled} onPress={attach} style={styles.action}><Paperclip size={16} color={accent}/><Text style={styles.hint}>Материалы</Text></Pressable><Text style={[styles.hint,{flex:1}]}>TXT, MD, CSV, JSON · до 16 тыс. знаков</Text><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" disabled={busy||disabled||!userId||!draft.trim()} onPress={()=>void send()} style={[styles.send,(!userId||busy||!draft.trim())&&{opacity:0.5}]}>{busy?<ActivityIndicator color={activeText}/>:<Send size={18} color={activeText}/>}</Pressable></View>

@@ -1,8 +1,8 @@
 import { changedDraftFields } from '../entitySync';
 import { RightPanel, useRightPanel } from '../components/RightPanel';
-import { Archive, Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react-native';
+import { ArrowLeft, Check, ChevronRight, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { SectionTitle } from '../components';
 import { BentoCard, BentoGrid } from '../components/Bento';
 import { accent, accentBorder, activeBg, activeText, faint, line, muted, panel, panelSoft, readingWidths, text } from '../theme';
@@ -30,10 +30,12 @@ const emptyTaskDraft: TaskDraft = { title: '', description: '', cost: '', planne
 export function ProjectsScreen({
   isDesktop = false,
   onProjectsChange,
+  onOpenWorkspace,
   projects,
 }: {
   isDesktop?: boolean;
   onProjectsChange: ProjectsChange;
+  onOpenWorkspace?: () => void;
   projects: Project[];
 }) {
   const sortedProjects = useMemo(() => projects.filter(project => project.status !== 'archived')
@@ -45,7 +47,7 @@ export function ProjectsScreen({
   const [projectListMode, setProjectListMode] = useState<'active' | 'archived'>('active');
   const [showAllProjects, setShowAllProjects] = useState(false);
   const displayedProjects = projectListMode === 'archived' ? archivedProjects : sortedProjects;
-  const previewLimit = isDesktop ? 3 : 1;
+  const previewLimit = 3;
   const previewProjects = showAllProjects ? displayedProjects : displayedProjects.slice(0, previewLimit);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(sortedProjects[0]?.id ?? null);
   const selectedProject = sortedProjects.find((project) => project.id === selectedProjectId) ?? sortedProjects[0] ?? null;
@@ -203,14 +205,11 @@ export function ProjectsScreen({
 
   return (
     <View style={local.screen}>
-      <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll, { alignSelf: 'center', flexGrow: 1, justifyContent: detailOpen?'flex-start':'center', maxWidth: 1040, width: '100%', paddingVertical:16,paddingBottom:16 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll, { alignSelf: 'center', flexGrow: 1, justifyContent: detailOpen?'flex-start':'center', maxWidth: 1100, width: '100%', paddingVertical:16,paddingBottom:16 }]} showsVerticalScrollIndicator={false}>
+        {onOpenWorkspace ? <Pressable accessibilityRole="button" onPress={onOpenWorkspace} style={local.workspaceBack}><ArrowLeft size={16} color={muted} /><Text style={local.workspaceBackText}>Рабочий стол</Text></Pressable> : null}
         <View style={local.header}>
           <SectionTitle title="Проекты" subtitle="Вещи, которые состоят из нескольких дел" />
           <View style={local.headerActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Открыть архив проектов (${archivedProjects.length})`} onPress={showArchive} style={local.archiveButton}>
-            <Archive color={accent} size={17} />
-            <Text style={local.ghostText}>Архив · {archivedProjects.length}</Text>
-          </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Создать проект" onPress={openProjectModal} style={local.addButton}>
             <Plus color={activeText} size={19} strokeWidth={3} />
           </Pressable>
@@ -218,11 +217,16 @@ export function ProjectsScreen({
         </View>
 
         {!detailOpen?<View style={{gap:14}}>
-          <Text style={local.meta}>{sortedProjects.length} активных проектов · {sortedProjects.reduce((n,p)=>n+p.tasks.filter(t=>!t.deletedAt&&t.status!=='done').length,0)} задач впереди</Text>
-          <View style={local.listTabs}><Pressable accessibilityRole="button" accessibilityState={{selected:projectListMode==='active'}} aria-pressed={projectListMode==='active'} onPress={()=>{setProjectListMode('active');setShowAllProjects(false)}} style={[local.listTab,projectListMode==='active'&&local.projectCardActive]}><Text style={local.ghostText}>Активные</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{selected:projectListMode==='archived'}} aria-pressed={projectListMode==='archived'} onPress={()=>{setProjectListMode('archived');setShowAllProjects(false)}} style={[local.listTab,projectListMode==='archived'&&local.projectCardActive]}><Text style={local.ghostText}>Архив</Text></Pressable></View>
-          <BentoGrid columns={2} style={local.projectLibraryGrid}>{previewProjects.map((project,index)=>{const tasks=project.tasks.filter(task=>!task.deletedAt),done=tasks.filter(task=>task.status==='done').length,pending=tasks.filter(task=>task.status!=='done').sort((a,b)=>(a.plannedDate||'9999').localeCompare(b.plannedDate||'9999'));const nextTask=pending[0];return <BentoCard key={project.id} tone={index===0&&projectListMode==='active'?'soft':'light'} style={[local.projectLibraryCard,previewProjects.length===1&&isDesktop&&local.singleProjectCard]}><Text style={local.projectTitle}>{project.title}</Text>{project.description&&<Text numberOfLines={2} style={local.meta}>{project.description}</Text>}{tasks.length?<><View style={local.progressTrack}><View style={[local.progressFill,{width:`${done/tasks.length*100}%`}]}/></View><Text style={local.meta}>{done} из {tasks.length} задач закрыто</Text></>:<Text style={local.meta}>Задачи пока не добавлены.</Text>}{projectListMode==='active'&&nextTask?<View style={local.projectNextTask}><Text style={local.meta}>Следующее действие</Text><Text style={local.nextTaskTitle}>{nextTask.title}</Text>{nextTask.plannedDate?<Text style={local.meta}>{nextTask.plannedDate}{nextTask.plannedTime?` · ${nextTask.plannedTime}`:''}</Text>:null}</View>:null}<Pressable accessibilityRole="button" accessibilityLabel={projectListMode==='archived'?`Вернуть проект «${project.title}»`:`Открыть проект «${project.title}»`} onPress={()=>{if(projectListMode==='archived')restoreProject(project.id);else{setSelectedProjectId(project.id);setDetailOpen(true)}}} style={local.inlineAdd}><Text style={local.inlineAddText}>{projectListMode==='archived'?'Вернуть в активные':'Открыть проект'}</Text></Pressable></BentoCard>})}</BentoGrid>
+          <Text style={local.meta}>{projectListMode === 'active' ? `${sortedProjects.length} активных проектов · ${sortedProjects.reduce((n,p)=>n+p.tasks.filter(t=>!t.deletedAt&&t.status!=='done').length,0)} задач впереди` : `${archivedProjects.length} архивных проектов`}</Text>
+          <View style={local.listTabs}><Pressable accessibilityRole="button" accessibilityState={{selected:projectListMode==='active'}} aria-pressed={projectListMode==='active'} onPress={()=>{setProjectListMode('active');setShowAllProjects(false)}} style={[local.listTab,projectListMode==='active'&&local.projectCardActive]}><Text style={[local.ghostText,projectListMode==='active'&&local.projectTabSelectedText]}>Активные</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{selected:projectListMode==='archived'}} aria-pressed={projectListMode==='archived'} onPress={()=>{setProjectListMode('archived');setShowAllProjects(false)}} style={[local.listTab,projectListMode==='archived'&&local.projectCardActive]}><Text style={[local.ghostText,projectListMode==='archived'&&local.projectTabSelectedText]}>Архив · {archivedProjects.length}</Text></Pressable></View>
+          {projectListMode === 'active' ? <ActiveProjectsOverview
+            projects={previewProjects}
+            totalCount={sortedProjects.length}
+            onCreate={openProjectModal}
+            onOpen={(project) => { setSelectedProjectId(project.id); setDetailOpen(true); }}
+          /> : <BentoGrid columns={2} style={local.projectLibraryGrid}>{previewProjects.map((project) => {const tasks=project.tasks.filter(task=>!task.deletedAt),done=tasks.filter(task=>task.status==='done').length;return <BentoCard key={project.id} tone="light" style={local.projectLibraryCard}><Text style={local.projectTitle}>{project.title}</Text>{project.description&&<Text numberOfLines={2} style={local.meta}>{project.description}</Text>}{tasks.length?<><View style={local.progressTrack}><View style={[local.progressFill,{width:`${done/tasks.length*100}%`}]}/></View><Text style={local.meta}>{done} из {tasks.length} задач закрыто</Text></>:<Text style={local.meta}>Задачи пока не добавлены.</Text>}<Pressable accessibilityRole="button" accessibilityLabel={`Вернуть проект «${project.title}»`} onPress={()=>restoreProject(project.id)} style={local.inlineAdd}><Text style={local.inlineAddText}>Вернуть в активные</Text></Pressable></BentoCard>})}</BentoGrid>}
           {displayedProjects.length>previewLimit?<Pressable accessibilityRole="button" accessibilityState={{expanded:showAllProjects}} aria-expanded={showAllProjects} onPress={()=>setShowAllProjects(value=>!value)} style={local.showAllButton}><Text style={local.showAllText}>{showAllProjects?'Свернуть список':`Все ${projectListMode==='archived'?'архивные':'активные'} проекты · ${displayedProjects.length}`}</Text></Pressable>:null}
-          {displayedProjects.length===0&&<BentoCard><Text style={local.meta}>{projectListMode==='archived'?'Архив пока пуст.':'Пока нет активных проектов. Начни с одного понятного результата.'}</Text></BentoCard>}
+          {projectListMode === 'archived' && displayedProjects.length === 0 && <BentoCard><Text style={local.meta}>Архив пока пуст.</Text></BentoCard>}
         </View>:<View><Pressable accessibilityRole="button" accessibilityLabel="К списку проектов" onPress={()=>setDetailOpen(false)} style={local.inlineAdd}><Text style={local.inlineAddText}>Все проекты</Text></Pressable>
         <View style={isDesktop ? local.desktopLayout : local.mobileLayout} testID={isDesktop ? 'desktop-page-columns' : undefined}>
           <RightPanel enabled={isDesktop}><View style={[isDesktop ? local.projectColumn : undefined, !isDesktop && { display: 'none' }]} testID={isDesktop ? 'desktop-right-column' : undefined}>
@@ -382,6 +386,58 @@ export function ProjectsScreen({
   );
 }
 
+function ActiveProjectsOverview({ projects, totalCount, onCreate, onOpen }: { projects: Project[]; totalCount: number; onCreate: () => void; onOpen: (project: Project) => void }) {
+  const compact = useWindowDimensions().width < 760;
+  const [featured, ...others] = projects;
+  if (!featured) return <BentoCard style={local.projectEmptyOverview}>
+    <Text style={local.projectTitle}>Пока нет активных проектов</Text>
+    <Text style={local.meta}>Собери связанные дела в одном месте и выбери ближайший следующий шаг.</Text>
+    <Pressable accessibilityRole="button" onPress={onCreate} style={local.inlineAdd}><Plus size={16} color={accent} /><Text style={local.inlineAddText}>Создать проект</Text></Pressable>
+  </BentoCard>;
+  const tasks = featured.tasks.filter((task) => !task.deletedAt);
+  const doneTasks = tasks.filter((task) => task.status === 'done');
+  const pendingTasks = tasks.filter((task) => task.status !== 'done').sort((a, b) => (a.plannedDate || '9999').localeCompare(b.plannedDate || '9999') || (a.plannedTime || '99:99').localeCompare(b.plannedTime || '99:99'));
+  const nextTask = pendingTasks[0];
+  const completion = tasks.length ? Math.round(doneTasks.length / tasks.length * 100) : 0;
+  return <View style={[local.activeOverview, compact && local.activeOverviewCompact]}>
+    <BentoCard tone="lime" style={[local.featuredProjectCard, compact && local.featuredProjectCardCompact]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Открыть проект «${featured.title}»`} onPress={() => onOpen(featured)} style={[local.featuredProjectPress, compact && local.featuredProjectPressCompact]}>
+        <View style={local.featuredProjectContent}>
+          <Text style={local.featuredProjectLabel}>В ФОКУСЕ · {doneTasks.length} ИЗ {tasks.length} ЗАДАЧ</Text>
+          <Text style={local.featuredProjectTitle}>{featured.title}</Text>
+          {featured.description ? <Text numberOfLines={2} style={local.featuredProjectMeta}>{featured.description}</Text> : null}
+          {tasks.length ? <><View style={local.featuredProgressTrack}><View style={[local.featuredProgressFill, { width: `${completion}%` }]} /></View><Text style={local.featuredProjectLabel}>{completion}% · закрыто {doneTasks.length} из {tasks.length} задач</Text></> : <Text style={local.featuredProjectMeta}>Задачи пока не добавлены.</Text>}
+          {doneTasks[0] || nextTask ? <View style={local.featuredTaskList}>
+            {doneTasks[0] ? <View style={local.featuredTaskRow}><View style={[local.featuredTaskMark, local.featuredTaskMarkDone]}><Check size={12} color={activeText} /></View><View style={local.featuredTaskCopy}><Text numberOfLines={1} style={local.featuredTaskTitle}>{doneTasks[0].title}</Text><Text style={local.featuredProjectMeta}>Задача завершена</Text></View></View> : null}
+            {nextTask ? <View style={local.featuredTaskRow}><View style={local.featuredTaskMark} /><View style={local.featuredTaskCopy}><Text numberOfLines={1} style={local.featuredTaskTitle}>{nextTask.title}</Text><Text style={local.featuredProjectMeta}>{nextTask.plannedDate ? `${nextTask.plannedDate}${nextTask.plannedTime ? ` · ${nextTask.plannedTime}` : ''}` : 'Ближайшее дело · срок не задан'}</Text></View></View> : null}
+          </View> : null}
+        </View>
+        <View style={local.featuredProjectOpen}><Text style={local.featuredProjectOpenText}>Открыть проект и все задачи</Text><ChevronRight size={17} color={activeText} /></View>
+      </Pressable>
+    </BentoCard>
+    <View style={[local.otherProjects, compact && local.otherProjectsCompact]}>
+      {others.map((project) => {
+        const projectTasks = project.tasks.filter((task) => !task.deletedAt);
+        const completed = projectTasks.filter((task) => task.status === 'done').length;
+        const next = projectTasks.filter((task) => task.status !== 'done').sort((a, b) => (a.plannedDate || '9999').localeCompare(b.plannedDate || '9999'))[0];
+        const percent = projectTasks.length ? Math.round(completed / projectTasks.length * 100) : 0;
+        return <BentoCard key={project.id} tone="light" style={[local.otherProjectCard, compact && local.otherProjectCardCompact]}>
+          <Text style={local.otherProjectLabel}>ПРОЕКТ · {completed}/{projectTasks.length} ДЕЛ</Text>
+          <Text numberOfLines={1} style={local.projectTitle}>{project.title}</Text>
+          <Text numberOfLines={1} style={local.meta}>{next ? `Ближайшее · ${next.title}` : projectTasks.length ? 'Все дела завершены' : 'Дела пока не добавлены'}</Text>
+          <View style={local.projectProgressTrack}><View style={[local.progressFill, { width: `${percent}%` }]} /></View>
+          <Text style={local.meta}>{percent}% готово</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Открыть проект «${project.title}»`} onPress={() => onOpen(project)} style={local.inlineAdd}><Text style={local.inlineAddText}>Открыть проект</Text></Pressable>
+        </BentoCard>;
+      })}
+      {totalCount > projects.length ? null : <BentoCard tone="light" style={[local.createProjectCard, compact && local.createProjectCardCompact]}>
+        <Text style={local.otherProjectLabel}>ЕСТЬ НОВАЯ ИДЕЯ?</Text><Text style={local.projectTitle}>Добавить проект</Text><Text style={local.meta}>Создать новый список связанных дел</Text>
+        <Pressable accessibilityRole="button" onPress={onCreate} style={local.inlineAdd}><Plus size={16} color={accent} /><Text style={local.inlineAddText}>Создать проект</Text></Pressable>
+      </BentoCard>}
+    </View>
+  </View>;
+}
+
 function ProjectModal({ draft, onChange, onClose, onSave, visible }: {
   draft: ProjectDraft;
   onChange: (draft: ProjectDraft) => void;
@@ -519,18 +575,49 @@ function formatProjectTaskSchedule(task: ProjectTask) {
 
 const local = StyleSheet.create({
   screen: { flex: 1, minHeight: 0 },
-  scroll: { gap: 16, paddingBottom: 96 },
-  desktopScroll: { alignSelf: 'center', maxWidth: readingWidths.projects, paddingBottom: 36, width: '100%' },
+  scroll: { gap: 12, paddingBottom: 96 },
+  desktopScroll: { alignSelf: 'center', maxWidth: 1100, paddingBottom: 36, width: '100%' },
+  workspaceBack: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: 6, minHeight: 36, paddingHorizontal: 4 },
+  workspaceBackText: { color: muted, fontSize: 13, fontWeight: '600' },
   header: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', width: '100%' },
   headerActions: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   archiveButton: { alignItems: 'center', flexDirection: 'row', gap: 7, borderColor: line, borderWidth: 1, borderRadius: 12, minHeight: 44, paddingHorizontal: 12 },
-  listTabs: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  listTab: { flex: 1, alignItems: 'center', justifyContent: 'center', borderColor: line, borderWidth: 1, borderRadius: 12, minHeight: 44, paddingHorizontal: 6 },
+  listTabs: { alignSelf: 'flex-start', flexDirection: 'row', gap: 8, marginBottom: 10 },
+  listTab: { alignItems: 'center', justifyContent: 'center', borderColor: line, borderWidth: 1, borderRadius: 12, minHeight: 44, paddingHorizontal: 14 },
   archiveList: { gap: 10 },
   addButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 999, height: 46, justifyContent: 'center', width: 46 },
   desktopLayout: { alignItems: 'flex-start', alignSelf: 'center', flexDirection: 'row-reverse', gap: 24, maxWidth: readingWidths.projects, width: '100%' },
   mobileLayout: { gap: 14 },
   projectLibraryGrid: { alignItems: 'flex-start' },
+  activeOverview: { alignItems: 'stretch', flexDirection: 'row', gap: 14, width: '100%' },
+  activeOverviewCompact: { flexDirection: 'column' },
+  featuredProjectCard: { flex: 0.92, minHeight: 360, minWidth: 0, padding: 22 },
+  featuredProjectCardCompact: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', minHeight: 0 },
+  featuredProjectPress: { flex: 1, gap: 14, justifyContent: 'space-between' },
+  featuredProjectPressCompact: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', justifyContent: 'flex-start' },
+  featuredProjectContent: { gap: 8 },
+  featuredProjectLabel: { color: '#435b31', fontSize: 11, fontWeight: '700', letterSpacing: 0.4, lineHeight: 15 },
+  featuredProjectMeta: { color: '#435b31', fontSize: 12, lineHeight: 17 },
+  featuredProjectTitle: { color: activeText, fontSize: 25, fontWeight: '600', lineHeight: 31 },
+  featuredProgressTrack: { backgroundColor: 'rgba(255,255,255,0.65)', borderRadius: 999, height: 8, marginTop: 6, overflow: 'hidden' },
+  featuredProgressFill: { backgroundColor: '#435b31', borderRadius: 999, height: 8 },
+  featuredTaskList: { gap: 0, marginTop: 4 },
+  featuredTaskRow: { alignItems: 'flex-start', borderTopColor: 'rgba(70,90,42,0.24)', borderTopWidth: 1, flexDirection: 'row', gap: 10, paddingVertical: 10 },
+  featuredTaskMark: { alignItems: 'center', backgroundColor: panel, borderColor: accentBorder, borderRadius: 6, borderWidth: 1, height: 19, justifyContent: 'center', marginTop: 1, width: 19 },
+  featuredTaskMarkDone: { backgroundColor: accent, borderColor: accent },
+  featuredTaskCopy: { flex: 1, gap: 2, minWidth: 0 },
+  featuredTaskTitle: { color: activeText, fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  featuredProjectOpen: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.58)', borderRadius: 15, flexDirection: 'row', gap: 8, justifyContent: 'space-between', minHeight: 46, paddingHorizontal: 13 },
+  featuredProjectOpenText: { color: activeText, fontSize: 12, fontWeight: '700' },
+  otherProjects: { flex: 1.08, flexDirection: 'row', flexWrap: 'wrap', gap: 12, minWidth: 0 },
+  otherProjectsCompact: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', flexDirection: 'column', width: '100%' },
+  otherProjectCard: { flexBasis: '47%', flexGrow: 1, gap: 7, minHeight: 180, minWidth: 0, padding: 17 },
+  otherProjectCardCompact: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', width: '100%' },
+  otherProjectLabel: { color: muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.35, lineHeight: 15 },
+  projectProgressTrack: { backgroundColor: line, borderRadius: 999, height: 6, overflow: 'hidden', width: '100%' },
+  createProjectCard: { backgroundColor: panelSoft, borderColor: line, borderRadius: 22, borderStyle: 'dashed', borderWidth: 1, gap: 8, justifyContent: 'center', minHeight: 180, padding: 17 },
+  createProjectCardCompact: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', width: '100%' },
+  projectEmptyOverview: { alignItems: 'flex-start', gap: 9, maxWidth: 600, padding: 20 },
   showAllButton: { alignSelf: 'flex-start', justifyContent: 'center', minHeight: 44, paddingHorizontal: 10 },
   showAllText: { color: accent, fontSize: 13, fontWeight: '700' },
   projectLibraryCard: { alignSelf: 'flex-start', gap: 7, maxWidth: '100%', padding: 16, width: '100%' },
@@ -545,6 +632,7 @@ const local = StyleSheet.create({
   mainEmptyState: { gap: 8, justifyContent: 'center', minHeight: 220 },
   projectCard: { backgroundColor: panel, borderColor: line, borderRadius: 22, borderWidth: 1, gap: 8, padding: 14 },
   projectCardActive: { backgroundColor: activeBg, borderColor: activeBg },
+  projectTabSelectedText: { color: activeText },
   projectTop: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
   flexText: { flex: 1, gap: 3, minWidth: 0 },
   projectTitle: { color: text, fontSize: 15, fontWeight: '700', lineHeight: 20 },

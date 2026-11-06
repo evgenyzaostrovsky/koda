@@ -9,11 +9,18 @@ export function nextAvailableGoalAction(goal: Goal, date = todayDateKey()) {
 
 function availableGoalActions(goal: Goal, date: string): GoalAction[] {
   if (goal.archivedAt || goal.status !== 'active') return [];
+  const completedIds = new Set(goal.actions.filter(action => action.status === 'completed').map(action => action.id));
+  const linkedIds = new Set<string>(), activeLinkedIds = new Set<string>();
+  for (const direction of goal.openWindow?.directions ?? []) {
+    for (const id of direction.actionIds) {
+      linkedIds.add(id);
+      if (!direction.archivedAt) activeLinkedIds.add(id);
+    }
+  }
   return goal.actions.filter(action => action.status !== 'completed' && !action.archivedAt &&
     (!action.deferredUntil || action.deferredUntil <= date) &&
-    (!(goal.openWindow?.directions.some(direction => direction.actionIds.includes(action.id))) ||
-      goal.openWindow.directions.some(direction => !direction.archivedAt && direction.actionIds.includes(action.id))) &&
-    (action.dependsOn ?? []).every(id => goal.actions.some(dependency => dependency.id === id && dependency.status === 'completed')))
+    (!linkedIds.has(action.id) || activeLinkedIds.has(action.id)) &&
+    (action.dependsOn ?? []).every(id => completedIds.has(id)))
     .sort((a, b) => sortGoalActions(a, b) || compareId(a.id, b.id));
 }
 
@@ -26,8 +33,9 @@ export function currentGoalMilestone(goal: Goal) {
 
 const compareId = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 function orderedMilestones(goal: Goal) {
+  const seen = new Set<string>();
   return [...goal.milestones].sort((a, b) => a.position - b.position || compareId(a.id, b.id))
-    .filter((stage, index, stages) => stages.findIndex(item => item.id === stage.id) === index);
+    .filter(stage => { if (seen.has(stage.id)) return false; seen.add(stage.id); return true; });
 }
 
 /** Stay inside the current stage. An empty or blocked stage needs an explicit next

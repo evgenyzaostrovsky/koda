@@ -1,9 +1,10 @@
+import {GoalCompletionPrompt,type CompletionMessage} from '../components/GoalCompletionPrompt';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Send } from 'lucide-react-native';
 import { AssistantMemory } from '../components/AssistantMemory';
 import { AssistantCorrection } from '../components/AssistantCorrection';
-import type { ChatMessage } from '../types';
+import type { ChatMessage, Goal } from '../types';
 import { SectionTitle } from '../components';
 import { BentoPage, bentoWidths } from '../components/Bento';
 import { accent, faint, ink, line, muted, panel, panelSoft, text as textColor } from '../theme';
@@ -19,6 +20,8 @@ const providerNames: Record<Exclude<KodaProvider, null>, string> = {
 };
 
 type KodaScreenProps = {
+  goals?:Goal[];
+  onCompleteAction?:(goalId:string,actionId:string,message:CompletionMessage)=>void;
   userId?: string | null;
   memorySuggestion?: string | null;
   onDismissMemorySuggestion?: () => void;
@@ -41,6 +44,7 @@ type KodaScreenProps = {
 };
 
 export function KodaScreen({
+  goals=[],onCompleteAction,
   userId,
   memorySuggestion,
   onDismissMemorySuggestion,
@@ -139,6 +143,7 @@ export function KodaScreen({
             {message.role==='koda'&&userId?<AssistantCorrection userId={userId} source="chat" before={message.text} />:null}
           </View>
         ))}
+        <GoalCompletionPrompt goals={goals} message={(()=>{const message=chat.findLast(item=>item.role==='user');return message?{role:'user',content:message.text}:undefined;})()} onConfirm={onCompleteAction} disabled={isSending||inputDisabled||!userId}/>
         {isSending && (
           <View accessibilityLiveRegion="polite" style={{ alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: 9, paddingVertical: 8 }}>
             <ActivityIndicator color={accent} size="small" />
