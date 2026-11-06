@@ -1,3 +1,4 @@
+import { recordProfileEdits } from '../src/features/koda/entitySync';
 import assert from 'node:assert/strict';
 import { defaultProfile, mergeStoredKodaState, normalizeStoredKodaState, parseStoredKodaState } from '../src/features/koda/persistence';
 import type { ThemeId } from '../src/features/koda/types';
@@ -47,6 +48,7 @@ assert.deepEqual(new Set(mergedDefault.profile.emotionEntries?.map(entry => entr
 
 for (const theme of themes) {
   const local = normalizeStoredKodaState({ profile: { ...profileFields, focus: 'Locally edited focus', themeId: theme } })!;
+  local.profile = recordProfileEdits(remote.profile, local.profile, '2026-11-06T12:00:00Z', 'theme-edit');
   const merged = parseStoredKodaState(JSON.stringify(mergeStoredKodaState(remote, local)))!;
   assert.equal(merged.profile.themeId, theme, 'A populated local profile must retain its selected theme after merge and reload');
   assert.equal(merged.profile.focus, 'Locally edited focus');
@@ -56,7 +58,10 @@ for (const theme of themes) {
 for (const [legacyTheme, expectedTheme] of [['koda-dark', 'calm-dark'], ['reference-dark', 'calm-sky-dark']] as const) {
   const legacyLocal = normalizeStoredKodaState({ profile: { ...defaultProfile, themeId: legacyTheme } })!;
   const blankRemote = normalizeStoredKodaState({ profile: defaultProfile })!;
-  assert.equal(mergeStoredKodaState(blankRemote, legacyLocal).profile.themeId, expectedTheme, 'A legacy dark preference must survive merging with a new empty profile');
+  assert.equal(legacyLocal.profile.themeId, expectedTheme, 'Legacy theme normalizes locally');
+  assert.equal(mergeStoredKodaState(blankRemote, legacyLocal).profile.themeId, blankRemote.profile.themeId, 'Unversioned stale preference must not overwrite the server');
+  legacyLocal.profile = recordProfileEdits(blankRemote.profile, legacyLocal.profile, '2026-11-06T12:00:00Z', 'explicit-legacy-theme');
+  assert.equal(mergeStoredKodaState(blankRemote, legacyLocal).profile.themeId, expectedTheme, 'An explicit selection still synchronizes');
 }
 
 console.log('Theme persistence: six palettes, legacy migration, invalid fallback, profile/history preservation, merge and reload PASS');

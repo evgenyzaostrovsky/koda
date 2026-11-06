@@ -3,6 +3,7 @@ const { signCalendarToken } = require('../api/_calendarTokens');
 const user = '123e4567-e89b-42d3-a456-426614174000';
 const secret = 'test-only-calendar-secret';
 let backendError = false;
+let plannerRows = [];
 let accountState = null;
 let clients = [];
 const auth = require('../src/server/aiSecurity');
@@ -11,7 +12,7 @@ const supabase = require('@supabase/supabase-js');
 supabase.createClient = (url, key, options) => {
   clients.push({ key, options });
   return { from(table) {
-    const query = { select(){return this},eq(field,value){ if (field === 'owner_key') assert.equal(value, `user:${user}`); if (field === 'user_id') assert.equal(value,user); return this; }, gte(){return this}, lte(){return this}, order(){return this}, maybeSingle:async()=>({data:accountState,error:null}), then(resolve){ assert.equal(table,'planner_events'); resolve(backendError ? {data:null,error:{message:'offline'}} : {data:[],error:null}); } };
+    const query = { select(){return this},eq(field,value){ if (field === 'owner_key') assert.equal(value, `user:${user}`); if (field === 'user_id') assert.equal(value,user); return this; }, gte(){return this}, lte(){return this}, order(){return this}, maybeSingle:async()=>({data:accountState,error:null}), then(resolve){ assert.equal(table,'planner_events'); resolve(backendError ? {data:null,error:{message:'offline'}} : {data:plannerRows,error:null}); } };
     return query;
   }};
 };
@@ -41,6 +42,15 @@ async function call(headers={},query={}){ const out=response();await handler({me
   accountState.goals=[{...fixtureGoal,deletedAt:stamp}];
   result=await call({authorization:'Bearer valid'});
   assert.doesNotMatch(result.body,/DeletedGoalAction/,'calendar must not export deleted goal assignments');
+  plannerRows=[{id:'stale',event_date:day,title:'DeletedManual',done:false}];
+  accountState.profile_planner={ownerId:user,domain:'planner',initialized:true,records:{stale:{value:{id:'stale',title:'DeletedManual',date:day},fields:{},deleted:{counter:1,actor:'test'}}}};
+  backendError=true;
+  result=await call({authorization:'Bearer valid'});
+  assert.equal(result.code,200,'canonical planner does not depend on stale/failed mirror');
+  assert.doesNotMatch(result.body,/DeletedManual/,'canonical tombstone excludes legacy mirror');
+  accountState.profile_planner.records.active={value:{id:'active',title:'CanonicalManual',date:day,time:'',done:false},fields:{},deleted:null};
+  result=await call({authorization:'Bearer valid'}); assert.match(result.body,/CanonicalManual/);
+  delete accountState.profile_planner;
   backendError=true; assert.equal((await call({}, {key:signCalendarToken(user,secret)})).code,503);
   console.log('PASS calendar bearer and signed links: owner isolation, service credentials, invalid links and backend failures');
 })().catch(e=>{console.error(e);process.exitCode=1});

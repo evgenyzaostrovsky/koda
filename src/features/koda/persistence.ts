@@ -1,3 +1,4 @@
+import { mergeProfiles, mergePomodoro, mergeProjectEntities, normalizeEntitySync } from './entitySync';
 import { mergeEmotionEntries, parseEmotionEntries } from './emotionJournal';
 import { defaultJournalEntry } from './constants';
 import { normalizeGoal } from './goalLogic';
@@ -60,7 +61,10 @@ export function shouldSyncRecoveredAppState(remoteValue: unknown, recovered: Sto
   const needsBackup = backup && (backup.goals.length > 0 || row?.profile?.__kodaActionCopy !== undefined)
     && !sameJsonContents(backup, row?.profile?.__kodaActionCopy);
   return !sameJsonContents(rawGoals, recovered.goals)
-    || !sameJsonContents(remote?.projects ?? [], recovered.projects) || Boolean(needsBackup);
+    || !sameJsonContents(remote?.projects ?? [], recovered.projects)
+    || !sameJsonContents(remote?.profile ?? defaultProfile, mergeProfiles(remote?.profile ?? defaultProfile, recovered.profile))
+    || !sameJsonContents(remote?.pomodoro ?? defaultPomodoroSettings, mergePomodoro(remote?.pomodoro ?? defaultPomodoroSettings, recovered.pomodoro))
+    || Boolean(needsBackup);
 }
 
 export const defaultPomodoroSettings: PomodoroSettings = {
@@ -165,7 +169,7 @@ export function mergeNotes(remoteNotes: Note[], localNotes: Note[]) {
 
 export function mergeStoredKodaState(remoteState: StoredKodaState, localState: StoredKodaState | null): StoredKodaState {
   if (!localState) return remoteState;
-  const { pet: _selectedPet, autoPlan: _selectedAutoPlan, ...profile } = isProfileEmpty(localState.profile) ? remoteState.profile : localState.profile;
+  const { pet: _selectedPet, autoPlan: _selectedAutoPlan, ...profile } = mergeProfiles(remoteState.profile, localState.profile);
   const pet = mergePetState(parsePetState(remoteState.profile.pet), parsePetState(localState.profile.pet));
   const autoPlan = mergeAutoPlans(parseAutoPlanState(remoteState.profile.autoPlan), parseAutoPlanState(localState.profile.autoPlan));
 
@@ -173,7 +177,7 @@ export function mergeStoredKodaState(remoteState: StoredKodaState, localState: S
     goals: mergeGoals(remoteState.goals, localState.goals),
     habits: mergeHabits(remoteState.habits, localState.habits),
     kodaDays: mergeKodaDays(remoteState.kodaDays, localState.kodaDays),
-    pomodoro: isDefaultPomodoroSettings(localState.pomodoro) ? remoteState.pomodoro : localState.pomodoro,
+    pomodoro: mergePomodoro(remoteState.pomodoro, localState.pomodoro),
     profile: { ...profile, emotionEntries: mergeEmotionEntries(remoteState.profile.emotionEntries, localState.profile.emotionEntries), ...(pet ? { pet } : {}), ...(autoPlan ? { autoPlan } : {}) },
     projects: mergeProjects(remoteState.projects, localState.projects),
   };
@@ -280,11 +284,7 @@ export function mergeProjects(remoteProjects: Project[], localProjects: Project[
       continue;
     }
 
-    const newerProject = timeValue(project.updatedAt) >= timeValue(existing.updatedAt) ? project : existing;
-    projectsById.set(project.id, {
-      ...newerProject,
-      tasks: mergeByUpdatedAt(existing.tasks, project.tasks),
-    });
+    projectsById.set(project.id, mergeProjectEntities(existing, project));
   }
 
   return Array.from(projectsById.values());
@@ -351,15 +351,13 @@ function timeValue(value?: string | null) {
   return Number.isNaN(time) ? 0 : time;
 }
 
-function isProfileEmpty(profile: ProfileState) {
-  return normalizeThemeId(profile.themeId) === defaultProfile.themeId && !profile.version && !profile.daysLeft && !profile.level && !profile.streak && !profile.xp && !profile.values && !profile.futureSelf && !profile.focus && !profile.milestone;
-}
 
 function normalizePomodoroSettings(value: unknown): PomodoroSettings {
   if (!value || typeof value !== 'object') return defaultPomodoroSettings;
   const settings = value as Partial<PomodoroSettings>;
 
   return {
+    ...(normalizeEntitySync(settings.syncMeta) ? { syncMeta: normalizeEntitySync(settings.syncMeta) } : {}),
     workMinutes: clampPomodoroMinutes(settings.workMinutes, defaultPomodoroSettings.workMinutes, 1, 180),
     breakMinutes: clampPomodoroMinutes(settings.breakMinutes, defaultPomodoroSettings.breakMinutes, 1, 90),
     longBreakMinutes: clampPomodoroMinutes(settings.longBreakMinutes, defaultPomodoroSettings.longBreakMinutes, 1, 120),
@@ -393,15 +391,6 @@ function getEmbeddedPomodoroSettings(profile: unknown) {
   return (profile as { __kodaPomodoro?: unknown }).__kodaPomodoro ?? null;
 }
 
-function isDefaultPomodoroSettings(settings: PomodoroSettings) {
-  return (
-    settings.workMinutes === defaultPomodoroSettings.workMinutes &&
-    settings.breakMinutes === defaultPomodoroSettings.breakMinutes &&
-    settings.longBreakMinutes === defaultPomodoroSettings.longBreakMinutes &&
-    settings.sessionsBeforeLongBreak === defaultPomodoroSettings.sessionsBeforeLongBreak &&
-    settings.soundId === defaultPomodoroSettings.soundId
-  );
-}
 
 function clampPomodoroMinutes(value: unknown, fallback: number, min: number, max: number) {
   const numeric = typeof value === 'number' ? value : Number(value);
@@ -416,10 +405,10 @@ function normalizeProfileState(value: unknown): ProfileState {
   }
   // The cloud backup is transport metadata, not editable profile state. Keeping
   // it out of local snapshots prevents a stale modern client from echoing it back.
-  const { pet: rawPet, autoPlan: rawAutoPlan, __kodaActionCopy: _actionCopy, ...profile } = value as ProfileState & { __kodaActionCopy?: unknown };
+  const { pet: rawPet, autoPlan: rawAutoPlan, __kodaActionCopy: _actionCopy, __kodaRecords: _records, syncMeta: rawSyncMeta, ...profile } = value as ProfileState & { __kodaActionCopy?: unknown; __kodaRecords?: unknown };
   const pet = parsePetState(rawPet);
   const autoPlan = parseAutoPlanState(rawAutoPlan);
-  return { ...defaultProfile, ...profile, themeId: normalizeThemeId(value.themeId), emotionEntries: parseEmotionEntries(value.emotionEntries), ...(pet ? { pet } : {}), ...(autoPlan ? { autoPlan } : {}) };
+  return { ...defaultProfile, ...profile, ...(normalizeEntitySync(rawSyncMeta) ? { syncMeta: normalizeEntitySync(rawSyncMeta) } : {}), themeId: normalizeThemeId(value.themeId), emotionEntries: parseEmotionEntries(value.emotionEntries), ...(pet ? { pet } : {}), ...(autoPlan ? { autoPlan } : {}) };
 }
 
 function normalizeThemeId(value: unknown): ThemeId {
@@ -599,6 +588,7 @@ function normalizeProject(value: unknown): Project | null {
 
   return {
     ...project,
+    ...(normalizeEntitySync(project.syncMeta) ? { syncMeta: normalizeEntitySync(project.syncMeta) } : {}),
     tasks: project.tasks.map(normalizeProjectTask).filter((task): task is Project['tasks'][number] => Boolean(task)),
   };
 }
@@ -622,6 +612,7 @@ function normalizeProjectTask(value: unknown): Project['tasks'][number] | null {
 
   return {
     ...task,
+    ...(normalizeEntitySync(task.syncMeta) ? { syncMeta: normalizeEntitySync(task.syncMeta) } : {}),
     plannedDate: typeof task.plannedDate === 'string' ? task.plannedDate : '',
     plannedTime: typeof task.plannedTime === 'string' ? task.plannedTime : '',
     deletedAt: typeof task.deletedAt === 'string' ? task.deletedAt : null,

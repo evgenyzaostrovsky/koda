@@ -6,14 +6,14 @@ export function plannerOwnerKey(userId: string) {
   return `user:${userId}`;
 }
 
-/** A cloud response without rows cannot prove that the local copy was deleted. */
+/** A failed read preserves local data; a successful empty snapshot is authoritative. */
 export function resolvePlannerPull(
   local: PlannerItem[] | null,
   remote: PlannerItem[] | null,
   pending: boolean,
   deletedIds: string[],
 ) {
-  const items = !remote?.length ? local ?? []
+  const items = remote === null ? local ?? []
     : pending && local ? mergePlannerItems(remote, local) : remote;
   return items.filter(item => !deletedIds.includes(item.id));
 }

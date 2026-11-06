@@ -1,3 +1,4 @@
+import { recordEntityFields, mergeEntityFields } from './entitySync';
 import type { Habit } from './types';
 import { defaultHabitMonth, defaultHabitYear } from './constants';
 import { getCurrentWeekDates, getHabitMonthDays, monthKey } from './utils';
@@ -74,6 +75,7 @@ export function recordHabitEdits(previous: readonly Habit[], next: readonly Habi
       ...(changed && millis(timestamp) >= millis(merged.updatedAt) ? { updatedAt: timestamp } : {}), dayEdits: edits,
       ...(Object.keys(pauseEdits).length ? { pauseEdits } : {}),
       ...(after.deletedAt ? { deletedAt: after.deletedAt } : {}) };
+    merged = recordEntityFields(before, { ...merged, archivedAt: after.archivedAt }, ['archivedAt'], timestamp, eventId);
     result.push(materialize(merged));
   }
   for (const before of previous as readonly HabitWithSync[]) {
@@ -104,7 +106,7 @@ function mergeOne(a: HabitWithSync, b: HabitWithSync): HabitWithSync {
     .sort((first, second) => millis(first) - millis(second) || compareText(first, second)).at(-1);
   const updatedAt = [a.updatedAt, b.updatedAt].filter((value): value is string => typeof value === 'string')
     .sort((first, second) => millis(first) - millis(second) || compareText(first, second)).at(-1);
-  return materialize({ ...newest, metadataUpdatedAt: metadataStamp(newest), ...(updatedAt ? { updatedAt } : {}), monthHistory: history, monthDays: history[legacyMonth],
+  return materialize({ ...mergeEntityFields(a, b, newest, ['archivedAt']), metadataUpdatedAt: metadataStamp(newest), ...(updatedAt ? { updatedAt } : {}), monthHistory: history, monthDays: history[legacyMonth],
     doneDays: Array.from({ length: 7 }, (_, index) => Boolean(a.doneDays[index] || b.doneDays[index])), dayEdits: edits,
     ...(a.pauseEdits || b.pauseEdits ? { pauseEdits: mergePauseEdits(a.pauseEdits, b.pauseEdits) } : {}),
     ...(deletedAt ? { deletedAt } : {}) });

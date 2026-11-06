@@ -9,3 +9,5 @@ export { createChatGenerator, normalizeChatInput } from '../ai/chatProvider';
 export { createGoalPlanGenerator } from '../ai/goalPlanProvider';
 export { normalizeGoalPlanInput } from '../ai/goalPlanContract';
 export { createAiProvider } from '../ai/aiProvider';
+
+export { readAccountRecordDomain, parseAccountRecordSnapshot, accountRecordValues } from '../features/koda/accountRecordSync';

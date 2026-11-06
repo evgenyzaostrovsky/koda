@@ -1,4 +1,4 @@
-const { parseAutoPlanState, advanceAutoPlan, normalizeStoredKodaState, visibleGoals } = require('./kodaDomain.cjs');
+const { parseAutoPlanState, advanceAutoPlan, normalizeStoredKodaState, visibleGoals, readAccountRecordDomain, accountRecordValues } = require('./kodaDomain.cjs');
 
 function localPlanDate(now, timezone) {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
@@ -18,9 +18,10 @@ async function advanceAccountAutoPlan(client, ownerId, now = new Date()) {
     const state = normalizeStoredKodaState(row.data);
     if (!state) throw new Error('Invalid account state');
     const date = localPlanDate(now, plan.settings.timezone);
-    const calendar = await client.from('planner_events').select('id,event_date,event_time,title,done').eq('owner_key', `user:${ownerId}`).eq('event_date', date);
+    const canonicalPlanner = readAccountRecordDomain(row.data.profile, ownerId, 'planner');
+    const calendar = canonicalPlanner ? { data: [], error: null } : await client.from('planner_events').select('id,event_date,event_time,title,done').eq('owner_key', `user:${ownerId}`).eq('event_date', date);
     if (calendar.error) throw calendar.error;
-    const items = (calendar.data || []).map(item => ({ id: item.id, date: item.event_date, time: item.event_time || '', title: item.title, done: item.done }));
+    const items = canonicalPlanner ? accountRecordValues(canonicalPlanner).filter(item => item.date === date) : (calendar.data || []).map(item => ({ id: item.id, date: item.event_date, time: item.event_time || '', title: item.title, done: item.done }));
     const next = advanceAutoPlan(plan, visibleGoals(state.goals), items, date, now.toISOString());
     if (JSON.stringify(next) === JSON.stringify(plan)) return { changed: false, reason: 'current', date };
     const updatedAt = new Date(Math.max(now.getTime(), Date.parse(row.data.updated_at) + 1)).toISOString();

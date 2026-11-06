@@ -130,15 +130,16 @@ export async function writeAppStateSnapshot(client: any, userId: string, state: 
         koda_days: merged.kodaDays,
         profile: {
           ...existingProfile,
-          ...state.profile,
+          ...merged.profile,
           emotionEntries: mergeEmotionEntries(existingProfile.emotionEntries, state.profile.emotionEntries),
           pet: mergePetState(parsePetState(existingProfile.pet, userId), state.profile.pet),
           autoPlan: mergeAutoPlans(parseAutoPlanState(existingProfile.autoPlan, userId), parseAutoPlanState(state.profile.autoPlan, userId)),
-          __kodaPomodoro: state.pomodoro,
+          __kodaPomodoro: merged.pomodoro,
           __kodaProjects: projects,
           __kodaDays: merged.kodaDays,
           __kodaActionCopy: createGoalActionCopyBackup(merged.goals, userId),
           ...(existingProfile.__kodaNotes ? { __kodaNotes: existingProfile.__kodaNotes } : {}),
+          ...(existingProfile.__kodaRecords ? { __kodaRecords: existingProfile.__kodaRecords } : {}),
         },
         updated_at: new Date().toISOString(),
       };

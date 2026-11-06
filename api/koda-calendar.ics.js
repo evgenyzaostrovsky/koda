@@ -5,7 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { escapeIcs } = require('../src/server/ics');
 const { calendarOwnerFromToken } = require('./_calendarTokens');
 const { validateBearerToken } = require('../src/server/aiSecurity');
-const { parseAutoPlanState, buildAutoPlanItems, normalizeGoal, visibleGoals, withoutDeletedGoalItems } = require('../src/server/kodaDomain.cjs');
+const { parseAutoPlanState, buildAutoPlanItems, normalizeGoal, visibleGoals, withoutDeletedGoalItems, parseAccountRecordSnapshot, accountRecordValues } = require('../src/server/kodaDomain.cjs');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -96,7 +96,11 @@ async function loadPlannerItems(key, startDate, days, token) {
   });
   const start = formatIsoDate(startDate);
   const end = formatIsoDate(addDays(startDate, days - 1));
-  const { data, error } = await client
+  const account = await client.from('user_app_state').select('user_id,goals,profile_auto_plan:profile->autoPlan,profile_planner:profile->__kodaRecords->domains->planner').eq('user_id', key.slice(5)).maybeSingle();
+  if (account.error) throw account.error;
+  if (account.data && account.data.user_id !== key.slice(5)) throw new Error('Account mismatch');
+  const canonical = parseAccountRecordSnapshot(account.data?.profile_planner, key.slice(5), 'planner');
+  const { data, error } = canonical ? {data: [], error: null} : await client
     .from('planner_events')
     .select('id, event_date, event_time, title, done')
     .eq('owner_key', key)
@@ -107,19 +111,19 @@ async function loadPlannerItems(key, startDate, days, token) {
 
   if (error || !Array.isArray(data)) throw new Error('Calendar backend unavailable');
 
-  const account = await client.from('user_app_state').select('user_id,goals,profile_auto_plan:profile->autoPlan').eq('user_id', key.slice(5)).maybeSingle();
   const autoPlan = !account.error && account.data?.user_id === key.slice(5) ? parseAutoPlanState(account.data.profile_auto_plan, key.slice(5)) : undefined;
   const allGoals = Array.isArray(account.data?.goals) ? account.data.goals.map(normalizeGoal).filter(Boolean) : [];
   const goals = visibleGoals(allGoals);
   const today = formatIsoDate(startOfToday(autoPlan?.settings.timezone || DEFAULT_TIMEZONE));
   const automatic = withoutDeletedGoalItems(buildAutoPlanItems(autoPlan, goals, today), allGoals).filter(item => item.date >= start && item.date <= end);
-  return [...data.map((item) => ({
+  const manual = canonical ? accountRecordValues(canonical).filter(item => item.date >= start && item.date <= end) : data.map((item) => ({
     id: String(item.id),
     date: String(item.event_date),
     time: item.event_time ? String(item.event_time).slice(0, 5) : '',
     title: String(item.title),
     done: Boolean(item.done),
-  })), ...automatic];
+  }));
+  return [...manual, ...automatic];
 }
 
 function createAllDayEvent({ date, description, summary, uidPrefix }) {

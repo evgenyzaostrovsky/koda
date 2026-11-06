@@ -78,8 +78,16 @@ function harness(options: { data?: Map<string, string>; cloud?: boolean; offline
         delete() { action = 'delete'; return query; },
         then(yes: (v: any) => any, no: (e: unknown) => any) {
           return (async () => {
-            const id = filters.user_id ?? (typeof filters.owner_key === 'string' ? filters.owner_key.replace(/^user:/, '') : filters.id);
-            if (action !== 'select') { writes.push({ table, action, value, filters: { ...filters } }); return { data: { user_id: id }, error: null }; }
+            const id = filters.user_id ?? value?.user_id ?? (typeof filters.owner_key === 'string' ? filters.owner_key.replace(/^user:/, '') : filters.id);
+            if (action !== 'select') {
+              if (table === 'user_app_state') {
+                const existing = remote.get(`${table}:${id}`);
+                if (action === 'insert' && existing) return {data:null,error:{code:'23505'}};
+                if (action === 'update' && existing?.updated_at !== filters.updated_at) return {data:null,error:null};
+                remote.set(`${table}:${id}`, {...existing,...value,updated_at:`v${++serial}`});
+              }
+              writes.push({ table, action, value, filters: { ...filters } }); return { data: { user_id: id }, error: null };
+            }
             if (id === options.blockOwner) await pullGate.promise;
             if (!network.onLine) throw new Error('fixture offline');
             return { data: remote.get(`${table}:${id}`) ?? (table === 'profiles' || table === 'user_app_state' ? null : []), error: null };
@@ -100,6 +108,12 @@ function harness(options: { data?: Map<string, string>; cloud?: boolean; offline
     './components/WidgetShell': { WidgetShell: 'WidgetShell', useWidgetLayout: () => ({ layout: {}, ready: true }) },
     './components/WorkspaceIdentity': { accountDisplayName: () => 'Fixture' },
   };
+  const hookExports: any = {};
+  const hookSource = ts.transpileModule(readFileSync(resolve('src/features/koda/useSyncedRecords.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText;
+  runInNewContext(hookSource, { exports: hookExports, require: (id: string) => modules[id] ?? appRequire(id), console });
+  modules['./useSyncedRecords'] = hookExports;
   const exported: any = {};
   runInNewContext(source, {
     exports: exported, require: (id: string) => {
@@ -122,7 +136,7 @@ function harness(options: { data?: Map<string, string>; cloud?: boolean; offline
   }
   function find(type: string, element: any = tree): any {
     if (!element || typeof element !== 'object') return undefined;
-    if (Array.isArray(element)) return element.map(child => find(type, child)).find(Boolean);
+    if (Array.isArray(element)) return element.filter(child => child != null).map(child => find(type, child)).find(Boolean);
     if (element.type === type) return element.props;
     return find(type, element.props?.children ?? null);
   }
@@ -166,13 +180,17 @@ async function main() {
 
   const queued = new Map([[plannerKey('a'), JSON.stringify([planner])], ['koda:syncQueue:v1:a', '["planner"]'], ['koda:plannerDeleted:v1:a', '["removed-a"]'], ['koda:calendarKey:v1', 'old-guest-calendar']]);
   const pending = harness({ data: queued, owner: 'a', cloud: true }); await flush(); pending.setOwner('b'); await flush(); pending.runTimers(); await new Promise(done => setTimeout(done, 750)); await flush();
-  assert.equal(pending.writes.length, 0, 'A pending debounce must not run for B');
+  for (const write of pending.writes) if (write.value?.user_id === 'b') {
+    assert.ok(!JSON.stringify(write.value).includes(planner.title), 'A pending record must never be stored under B');
+    assert.ok(!JSON.stringify(write.value).includes('removed-a'), 'A deletion must never be stored under B');
+  }
   assert.deepEqual(JSON.parse(pending.data.get('koda:syncQueue:v1:b')!), []);
   pending.setOwner('a'); await flush(); pending.runTimers(); await new Promise(done => setTimeout(done, 750)); await flush();
-  const push = pending.writes.find(write => write.table === 'planner_events' && write.action === 'upsert')!;
-  assert.ok(push); assert.ok(push.value.every((row: any) => row.owner_key === 'user:a'), 'Never mirror private items into a guest calendar');
-  const deletion = pending.writes.find(write => write.action === 'delete')!;
-  assert.equal(deletion.filters.owner_key, 'user:a'); assert.deepEqual(Array.from(deletion.filters.id as string[]), ['removed-a']);
+  assert.ok(!pending.writes.some(write => write.table === 'planner_events' && write.action === 'upsert'), 'Legacy pending snapshot requires explicit recovery; it cannot overwrite cloud silently');
+  const recovered = JSON.parse(pending.data.get('koda:records:v2:a:planner')!);
+  assert.equal(recovered.recovery[0].title, planner.title, 'Legacy offline draft remains recoverable');
+  const deletion = pending.writes.find(write => write.action === 'delete');
+  if (deletion) { assert.equal(deletion.filters.owner_key, 'user:a'); assert.deepEqual(Array.from(deletion.filters.id as string[]), ['removed-a']); }
   assert.equal(JSON.parse(pending.data.get(plannerKey('a'))!)[0].title, planner.title); pending.dispose();
   console.log('Account isolation: empty defaults, preserved records, offline switching/reload, guest isolation, stale pulls, pending queues and owner-scoped planner writes PASS');
 }

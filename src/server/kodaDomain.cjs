@@ -21,6 +21,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var kodaDomain_exports = {};
 __export(kodaDomain_exports, {
   ASSISTANT_CONTEXT_MEMORY_LIMIT: () => ASSISTANT_CONTEXT_MEMORY_LIMIT,
+  accountRecordValues: () => accountRecordValues,
   advanceAutoPlan: () => advanceAutoPlan,
   applyAutoPlanProgress: () => applyAutoPlanProgress,
   buildAssistantContext: () => buildAssistantContext,
@@ -34,7 +35,9 @@ __export(kodaDomain_exports, {
   normalizeGoal: () => normalizeGoal,
   normalizeGoalPlanInput: () => normalizeGoalPlanInput,
   normalizeStoredKodaState: () => normalizeStoredKodaState,
+  parseAccountRecordSnapshot: () => parseAccountRecordSnapshot,
   parseAutoPlanState: () => parseAutoPlanState,
+  readAccountRecordDomain: () => readAccountRecordDomain,
   readAiConfig: () => readAiConfig,
   visibleGoals: () => visibleGoals,
   withoutDeletedGoalItems: () => withoutDeletedGoalItems
@@ -286,6 +289,76 @@ function applyAutoPlanProgress(state, goals) {
   });
 }
 
+// src/features/koda/goalDeletion.ts
+function visibleGoals(goals) {
+  return goals.filter((goal) => !goal.deletedAt);
+}
+function withoutDeletedGoalItems(items, goals) {
+  const deleted = new Set(goals.filter((goal) => goal.deletedAt).map((goal) => goal.id));
+  return items.filter((item) => !item.goalId || !deleted.has(item.goalId));
+}
+
+// src/features/koda/entitySync.ts
+var stable = (value) => JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item) ?? "";
+var compare2 = (a, b) => Date.parse(a.at) - Date.parse(b.at) || a.id.localeCompare(b.id);
+function normalizeEntitySync(value) {
+  if (!value || typeof value !== "object") return void 0;
+  const raw = value;
+  const fields = {};
+  for (const [key, stamp] of Object.entries(raw.fields ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+    if (stamp && typeof stamp.at === "string" && Number.isFinite(Date.parse(stamp.at)) && typeof stamp.id === "string" && stamp.id)
+      Object.defineProperty(fields, key, { value: { at: new Date(stamp.at).toISOString(), id: stamp.id }, enumerable: true, configurable: true, writable: true });
+  }
+  const removed = Object.fromEntries(Object.entries(raw.removed ?? {}).filter(([, ids]) => Array.isArray(ids)).map(([key, ids]) => [key, [...new Set(ids.filter((id) => typeof id === "string"))].sort()]));
+  return Object.keys(fields).length || Object.keys(removed).length ? { fields, ...Object.keys(removed).length ? { removed } : {} } : void 0;
+}
+function mergeMeta(a, b) {
+  const first2 = normalizeEntitySync(a), second = normalizeEntitySync(b);
+  const fields = { ...first2?.fields };
+  for (const [key, stamp] of Object.entries(second?.fields ?? {})) if (!fields[key] || compare2(stamp, fields[key]) > 0) fields[key] = stamp;
+  const removed = Object.fromEntries([.../* @__PURE__ */ new Set([...Object.keys(first2?.removed ?? {}), ...Object.keys(second?.removed ?? {})])].sort().map((key) => [key, [.../* @__PURE__ */ new Set([...first2?.removed?.[key] ?? [], ...second?.removed?.[key] ?? []])].sort()]));
+  return normalizeEntitySync({ fields, removed }) ?? { fields: {} };
+}
+function mergeEntityFields(a, b, fallback, keys) {
+  const first2 = normalizeEntitySync(a.syncMeta), second = normalizeEntitySync(b.syncMeta);
+  const output = { ...fallback };
+  for (const key of keys) {
+    const av = first2?.fields[key], bv = second?.fields[key];
+    if (!av && !bv) continue;
+    const order2 = av && bv ? compare2(av, bv) : av ? 1 : -1;
+    const winner = order2 > 0 ? a : order2 < 0 ? b : stable(a[key]) >= stable(b[key]) ? a : b;
+    if (Object.hasOwn(winner, key)) output[key] = winner[key];
+    else delete output[key];
+  }
+  const syncMeta = normalizeEntitySync(mergeMeta(first2, second));
+  return { ...output, ...syncMeta ? { syncMeta } : {} };
+}
+var projectFields = ["title", "description", "status", "completedAt"];
+var childKeys = (a, b) => [.../* @__PURE__ */ new Set([...Object.keys(a), ...Object.keys(b ?? {})])].filter((k) => !["id", "syncMeta", "createdAt", "updatedAt", "deletedAt"].includes(k));
+function newest(a, b) {
+  return (a.updatedAt ?? "").localeCompare(b.updatedAt ?? "") > 0 ? a : (a.updatedAt ?? "") === (b.updatedAt ?? "") && stable(a) > stable(b) ? a : b;
+}
+function mergeEntityList(a, b, removed = []) {
+  const map = new Map(a.map((item) => [item.id, item]));
+  for (const item of b) {
+    const previous = map.get(item.id);
+    if (!previous) {
+      map.set(item.id, item);
+      continue;
+    }
+    const deleted = previous.deletedAt || item.deletedAt;
+    map.set(item.id, {
+      ...mergeEntityFields(previous, item, previous.updatedAt || item.updatedAt ? newest(previous, item) : item, childKeys(previous, item)),
+      ...deleted ? { deletedAt: [previous.deletedAt, item.deletedAt].filter(Boolean).sort().at(-1) } : {}
+    });
+  }
+  const removedIds = new Set(removed);
+  return [...map.values()].filter((item) => !removedIds.has(item.id)).sort((a2, b2) => a2.id.localeCompare(b2.id));
+}
+function mergeProjectEntities(a, b) {
+  return { ...mergeEntityFields(a, b, newest(a, b), projectFields), tasks: mergeEntityList(a.tasks, b.tasks) };
+}
+
 // src/features/koda/utils.ts
 var defaultHabitMonth = 6;
 var defaultHabitYear = 2026;
@@ -338,17 +411,19 @@ function normalizeOpenWindow(value, goalId) {
     if (!item || typeof item !== "object") return fallback;
     const id = typeof item.id === "string" && !seen.has(item.id) ? item.id : fallback.id;
     seen.add(id);
-    return { id, position: i, title: typeof item.title === "string" ? item.title.slice(0, 300) : "", actionIds: ids(item.actionIds), routineIds: ids(item.routineIds), archivedAt: typeof item.archivedAt === "string" ? item.archivedAt : null };
+    return { ...normalizeEntitySync(item.syncMeta) ? { syncMeta: normalizeEntitySync(item.syncMeta) } : {}, id, position: i, title: typeof item.title === "string" ? item.title.slice(0, 300) : "", actionIds: ids(item.actionIds), routineIds: ids(item.routineIds), archivedAt: typeof item.archivedAt === "string" ? item.archivedAt : null };
   });
   base.history = Array.isArray(raw.history) ? raw.history.filter((h) => h && typeof h.id === "string" && typeof h.at === "string" && Array.isArray(h.directions)) : [];
   base.conflicts = Array.isArray(raw.conflicts) ? raw.conflicts.filter((h) => h && typeof h.id === "string" && Array.isArray(h.directions)) : [];
+  base.resolvedConflictIds = Array.isArray(raw.resolvedConflictIds) ? [...new Set(raw.resolvedConflictIds.filter((id) => typeof id === "string"))].sort() : [];
+  base.conflicts = base.conflicts.filter((item) => !base.resolvedConflictIds.includes(item.id));
   return base;
 }
 
 // src/features/koda/goalRoadmapClarifications.ts
 var contextKey = (context) => JSON.stringify([context.goalId, context.title, context.desiredResult]);
 var lexical = (a, b) => a < b ? -1 : a > b ? 1 : 0;
-var compare2 = (a, b) => a.clock - b.clock || lexical(a.at, b.at) || lexical(a.id, b.id);
+var compare3 = (a, b) => a.clock - b.clock || lexical(a.at, b.at) || lexical(a.id, b.id);
 var isRecord = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
 var isStamp = (value) => typeof value.id === "string" && Boolean(value.id) && Number.isSafeInteger(value.clock) && Number(value.clock) > 0 && typeof value.at === "string" && Number.isFinite(Date.parse(value.at));
 function unique2(items) {
@@ -357,7 +432,7 @@ function unique2(items) {
     const prior = result.get(item.id);
     if (!prior || JSON.stringify(item) > JSON.stringify(prior)) result.set(item.id, item);
   }
-  return [...result.values()].sort(compare2);
+  return [...result.values()].sort(compare3);
 }
 function compact(state) {
   const clears = /* @__PURE__ */ new Map();
@@ -373,7 +448,7 @@ function compact(state) {
     const live = items.filter((item) => !item.deleted && item.clock > (deleted?.clock ?? 0)).slice(-8);
     return deleted ? [deleted, ...live] : live;
   });
-  return { version: 1, edits: edits.sort(compare2), clears: [...clears.values()].sort(compare2) };
+  return { version: 1, edits: edits.sort(compare3), clears: [...clears.values()].sort(compare3) };
 }
 function normalizeRoadmapClarifications(value) {
   if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.edits) || !Array.isArray(value.clears)) return void 0;
@@ -406,7 +481,10 @@ function normalizeGoal(value) {
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const deadline = typeof raw.deadline === "string" ? raw.deadline : legacyDeadline(raw.daysLeft);
   const deletedAt = typeof raw.deletedAt === "string" && Number.isFinite(Date.parse(raw.deletedAt)) ? raw.deletedAt : null;
+  const syncMeta = normalizeEntitySync(raw.syncMeta);
+  const retained = (collection, id) => !syncMeta?.removed?.[collection]?.includes(id);
   return {
+    ...syncMeta ? { syncMeta } : {},
     id: typeof raw.id === "string" ? raw.id : uid("goal"),
     ...deletedAt ? { deletedAt } : {},
     title,
@@ -420,10 +498,10 @@ function normalizeGoal(value) {
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : now,
     completedAt: typeof raw.completedAt === "string" ? raw.completedAt : null,
     archivedAt: deletedAt ?? (typeof raw.archivedAt === "string" ? raw.archivedAt : raw.archived ? now : null),
-    milestones: normalizeMilestones(raw.milestones),
-    actions: normalizeActions(raw.actions),
-    routines: normalizeRoutines(raw.routines),
-    routineLogs: normalizeRoutineLogs(raw.routineLogs),
+    milestones: normalizeMilestones(raw.milestones).filter((item) => retained("milestones", item.id)),
+    actions: normalizeActions(raw.actions).filter((item) => retained("actions", item.id)),
+    routines: normalizeRoutines(raw.routines).filter((item) => retained("routines", item.id)),
+    routineLogs: normalizeRoutineLogs(raw.routineLogs).filter((item) => retained("routineLogs", item.id) && retained("routines", item.routineId)),
     openWindow: normalizeOpenWindow(raw.openWindow, typeof raw.id === "string" ? raw.id : "legacy")
   };
 }
@@ -434,6 +512,7 @@ function normalizeMilestones(value) {
     const raw = item;
     if (typeof raw.title !== "string" || !raw.title.trim()) return null;
     return {
+      ...normalizeEntitySync(raw.syncMeta) ? { syncMeta: normalizeEntitySync(raw.syncMeta) } : {},
       id: typeof raw.id === "string" ? raw.id : uid("milestone"),
       title: raw.title.trim(),
       description: typeof raw.description === "string" ? raw.description : "",
@@ -451,6 +530,7 @@ function normalizeActions(value) {
     const raw = item;
     if (typeof raw.title !== "string" || !raw.title.trim()) return null;
     return {
+      ...normalizeEntitySync(raw.syncMeta) ? { syncMeta: normalizeEntitySync(raw.syncMeta) } : {},
       id: typeof raw.id === "string" ? raw.id : uid("goal-action"),
       title: raw.title.trim(),
       ...typeof raw.shortTitle === "string" && raw.shortTitle.trim().length <= 48 ? { shortTitle: raw.shortTitle.trim() } : {},
@@ -475,6 +555,7 @@ function normalizeRoutines(value) {
     const raw = item;
     if (typeof raw.title !== "string" || !raw.title.trim()) return null;
     return {
+      ...normalizeEntitySync(raw.syncMeta) ? { syncMeta: normalizeEntitySync(raw.syncMeta) } : {},
       id: typeof raw.id === "string" ? raw.id : uid("goal-routine"),
       title: raw.title.trim(),
       metricType: isMetricType(raw.metricType) ? raw.metricType : "boolean",
@@ -495,6 +576,7 @@ function normalizeRoutineLogs(value) {
     if (typeof raw.routineId !== "string" || typeof raw.date !== "string") return null;
     const now = (/* @__PURE__ */ new Date()).toISOString();
     return {
+      ...normalizeEntitySync(raw.syncMeta) ? { syncMeta: normalizeEntitySync(raw.syncMeta) } : {},
       id: typeof raw.id === "string" ? raw.id : uid("goal-routine-log"),
       routineId: raw.routineId,
       date: raw.date,
@@ -524,15 +606,6 @@ function isMetricType(value) {
 }
 function isFrequencyType(value) {
   return value === "daily" || value === "weekly" || value === "monthly" || value === "selected_weekdays";
-}
-
-// src/features/koda/goalDeletion.ts
-function visibleGoals(goals) {
-  return goals.filter((goal) => !goal.deletedAt);
-}
-function withoutDeletedGoalItems(items, goals) {
-  const deleted = new Set(goals.filter((goal) => goal.deletedAt).map((goal) => goal.id));
-  return items.filter((item) => !item.goalId || !deleted.has(item.goalId));
 }
 
 // src/features/koda/emotionJournal.ts
@@ -724,7 +797,7 @@ function mergeHabits(remote, local) {
   return [...byId.values()].sort((a, b) => compareText3(a.id, b.id));
 }
 function mergeOne(a, b) {
-  const newest = compareHabitMetadata(a, b) >= 0 ? a : b;
+  const newest2 = compareHabitMetadata(a, b) >= 0 ? a : b;
   const keys = /* @__PURE__ */ new Set([legacyMonth, ...Object.keys(a.monthHistory ?? {}), ...Object.keys(b.monthHistory ?? {})]);
   const history = {};
   for (const key of [...keys].filter(validMonth).sort(compareText3)) {
@@ -744,8 +817,8 @@ function mergeOne(a, b) {
   const deletedAt = [a.deletedAt, b.deletedAt].filter((value) => typeof value === "string" && Boolean(value)).sort((first2, second) => millis(first2) - millis(second) || compareText3(first2, second)).at(-1);
   const updatedAt = [a.updatedAt, b.updatedAt].filter((value) => typeof value === "string").sort((first2, second) => millis(first2) - millis(second) || compareText3(first2, second)).at(-1);
   return materialize({
-    ...newest,
-    metadataUpdatedAt: metadataStamp(newest),
+    ...mergeEntityFields(a, b, newest2, ["archivedAt"]),
+    metadataUpdatedAt: metadataStamp(newest2),
     ...updatedAt ? { updatedAt } : {},
     monthHistory: history,
     monthDays: history[legacyMonth],
@@ -896,7 +969,7 @@ function union2(a, b) {
   const result = /* @__PURE__ */ new Map();
   for (const value of [...a, ...b]) {
     const old = result.get(value.id);
-    if (old && stable(old) !== stable(value)) throw new Error("Pet event id reused with different contents");
+    if (old && stable2(old) !== stable2(value)) throw new Error("Pet event id reused with different contents");
     result.set(value.id, cloneJson(value));
   }
   return [...result.values()];
@@ -904,9 +977,9 @@ function union2(a, b) {
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
-function stable(value) {
-  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-  if (object2(value)) return `{${Object.keys(value).sort(compareText4).map((k) => `${JSON.stringify(k)}:${stable(value[k])}`).join(",")}}`;
+function stable2(value) {
+  if (Array.isArray(value)) return `[${value.map(stable2).join(",")}]`;
+  if (object2(value)) return `{${Object.keys(value).sort(compareText4).map((k) => `${JSON.stringify(k)}:${stable2(value[k])}`).join(",")}}`;
   return JSON.stringify(value);
 }
 function compareText4(a, b) {
@@ -989,19 +1062,6 @@ function normalizeStoredKodaState(value) {
   const projects = mergeProjects(normalizeProjectList(embeddedProjects) ?? [], normalizeProjectList(state.projects) ?? []);
   return { goals, habits, kodaDays, pomodoro, profile, projects };
 }
-function mergeByUpdatedAt(remoteItems, localItems) {
-  const itemsById = /* @__PURE__ */ new Map();
-  for (const item of remoteItems) {
-    itemsById.set(item.id, item);
-  }
-  for (const item of localItems) {
-    const existing = itemsById.get(item.id);
-    if (!existing || timeValue(item.updatedAt) >= timeValue(existing.updatedAt)) {
-      itemsById.set(item.id, item);
-    }
-  }
-  return Array.from(itemsById.values());
-}
 function mergeProjects(remoteProjects, localProjects) {
   const projectsById = /* @__PURE__ */ new Map();
   for (const project of remoteProjects) {
@@ -1013,11 +1073,7 @@ function mergeProjects(remoteProjects, localProjects) {
       projectsById.set(project.id, project);
       continue;
     }
-    const newerProject = timeValue(project.updatedAt) >= timeValue(existing.updatedAt) ? project : existing;
-    projectsById.set(project.id, {
-      ...newerProject,
-      tasks: mergeByUpdatedAt(existing.tasks, project.tasks)
-    });
+    projectsById.set(project.id, mergeProjectEntities(existing, project));
   }
   return Array.from(projectsById.values());
 }
@@ -1034,8 +1090,8 @@ function mergeKodaDays(remoteDays, localDays) {
       daysByKey.set(key, day);
       continue;
     }
-    const newest = timeValue(day.updatedAt) >= timeValue(existing.updatedAt) ? day : existing;
-    const winner = existing.status === "completed" && day.status !== "completed" ? existing : day.status === "completed" && existing.status !== "completed" ? day : newest;
+    const newest2 = timeValue(day.updatedAt) >= timeValue(existing.updatedAt) ? day : existing;
+    const winner = existing.status === "completed" && day.status !== "completed" ? existing : day.status === "completed" && existing.status !== "completed" ? day : newest2;
     const a = parseDayPlanState(existing.plan), b = parseDayPlanState(day.plan);
     const plan = a && b ? mergeDayPlans(a, b) : a ?? b;
     daysByKey.set(key, plan ? { ...winner, plan } : winner);
@@ -1056,6 +1112,7 @@ function normalizePomodoroSettings(value) {
   if (!value || typeof value !== "object") return defaultPomodoroSettings;
   const settings = value;
   return {
+    ...normalizeEntitySync(settings.syncMeta) ? { syncMeta: normalizeEntitySync(settings.syncMeta) } : {},
     workMinutes: clampPomodoroMinutes(settings.workMinutes, defaultPomodoroSettings.workMinutes, 1, 180),
     breakMinutes: clampPomodoroMinutes(settings.breakMinutes, defaultPomodoroSettings.breakMinutes, 1, 90),
     longBreakMinutes: clampPomodoroMinutes(settings.longBreakMinutes, defaultPomodoroSettings.longBreakMinutes, 1, 120),
@@ -1080,10 +1137,10 @@ function normalizeProfileState(value) {
     const autoPlan2 = value && typeof value === "object" ? parseAutoPlanState(value.autoPlan) : void 0;
     return autoPlan2 ? { ...defaultProfile, autoPlan: autoPlan2 } : defaultProfile;
   }
-  const { pet: rawPet, autoPlan: rawAutoPlan, __kodaActionCopy: _actionCopy, ...profile } = value;
+  const { pet: rawPet, autoPlan: rawAutoPlan, __kodaActionCopy: _actionCopy, __kodaRecords: _records, syncMeta: rawSyncMeta, ...profile } = value;
   const pet = parsePetState(rawPet);
   const autoPlan = parseAutoPlanState(rawAutoPlan);
-  return { ...defaultProfile, ...profile, themeId: normalizeThemeId(value.themeId), emotionEntries: parseEmotionEntries(value.emotionEntries), ...pet ? { pet } : {}, ...autoPlan ? { autoPlan } : {} };
+  return { ...defaultProfile, ...profile, ...normalizeEntitySync(rawSyncMeta) ? { syncMeta: normalizeEntitySync(rawSyncMeta) } : {}, themeId: normalizeThemeId(value.themeId), emotionEntries: parseEmotionEntries(value.emotionEntries), ...pet ? { pet } : {}, ...autoPlan ? { autoPlan } : {} };
 }
 function normalizeThemeId(value) {
   if (value === "koda-dark") return "calm-dark";
@@ -1131,6 +1188,7 @@ function normalizeProject(value) {
   }
   return {
     ...project,
+    ...normalizeEntitySync(project.syncMeta) ? { syncMeta: normalizeEntitySync(project.syncMeta) } : {},
     tasks: project.tasks.map(normalizeProjectTask).filter((task) => Boolean(task))
   };
 }
@@ -1142,6 +1200,7 @@ function normalizeProjectTask(value) {
   }
   return {
     ...task,
+    ...normalizeEntitySync(task.syncMeta) ? { syncMeta: normalizeEntitySync(task.syncMeta) } : {},
     plannedDate: typeof task.plannedDate === "string" ? task.plannedDate : "",
     plannedTime: typeof task.plannedTime === "string" ? task.plannedTime : "",
     deletedAt: typeof task.deletedAt === "string" ? task.deletedAt : null
@@ -2496,9 +2555,50 @@ function withTimeout(promise, timeoutMs) {
     });
   });
 }
+
+// src/features/koda/accountRecordSync.ts
+var namespaceKey = "__kodaRecords";
+var own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+var object3 = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+var clone = (value) => JSON.parse(JSON.stringify(value));
+var validVersion2 = (value) => object3(value) && Number.isSafeInteger(value.counter) && value.counter >= 0 && typeof value.actor === "string" && value.actor.length > 0;
+function assertOwner(ownerId) {
+  if (!ownerId) throw new Error("Record synchronization requires an account");
+}
+function readNamespace(profile, ownerId) {
+  assertOwner(ownerId);
+  if (!object3(profile) || !own(profile, namespaceKey)) return null;
+  const namespace = profile[namespaceKey];
+  if (!object3(namespace) || namespace.version !== 1 || namespace.ownerId !== ownerId || !object3(namespace.domains)) {
+    throw new Error("Invalid or foreign account record namespace");
+  }
+  return namespace;
+}
+function readAccountRecordDomain(profile, ownerId, domain) {
+  const namespace = readNamespace(profile, ownerId);
+  if (!namespace || !own(namespace.domains, domain)) return null;
+  const snapshot = namespace.domains[domain];
+  if (!object3(snapshot) || snapshot.ownerId !== ownerId || snapshot.domain !== domain || snapshot.initialized !== true || !object3(snapshot.records)) {
+    throw new Error("Invalid account record snapshot");
+  }
+  for (const [id, entry] of Object.entries(snapshot.records)) {
+    if (!object3(entry) || !object3(entry.value) || entry.value.id !== id || !object3(entry.fields) || !(entry.deleted === null || validVersion2(entry.deleted)) || !Object.values(entry.fields).every(validVersion2)) {
+      throw new Error("Invalid account record metadata");
+    }
+  }
+  return clone(snapshot);
+}
+function accountRecordValues(snapshot) {
+  return Object.values(snapshot.records).filter((entry) => !entry.deleted).map((entry) => clone(entry.value));
+}
+function parseAccountRecordSnapshot(raw, ownerId, domain) {
+  if (raw === null || raw === void 0) return null;
+  return readAccountRecordDomain({ [namespaceKey]: { version: 1, ownerId, domains: { [domain]: raw } } }, ownerId, domain);
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   ASSISTANT_CONTEXT_MEMORY_LIMIT,
+  accountRecordValues,
   advanceAutoPlan,
   applyAutoPlanProgress,
   buildAssistantContext,
@@ -2512,7 +2612,9 @@ function withTimeout(promise, timeoutMs) {
   normalizeGoal,
   normalizeGoalPlanInput,
   normalizeStoredKodaState,
+  parseAccountRecordSnapshot,
   parseAutoPlanState,
+  readAccountRecordDomain,
   readAiConfig,
   visibleGoals,
   withoutDeletedGoalItems

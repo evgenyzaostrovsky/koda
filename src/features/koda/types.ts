@@ -11,7 +11,10 @@ export type GoalActionImportance = 'normal' | 'key';
 export type GoalRoutineMetricType = 'boolean' | 'minutes' | 'count';
 export type GoalRoutineFrequencyType = 'daily' | 'weekly' | 'monthly' | 'selected_weekdays';
 
+export type EntitySync = { fields: Record<string, { at: string; id: string }>; removed?: Record<string, string[]> };
+
 export type GoalMilestone = {
+  syncMeta?: EntitySync;
   id: string;
   title: string;
   description: string;
@@ -22,6 +25,7 @@ export type GoalMilestone = {
 };
 
 export type GoalAction = {
+  syncMeta?: EntitySync;
   id: string;
   title: string;
   shortTitle?: string;
@@ -39,6 +43,7 @@ export type GoalAction = {
 };
 
 export type GoalRoutine = {
+  syncMeta?: EntitySync;
   id: string;
   title: string;
   metricType: GoalRoutineMetricType;
@@ -51,6 +56,7 @@ export type GoalRoutine = {
 };
 
 export type GoalRoutineLog = {
+  syncMeta?: EntitySync;
   id: string;
   routineId: string;
   date: string;
@@ -85,6 +91,7 @@ export type KodaDay = {
 };
 
 export type OpenWindowDirection = {
+  syncMeta?: EntitySync;
   id: string;
   title: string;
   position: number;
@@ -105,9 +112,11 @@ export type OpenWindow = {
   directions: OpenWindowDirection[];
   history: OpenWindowChange[];
   conflicts?: OpenWindowChange[];
+  resolvedConflictIds?: string[];
 };
 
 export type Goal = {
+  syncMeta?: EntitySync;
   id: string;
   deletedAt?: string | null;
   title: string;
@@ -129,7 +138,7 @@ export type Goal = {
 };
 /** Local civil day events; a resume on a day makes that day scheduled again. */
 export type HabitPauseEdit = { paused: boolean; at: string; id: string };
-export type Habit = { id: string; title: string; target: string; doneDays: boolean[]; monthDays: boolean[]; monthHistory: Record<string, boolean[]>; icon?: string; color?: string; frequency?: 'daily' | 'weekdays'; weekdays?: number[]; isActive?: boolean; createdDate?: string; archivedAt?: string | null; pauseEdits?: Record<string, HabitPauseEdit>; metadataUpdatedAt?: string; updatedAt?: string; deletedAt?: string | null; dayEdits?: Record<string, {done:boolean;at:string;id:string}> };
+export type Habit = { syncMeta?: EntitySync; id: string; title: string; target: string; doneDays: boolean[]; monthDays: boolean[]; monthHistory: Record<string, boolean[]>; icon?: string; color?: string; frequency?: 'daily' | 'weekdays'; weekdays?: number[]; isActive?: boolean; createdDate?: string; archivedAt?: string | null; pauseEdits?: Record<string, HabitPauseEdit>; metadataUpdatedAt?: string; updatedAt?: string; deletedAt?: string | null; dayEdits?: Record<string, {done:boolean;at:string;id:string}> };
 export type Task = { id: string; title: string; detail: string; done: boolean };
 export type PlannerSubtask = { id: string; title: string; done: boolean };
 export type PlannerSourceType = 'planner' | 'goal' | 'project' | 'recurring';
@@ -154,6 +163,7 @@ export type PlannerItem = {
 };
 export type ProjectTaskStatus = 'todo' | 'done';
 export type ProjectTask = {
+  syncMeta?: EntitySync;
   id: string;
   title: string;
   description: string;
@@ -167,6 +177,7 @@ export type ProjectTask = {
   deletedAt: string | null;
 };
 export type Project = {
+  syncMeta?: EntitySync;
   id: string;
   title: string;
   description: string;
@@ -230,6 +241,7 @@ export type PomodoroSoundId =
   | 'temple'
   | 'zen';
 export type PomodoroSettings = {
+  syncMeta?: EntitySync;
   workMinutes: number;
   breakMinutes: number;
   longBreakMinutes: number;
@@ -237,6 +249,7 @@ export type PomodoroSettings = {
   soundId: PomodoroSoundId;
 };
 export type ProfileState = {
+  syncMeta?: EntitySync;
   autoPlan?: import('./autoPlan').AutoPlanState;
   pet?: import('./petState').PetState;
   emotionEntries?: import('./emotionJournal').EmotionEntry[];

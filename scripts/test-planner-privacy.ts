@@ -16,9 +16,10 @@ function testClientRecovery() {
   for (const pending of [false, true]) {
     for (const remote of [null, []]) {
       const recovered = resolvePlannerPull(local, remote, pending, ['deleted']);
-      assert.deepEqual(recovered, [local[0]], 'empty/failed cloud must retain local data and respect deletions');
+      const expected = remote === null || pending ? [local[0]] : [];
+      assert.deepEqual(recovered, expected, 'failed reads retain local edits; confirmed empty snapshots remove stale rows');
       const reloaded = parsePlannerItems(JSON.stringify(recovered));
-      assert.deepEqual(resolvePlannerPull(reloaded, [], pending, ['deleted']), recovered, 'reload cannot erase the retained copy');
+      assert.deepEqual(resolvePlannerPull(reloaded, remote, pending, ['deleted']), recovered, 'reload cannot erase the retained copy');
     }
   }
   assert.deepEqual(resolvePlannerPull(null, [], false, []), [], 'a new account starts empty');

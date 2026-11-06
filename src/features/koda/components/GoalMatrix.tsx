@@ -1,3 +1,4 @@
+import { changedDraftFields } from '../entitySync';
 import {activeBg} from '../theme';
 import { webSpaceActivationProps } from './keyboard';
 import { useEffect, useMemo, useState } from 'react';
@@ -149,7 +150,7 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
     if (!conflict) return;
     onUpdateGoal((current) => {
       const updated = restoreWindowChange(current, conflict, 'Восстановлен вариант окна с другого устройства');
-      return { ...updated, openWindow: updated.openWindow ? { ...updated.openWindow, conflicts: updated.openWindow.conflicts?.filter((item) => item.id !== conflictId) } : undefined };
+      return { ...updated, openWindow: updated.openWindow ? { ...updated.openWindow, resolvedConflictIds: [...new Set([...(updated.openWindow.resolvedConflictIds ?? []), conflictId])], conflicts: updated.openWindow.conflicts?.filter((item) => item.id !== conflictId) } : undefined };
     });
     setNotice('Вариант восстановлен. Текущее состояние сохранено в истории.');
   }
@@ -288,24 +289,28 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
       {goal.openWindow?.history.length ? <View style={styles.history}><Pressable accessibilityRole="button" aria-expanded={historyOpen} accessibilityState={{ expanded: historyOpen }} onPress={() => setHistoryOpen((value) => !value)} style={styles.historyToggle}><Text style={styles.sectionTitle}>История окна · {goal.openWindow.history.length}</Text><Text style={styles.historyToggleText}>{historyOpen ? 'Скрыть' : 'Показать'}</Text></Pressable>{historyOpen ? [...goal.openWindow.history].reverse().slice(0, 8).map((change) => <View key={change.id} style={styles.conflictRow}><Text numberOfLines={2} style={styles.conflictLabel}>{change.label} · {new Date(change.at).toLocaleDateString('ru-RU')}</Text><Pressable accessibilityRole="button" onPress={() => restoreHistory(change.id)} style={styles.restoreButton}><Text style={styles.restoreText}>Вернуть</Text></Pressable></View>) : null}</View> : null}
       {goal.openWindow?.conflicts?.length ? <View style={styles.conflicts}><Text style={styles.sectionTitle}>Другой вариант изменений</Text><Text style={styles.notice}>Изменения с другого устройства сохранены и не потерялись. Можно восстановить выбранный вариант.</Text>{goal.openWindow.conflicts.map((conflict) => <View key={conflict.id} style={styles.conflictRow}><Text numberOfLines={2} style={styles.conflictLabel}>{conflict.label || 'Вариант с другого устройства'}</Text><Pressable accessibilityRole="button" onPress={() => restoreConflict(conflict.id)} style={styles.restoreButton}><Text style={styles.restoreText}>Восстановить</Text></Pressable></View>)}</View> : null}
       {notice ? <View accessibilityLiveRegion="polite" style={styles.toast}><Text style={styles.toastText}>{notice}</Text><Pressable accessibilityRole="button" accessibilityLabel="Закрыть сообщение" onPress={() => setNotice('')} style={styles.toastClose}><X color={activeText} size={14} /></Pressable></View> : null}
-      {editingActionId ? <ActionQuickEditor action={goal.actions.find((item) => item.id === editingActionId) ?? null} allActions={goal.actions} onClose={() => setEditingActionId(null)} onSave={(action) => { onUpdateGoal((current) => ({ ...current, updatedAt: new Date().toISOString(), actions: current.actions.map((item) => item.id === action.id ? action : item) })); setEditingActionId(null); }} /> : null}
+      {editingActionId ? <ActionQuickEditor action={goal.actions.find((item) => item.id === editingActionId) ?? null} allActions={goal.actions} onClose={() => setEditingActionId(null)} onSave={(actionId, patch) => { onUpdateGoal((current) => ({ ...current, updatedAt: new Date().toISOString(), actions: current.actions.map((item) => item.id === actionId ? { ...item, ...patch } : item) })); setEditingActionId(null); }} /> : null}
     </View>
   );
 }
 
 function restoreWindowChange(goal: Goal, change: OpenWindowChange, label: string): Goal {
+  const removedActions = new Set(goal.syncMeta?.removed?.actions ?? []);
+  const removedRoutines = new Set(goal.syncMeta?.removed?.routines ?? []);
   const actions = [...goal.actions];
   for (const snapshot of change.actionsSnapshot ?? []) {
+    if (removedActions.has(snapshot.id)) continue;
     const index = actions.findIndex((item) => item.id === snapshot.id);
     if (index < 0) actions.push(snapshot);
     else actions[index] = { ...actions[index]!, title: snapshot.title, shortTitle: snapshot.shortTitle ?? '', description: snapshot.description ?? '' };
   }
   const routines = [...goal.routines];
-  for (const snapshot of change.routinesSnapshot ?? []) if (!routines.some((item) => item.id === snapshot.id)) routines.push(snapshot);
-  return updateOpenWindow({ ...goal, actions, routines }, change.directions, label);
+  for (const snapshot of change.routinesSnapshot ?? []) if (!removedRoutines.has(snapshot.id) && !routines.some((item) => item.id === snapshot.id)) routines.push(snapshot);
+  return updateOpenWindow({ ...goal, actions, routines }, change.directions.map(direction => ({ ...direction, actionIds: direction.actionIds.filter(id => !removedActions.has(id)), routineIds: direction.routineIds.filter(id => !removedRoutines.has(id)) })), label);
 }
 
-function ActionQuickEditor({ action, allActions, onClose, onSave }: { action: GoalAction | null; allActions: GoalAction[]; onClose: () => void; onSave: (action: GoalAction) => void }) {
+function ActionQuickEditor({ action, allActions, onClose, onSave }: { action: GoalAction | null; allActions: GoalAction[]; onClose: () => void; onSave: (actionId: string, patch: Partial<GoalAction>) => void }) {
+  const [original] = useState(action);
   const [title, setTitle] = useState(action?.title ?? '');
   const [shortTitle, setShortTitle] = useState(action?.shortTitle ?? '');
   const [description, setDescription] = useState(action?.description ?? '');
@@ -320,7 +325,9 @@ function ActionQuickEditor({ action, allActions, onClose, onSave }: { action: Go
     const date=deferredUntil.trim();
     if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date+'T12:00:00Z')) || new Date(date+'T12:00:00Z').toISOString().slice(0,10)!==date)) { setValidationError('Укажите существующую дату ГГГГ-ММ-ДД или оставьте поле пустым.'); return; }
     if (dependencyId && wouldCreateDependencyCycle(allActions,action.id,[dependencyId])) { setValidationError('Эта зависимость замыкает цепочку. Выберите другое действие.'); return; }
-    onSave({ ...action, title: title.trim(), shortTitle: shortTitle.trim(), description: description.trim(), archivedAt: archived ? action.archivedAt ?? new Date().toISOString() : null, deferredUntil: deferredUntil.trim(), dependsOn: dependencyId ? [dependencyId] : [] });
+    const initial = original ?? action;
+    const originalFields = { title: initial.title, shortTitle: initial.shortTitle ?? '', description: initial.description, archivedAt: initial.archivedAt ?? null, deferredUntil: initial.deferredUntil ?? '', dependsOn: initial.dependsOn?.slice(0, 1) ?? [] };
+    onSave(action.id, changedDraftFields(originalFields, { title: title.trim(), shortTitle: shortTitle.trim(), description: description.trim(), archivedAt: archived ? original?.archivedAt ?? new Date().toISOString() : null, deferredUntil: deferredUntil.trim(), dependsOn: dependencyId ? [dependencyId] : [] }));
   }
   const candidates = allActions.filter((item) => item.id !== action.id && !item.archivedAt);
   return <Modal animationType="none" onRequestClose={onClose} transparent visible><View accessibilityViewIsModal style={styles.editorOverlay}><ScrollView keyboardShouldPersistTaps="handled" style={styles.quickEditorScroll} contentContainerStyle={styles.quickEditorScrollContent}><View style={styles.quickEditor}><View style={styles.editorHeader}><Text style={styles.editorTitle}>Действие</Text><Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактор действия" onPress={onClose} style={styles.unlinkButton}><X color={muted} size={16} /></Pressable></View><TextInput accessibilityLabel="Исходное название действия" onChangeText={setTitle} onSubmitEditing={save} placeholderTextColor={faint} style={styles.directionInput} value={title} />

@@ -1,3 +1,4 @@
+import { changedDraftFields } from '../entitySync';
 import { RightPanel, useRightPanel } from '../components/RightPanel';
 import { Archive, Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
@@ -113,18 +114,19 @@ export function ProjectsScreen({
     onProjectsChange((items) =>
       items.map((project) => {
         if (project.id !== selectedProject.id) return project;
+        const currentTask = editingTask ? project.tasks.find(task => task.id === editingTask.id) : undefined;
+        if (editingTask && (!currentTask || currentTask.deletedAt)) return project;
+        const fields = { title, description: taskDraft.description.trim(), cost: taskDraft.cost.trim(), plannedDate: taskDraft.plannedDate.trim(), plannedTime: taskDraft.plannedTime.trim() };
+        const edited = editingTask && currentTask ? { ...currentTask, ...changedDraftFields(editingTask, fields) } : fields;
         const nextTask: ProjectTask = {
+          ...currentTask,
           id: editingTask?.id ?? uid('project-task'),
-          title,
-          description: taskDraft.description.trim(),
-          cost: taskDraft.cost.trim(),
-          plannedDate: taskDraft.plannedDate.trim(),
-          plannedTime: taskDraft.plannedTime.trim(),
-          status: editingTask?.status ?? 'todo',
-          createdAt: editingTask?.createdAt ?? now,
+          ...edited,
+          status: currentTask?.status ?? 'todo',
+          createdAt: currentTask?.createdAt ?? now,
           updatedAt: now,
-          completedAt: editingTask?.completedAt ?? null,
-          deletedAt: editingTask?.deletedAt ?? null,
+          completedAt: currentTask?.completedAt ?? null,
+          deletedAt: currentTask?.deletedAt ?? null,
         };
         const tasks = editingTask
           ? project.tasks.map((task) => (task.id === editingTask.id ? nextTask : task))

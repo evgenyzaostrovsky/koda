@@ -1,3 +1,4 @@
+import { normalizeEntitySync } from './entitySync';
 import { isRoutineScheduled } from './routineSchedule';
 import type {
   Goal,
@@ -131,8 +132,11 @@ export function normalizeGoal(value: unknown): Goal | null {
   const now = new Date().toISOString();
   const deadline = typeof raw.deadline === 'string' ? raw.deadline : legacyDeadline(raw.daysLeft);
   const deletedAt = typeof raw.deletedAt === 'string' && Number.isFinite(Date.parse(raw.deletedAt)) ? raw.deletedAt : null;
+  const syncMeta = normalizeEntitySync(raw.syncMeta);
+  const retained = (collection: string, id: string) => !syncMeta?.removed?.[collection]?.includes(id);
 
   return {
+    ...(syncMeta ? { syncMeta } : {}),
     id: typeof raw.id === 'string' ? raw.id : uid('goal'),
     ...(deletedAt ? { deletedAt } : {}),
     title,
@@ -146,10 +150,10 @@ export function normalizeGoal(value: unknown): Goal | null {
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : now,
     completedAt: typeof raw.completedAt === 'string' ? raw.completedAt : null,
     archivedAt: deletedAt ?? (typeof raw.archivedAt === 'string' ? raw.archivedAt : raw.archived ? now : null),
-    milestones: normalizeMilestones(raw.milestones),
-    actions: normalizeActions(raw.actions),
-    routines: normalizeRoutines(raw.routines),
-    routineLogs: normalizeRoutineLogs(raw.routineLogs),
+    milestones: normalizeMilestones(raw.milestones).filter(item => retained('milestones', item.id)),
+    actions: normalizeActions(raw.actions).filter(item => retained('actions', item.id)),
+    routines: normalizeRoutines(raw.routines).filter(item => retained('routines', item.id)),
+    routineLogs: normalizeRoutineLogs(raw.routineLogs).filter(item => retained('routineLogs', item.id) && retained('routines', item.routineId)),
     openWindow: normalizeOpenWindow(raw.openWindow, typeof raw.id === 'string' ? raw.id : 'legacy'),
   };
 }
@@ -256,6 +260,7 @@ function normalizeMilestones(value: unknown): GoalMilestone[] {
       const raw = item as Partial<GoalMilestone>;
       if (typeof raw.title !== 'string' || !raw.title.trim()) return null;
       return {
+        ...(normalizeEntitySync(raw.syncMeta) ? { syncMeta: normalizeEntitySync(raw.syncMeta) } : {}),
         id: typeof raw.id === 'string' ? raw.id : uid('milestone'),
         title: raw.title.trim(),
         description: typeof raw.description === 'string' ? raw.description : '',
@@ -276,6 +281,7 @@ function normalizeActions(value: unknown): GoalAction[] {
       const raw = item as Partial<GoalAction>;
       if (typeof raw.title !== 'string' || !raw.title.trim()) return null;
       return {
+        ...(normalizeEntitySync(raw.syncMeta) ? { syncMeta: normalizeEntitySync(raw.syncMeta) } : {}),
         id: typeof raw.id === 'string' ? raw.id : uid('goal-action'),
         title: raw.title.trim(),
         ...(typeof raw.shortTitle === 'string' && raw.shortTitle.trim().length <= 48 ? {shortTitle: raw.shortTitle.trim()} : {}),
@@ -303,6 +309,7 @@ function normalizeRoutines(value: unknown): GoalRoutine[] {
       const raw = item as Partial<GoalRoutine>;
       if (typeof raw.title !== 'string' || !raw.title.trim()) return null;
       return {
+        ...(normalizeEntitySync(raw.syncMeta) ? { syncMeta: normalizeEntitySync(raw.syncMeta) } : {}),
         id: typeof raw.id === 'string' ? raw.id : uid('goal-routine'),
         title: raw.title.trim(),
         metricType: isMetricType(raw.metricType) ? raw.metricType : 'boolean',
@@ -326,6 +333,7 @@ function normalizeRoutineLogs(value: unknown): GoalRoutineLog[] {
       if (typeof raw.routineId !== 'string' || typeof raw.date !== 'string') return null;
       const now = new Date().toISOString();
       return {
+        ...(normalizeEntitySync(raw.syncMeta) ? { syncMeta: normalizeEntitySync(raw.syncMeta) } : {}),
         id: typeof raw.id === 'string' ? raw.id : uid('goal-routine-log'),
         routineId: raw.routineId,
         date: raw.date,

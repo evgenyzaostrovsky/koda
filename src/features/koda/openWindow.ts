@@ -1,7 +1,10 @@
+import { mergeGoalEntities, mergeEntityList, normalizeEntitySync } from './entitySync';
 import type { Goal, OpenWindow, OpenWindowChange, OpenWindowDirection } from './types';
 import { uid } from './utils';
 
 export const WINDOW_POSITIONS = [0, 1, 2, 3, 5, 6, 7, 8] as const;
+const directionsKey = (items: OpenWindowDirection[]) => JSON.stringify(items.map(({ syncMeta: _sync, ...item }) => item), (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+  ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value);
 const copyDirections = (items: OpenWindowDirection[]) => items.map(d => ({ ...d, actionIds: [...d.actionIds], routineIds: [...d.routineIds] }));
 
 export function createOpenWindow(goalId: string): OpenWindow {
@@ -19,11 +22,13 @@ export function normalizeOpenWindow(value: unknown, goalId: string): OpenWindow 
     if (!item || typeof item !== 'object') return fallback;
     const id = typeof item.id === 'string' && !seen.has(item.id) ? item.id : fallback.id;
     seen.add(id);
-    return { id, position: i, title: typeof item.title === 'string' ? item.title.slice(0, 300) : '', actionIds: ids(item.actionIds), routineIds: ids(item.routineIds), archivedAt: typeof item.archivedAt === 'string' ? item.archivedAt : null };
+    return { ...(normalizeEntitySync(item.syncMeta) ? { syncMeta: normalizeEntitySync(item.syncMeta) } : {}), id, position: i, title: typeof item.title === 'string' ? item.title.slice(0, 300) : '', actionIds: ids(item.actionIds), routineIds: ids(item.routineIds), archivedAt: typeof item.archivedAt === 'string' ? item.archivedAt : null };
   });
   // History is intentionally retained: archived links are not deleted from canonical actions.
   base.history = Array.isArray(raw.history) ? raw.history.filter(h => h && typeof h.id === 'string' && typeof h.at === 'string' && Array.isArray(h.directions)) : [];
   base.conflicts = Array.isArray(raw.conflicts) ? raw.conflicts.filter(h => h && typeof h.id === 'string' && Array.isArray(h.directions)) : [];
+  base.resolvedConflictIds = Array.isArray(raw.resolvedConflictIds) ? [...new Set(raw.resolvedConflictIds.filter(id => typeof id === 'string'))].sort() : [];
+  base.conflicts = base.conflicts.filter(item => !base.resolvedConflictIds!.includes(item.id));
   return base;
 }
 
@@ -53,16 +58,19 @@ export function getOpenWindowCells(goal: Goal) {
 export function mergeGoalWindows(first: Goal, second: Goal): Goal {
   const ordered = [first, second].sort((a,b) => a.updatedAt.localeCompare(b.updatedAt) || JSON.stringify(a).localeCompare(JSON.stringify(b)));
   const older = ordered[0], newer = ordered[1];
-  if (!older.openWindow) return newer;
-  if (!newer.openWindow) return { ...newer, openWindow: older.openWindow };
+  const merged = mergeGoalEntities(first, second);
+  if (!older.openWindow) return merged;
+  if (!newer.openWindow) return { ...merged, openWindow: older.openWindow };
   const byId = new Map<string, OpenWindowChange>();
   [...older.openWindow.history, ...newer.openWindow.history].forEach(h => byId.set(h.id, h));
+  const resolved = [...new Set([...(older.openWindow.resolvedConflictIds ?? []), ...(newer.openWindow.resolvedConflictIds ?? [])])].sort();
   const conflicts = new Map<string, OpenWindowChange>();
   [...(older.openWindow.conflicts ?? []), ...(newer.openWindow.conflicts ?? [])].forEach(h => conflicts.set(h.id, h));
-  if (JSON.stringify(older.openWindow.directions) !== JSON.stringify(newer.openWindow.directions)
-    && !newer.openWindow.history.some(h=>JSON.stringify(h.directions)===JSON.stringify(older.openWindow!.directions))) {
-    const id = `${older.id}:conflict:${older.updatedAt}:${JSON.stringify(older.openWindow.directions)}`;
+  if (directionsKey(older.openWindow.directions) !== directionsKey(newer.openWindow.directions)
+    && !newer.openWindow.history.some(h=>directionsKey(h.directions)===directionsKey(older.openWindow!.directions))) {
+    const existing = [...conflicts.values()].find(item => item.at === older.updatedAt && directionsKey(item.directions) === directionsKey(older.openWindow!.directions));
+    const id = existing?.id ?? `${older.id}:conflict:${older.updatedAt}:${directionsKey(older.openWindow.directions)}`;
     conflicts.set(id, { id, at: older.updatedAt, label: 'Вариант с другого устройства', directions: copyDirections(older.openWindow.directions), actionsSnapshot: older.actions, routinesSnapshot: older.routines });
   }
-  return { ...newer, openWindow: { ...newer.openWindow, history: [...byId.values()].sort((a,b)=>a.at.localeCompare(b.at)||a.id.localeCompare(b.id)), conflicts: [...conflicts.values()].sort((a,b)=>a.id.localeCompare(b.id)) } };
+  return { ...merged, openWindow: { ...newer.openWindow, directions: mergeEntityList(older.openWindow.directions, newer.openWindow.directions).sort((a,b)=>a.position-b.position), resolvedConflictIds: resolved, history: [...byId.values()].sort((a,b)=>a.at.localeCompare(b.at)||a.id.localeCompare(b.id)), conflicts: [...conflicts.values()].filter(item => !resolved.includes(item.id)).sort((a,b)=>a.id.localeCompare(b.id)) } };
 }
