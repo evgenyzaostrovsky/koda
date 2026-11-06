@@ -73,11 +73,11 @@ export async function generateKodaState(input: {
   return response.json();
 }
 
-export async function requestChat(messages: Array<{role:'user'|'assistant';content:string}>): Promise<{reply:string;provider:'yandex'|'openrouter'|'gemini'|'openai';memorySuggestion?:string}> {
+export async function requestChat(messages: Array<{role:'user'|'assistant';content:string}>, goalContext?: {contextScope:{kind:'goal';goalId?:string};goalTitle:string;discussionContext:string}): Promise<{reply:string;provider:'yandex'|'openrouter'|'gemini'|'openai';memorySuggestion?:string}> {
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),50000);
   try {
-    const response=await fetch(API_URL+'/api/chat',{method:'POST',signal:controller.signal,headers:await authenticatedHeaders(),body:JSON.stringify({messages})});
+    const response=await fetch(API_URL+'/api/chat',{method:'POST',signal:controller.signal,headers:await authenticatedHeaders(),body:JSON.stringify({messages,...goalContext})});
     if(!response.ok) throw await aiRequestError(response, 'Помощник сейчас недоступен. Попробуйте ещё раз.');
     const result=await response.json();
     if(typeof result.reply!=='string'||!result.reply.trim()||!['yandex','openrouter','gemini','openai'].includes(result.provider))throw new Error('Некорректный ответ помощника.');

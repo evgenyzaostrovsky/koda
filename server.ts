@@ -24,14 +24,14 @@ app.post('/api/chat', async (req, res) => {
   if (!(await authorizeAiRequest(req, res))) return;
   let messages;
   try { messages=normalizeChatInput(req.body); } catch { res.status(400).json({error:'Напишите сообщение.'}); return; }
-  try { res.json(await generateChat({messages},await loadAssistantContext(req))); } catch { res.status(503).json({error:'Помощник сейчас недоступен. Попробуйте ещё раз.'}); }
+  try { res.json(await generateChat({...req.body,messages},await loadAssistantContext(req))); } catch { res.status(503).json({error:'Помощник сейчас недоступен. Попробуйте ещё раз.'}); }
 });
 const generateGoalPlan = createGoalPlanGenerator(aiConfig);
 app.post('/api/goal-plan', async (req, res) => {
   if (!(await authorizeAiRequest(req, res))) return;
   let input;
   try { input = normalizeGoalPlanInput(req.body); } catch { res.status(400).json({ error: 'Опишите желание.' }); return; }
-  try { res.json(await generateGoalPlan(input,await loadAssistantContext(req))); } catch { res.status(503).json({ error: 'Помощник недоступен. Продолжите вручную.' }); }
+  try { res.json(await generateGoalPlan(input,await loadAssistantContext(req,{scope:input.contextScope}))); } catch { res.status(503).json({ error: 'Помощник недоступен. Продолжите вручную.' }); }
 });
 
 app.get('/api/health', (_req, res) => {

@@ -1,6 +1,8 @@
+import {normalizeGoalDiscussion,type GoalDiscussionData} from './goalDiscussion';
 import { restoreWizardClarifications } from './wizardDraft';
 
 export type WizardDraftPayload = {
+  assistantDiscussion?: GoalDiscussionData;
   version: 1;
   step: number;
   wish: string;
@@ -58,6 +60,7 @@ export function normalizeWizardDraft(value: unknown): WizardDraftPayload | null 
       actions: record(item) && Array.isArray(item.actions) ? item.actions.slice(0, 8).map((action) => text(action, 300)) : [],
     })),
     ...restoreWizardClarifications(value),
+    ...(value.assistantDiscussion ? {assistantDiscussion:normalizeGoalDiscussion(value.assistantDiscussion)} : {}),
   };
 }
 

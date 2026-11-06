@@ -137,7 +137,7 @@ async function testServer() {
         then(resolve: (value: unknown) => void) {
           return Promise.resolve({
             data: table === 'assistant_memories' ? [row(foreign ? b : a)] : {
-              user_id: a, goals: [{ title: 'Текущая цель', actions: serverActions, milestones: [{ status: 'completed' }],
+              user_id: a, goals: [{ id: 'current', title: 'Текущая цель', actions: serverActions, milestones: [{ status: 'completed' }],
                 openWindow: { directions: [{ title: 'Квадрат', actionIds: ['first', 'second'] }] } }],
               habits: [], profile_focus: 'Начинать с малого',
               profile: { emotionEntries: [{ text: 'SECRET DIARY' }] },
@@ -169,6 +169,13 @@ async function testServer() {
   assert.deepEqual(currentGoal.completedActions, ['Следующий шаг', 'Первый завершённый шаг']);
   assert.deepEqual(currentGoal.nextActions, []);
   assert.deepEqual(currentGoal.squares, [{ title: 'Квадрат', actionsDone: 2, actionsTotal: 2 }]);
+  const scopedRequest = { ...request, body: { ...request.body, contextScope: { kind: 'goal', goalId: 'current' } } };
+  assert.equal(contextData(await loadAssistantContext(scopedRequest, dependencies)).goals.length, 1);
+  const newGoal = contextData(await loadAssistantContext(scopedRequest, { ...dependencies, scope: { kind: 'goal' } }));
+  assert.deepEqual(newGoal.goals, [], 'normalized route scope overrides a stale request scope');
+  assert.deepEqual(newGoal.facts, [], 'unscoped legacy facts are not assigned to a new goal');
+  assert.equal(newGoal.preferences.focus, '');
+  assert.deepEqual(contextData(await loadAssistantContext(request, { ...dependencies, scope: { kind: 'goal', goalId: 'foreign' } })).goals, []);
   readError = true;
   await assert.rejects(loadAssistantContext(request, dependencies), /could not be loaded/);
   readError = false;
@@ -225,6 +232,36 @@ function testFormatting() {
   assert.ok(large.length <= ASSISTANT_CONTEXT_MAX_LENGTH);
   assert.doesNotThrow(() => JSON.parse(large.split('<account_context>\n')[1].split('\n</account_context>')[0]));
   assert.ok(large.includes('"factsMayBeOmitted":true'));
+
+  const goalState = { profile: { focus: 'OLD FOCUS' }, habits: [{ title: 'OLD HABIT' }], goals: [
+    { id: 'old', title: 'Курс', actions: [{ title: 'Урок 6', status: 'pending' }] },
+    { id: 'current', title: 'Курс', actions: [{ title: 'Урок 1', status: 'pending' }], assistantDiscussion: {
+      messages: [
+        { id: 'old', role: 'user', content: 'Я на уроке 6', at: '2026-11-01T12:00:00Z' },
+        { id: 'new', role: 'user', content: 'Я начинаю с урока 1', at: '2026-11-06T12:00:00Z' },
+        { id: 'assistant', role: 'assistant', content: 'ASSISTANT GUESS', at: '2026-11-06T13:00:00Z' },
+        { id: 'undated', role: 'user', content: 'UNDATED', at: 'invalid' },
+      ], removedIds: ['old'], materials: [{ content: 'PRIVATE MATERIAL' }],
+    } },
+    { id: 'deleted', title: 'DELETED', deletedAt: stamp },
+    { id: 'archived', title: 'ARCHIVED', archivedAt: stamp },
+  ] };
+  const goalMemories = [
+    normalizeAssistantMemoryRow(row(a, 'Урок 6'), a),
+    normalizeAssistantMemoryRow(row(a, 'Исправление пользователя (цель)\nБыло: Урок 6\nСтало: Урок 7\nПредпочтение: конкретные шаги'), a),
+  ];
+  const scoped = buildAssistantContext({ memories: goalMemories, state: goalState, scope: { kind: 'goal', goalId: 'current' } });
+  const scopedData = contextData(scoped);
+  assert.deepEqual(scopedData.facts, ['Предпочтение: конкретные шаги']);
+  assert.equal(scopedData.goals.length, 1, 'identity is the exact ID, not a matching title');
+  assert.deepEqual(scopedData.goals[0].userUpdates, [{ at: '2026-11-06T12:00:00Z', content: 'Я начинаю с урока 1' }]);
+  for (const forbidden of ['Урок 6', 'Урок 7', 'OLD FOCUS', 'OLD HABIT', 'ASSISTANT GUESS', 'UNDATED', 'PRIVATE MATERIAL']) assert.ok(!scoped.includes(forbidden), forbidden);
+  for (const goalId of [undefined, 'missing', 'deleted', 'archived', 'current ', 'x'.repeat(161)]) {
+    assert.deepEqual(contextData(buildAssistantContext({ memories: goalMemories, state: goalState, scope: { kind: 'goal', goalId } })).goals, []);
+  }
+  const general = contextData(buildAssistantContext({ memories: [], state: goalState }));
+  assert.equal(general.goals.length, 2, 'general account chat retains active goals');
+  assert.deepEqual(general.goals[1].userUpdates, scopedData.goals[0].userUpdates);
 }
 
 async function main() {

@@ -14,6 +14,9 @@ function createUserContextClient(token, env = process.env) {
 }
 
 async function loadAssistantContext(req, dependencies = {}) {
+  // Routes can force a normalized scope; raw body data never establishes account ownership.
+  const requestedScope = dependencies.scope ?? req.body?.contextScope;
+  const scope = requestedScope?.kind === 'goal' ? { kind: 'goal', goalId: requestedScope.goalId } : undefined;
   const header = req.headers?.authorization || req.headers?.Authorization;
   const match = typeof header === 'string' && header.match(/^Bearer\s+(\S+)$/i);
   if (!match) throw new Error('Authentication is required for assistant context.');
@@ -31,7 +34,7 @@ async function loadAssistantContext(req, dependencies = {}) {
   if (stateResult.data && stateResult.data.user_id !== owner) throw new Error('Assistant context account mismatch.');
   const memories = memoryResult.data.map(row => normalizeAssistantMemoryRow(row, owner));
   const state = stateResult.data;
-  return buildAssistantContext({ memories, state: state ? {
+  return buildAssistantContext({ memories, scope, state: state ? {
     goals: state.profile_auto_plan ? applyAutoPlanProgress(parseAutoPlanState(state.profile_auto_plan, owner), Array.isArray(state.goals) ? state.goals.filter(goal => !goal?.deletedAt).map(normalizeGoal).filter(Boolean) : []) : Array.isArray(state.goals) ? state.goals.filter(goal => !goal?.deletedAt) : [], habits: state.habits, updated_at: state.updated_at,
     profile: { values: state.profile_values, futureSelf: state.profile_future_self, focus: state.profile_focus, milestone: state.profile_milestone },
   } : null });

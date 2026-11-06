@@ -1,3 +1,4 @@
+import type {GoalDiscussionData} from './goalDiscussion';
 import type { Database } from '../../types/database';
 
 export type TabKey = 'planner' | 'goals' | 'projects' | 'notes' | 'habits' | 'day' | 'routines' | 'timer' | 'profile' | 'journal' | 'progress' | 'koda';
@@ -122,6 +123,7 @@ export type Goal = {
   title: string;
   desiredResult: string;
   planningContext?: string;
+  assistantDiscussion?: GoalDiscussionData;
   roadmapClarifications?: import('./goalRoadmapClarifications').RoadmapClarifications;
   deadline: string;
   priority: GoalPriority;

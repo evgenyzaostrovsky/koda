@@ -1,3 +1,4 @@
+import {mergeGoalDiscussion} from './goalDiscussion';
 import type { EntitySync, Goal, Project, ProfileState, PomodoroSettings } from './types';
 import { recordGoalListChanges } from './goalDeletion';
 
@@ -130,6 +131,7 @@ export function mergeGoalEntities(a: Goal, b: Goal): Goal {
     // meaning before edit metadata, so do not newly union an older removed action.
     (result as unknown as Record<string, Child[]>)[key] = versioned ? mergeEntityList<Child>(older[key], newer[key], removed) : [...newer[key]];
   }
+  if(a.assistantDiscussion||b.assistantDiscussion)result.assistantDiscussion=mergeGoalDiscussion(a.assistantDiscussion,b.assistantDiscussion);
   result.actions.sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
   result.milestones.sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
   const removedRoutines = new Set(result.syncMeta?.removed?.routines ?? []);

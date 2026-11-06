@@ -1,3 +1,4 @@
+import {normalizeGoalDiscussion} from './goalDiscussion';
 import { normalizeEntitySync } from './entitySync';
 import { isRoutineScheduled } from './routineSchedule';
 import type {
@@ -141,6 +142,7 @@ export function normalizeGoal(value: unknown): Goal | null {
     ...(deletedAt ? { deletedAt } : {}),
     title,
     desiredResult: typeof raw.desiredResult === 'string' ? raw.desiredResult : '',
+    ...(raw.assistantDiscussion ? {assistantDiscussion:normalizeGoalDiscussion(raw.assistantDiscussion)} : {}),
     ...(typeof raw.planningContext === 'string' ? { planningContext: raw.planningContext.slice(0, 2000) } : {}),
     ...(normalizeRoadmapClarifications(raw.roadmapClarifications) ? { roadmapClarifications: normalizeRoadmapClarifications(raw.roadmapClarifications) } : {}),
     deadline,

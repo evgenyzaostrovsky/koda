@@ -7,5 +7,5 @@ module.exports = async function handler(req, res) {
   if (!(await authorizeAiRequest(req, res))) return;
   let input;
   try { input = normalizeGoalPlanInput(req.body); } catch { res.status(400).json({ error: 'Опишите желание.' }); return; }
-  try { res.json(await generate(input,await loadAssistantContext(req))); } catch { res.status(503).json({ error: 'Помощник недоступен. Продолжите вручную.' }); }
+  try { res.json(await generate(input,await loadAssistantContext(req,{scope:input.contextScope}))); } catch { res.status(503).json({ error: 'Помощник недоступен. Продолжите вручную.' }); }
 };

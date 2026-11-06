@@ -10,6 +10,17 @@ export const ASSISTANT_MEMORY_MAX_LENGTH = 1000;
 export const ASSISTANT_CONTEXT_MAX_LENGTH = 12000;
 export const ASSISTANT_CONTEXT_MEMORY_LIMIT = 20;
 
+export type AssistantContextScope = { kind: 'goal'; goalId?: string };
+
+/** Legacy memories have no goal identity. Only an explicitly separate preference is portable. */
+export function goalMemoryPreference(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const content = value.trim();
+  const preference = /^Предпочтение: ([^\r\n]+)$/.exec(content)
+    ?? /^Исправление пользователя \((?:чат|цель|ОТАНИ)\)\nБыло: [^\r\n]+\nСтало: [^\r\n]+\nПредпочтение: ([^\r\n]+)$/.exec(content);
+  return preference ? `Предпочтение: ${cleanText(preference[1], 220)}` : '';
+}
+
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const rows = (value: unknown): Record<string, unknown>[] => Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
 const cleanText = (value: unknown, limit: number): string => typeof value === 'string' ? Array.from(value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim()).slice(0, limit).join('') : '';
@@ -32,20 +43,23 @@ export function normalizeAssistantMemoryRow(value: unknown, owner: string): Assi
 }
 
 /** Pure allowlist formatter. Never serialize the whole state/profile (they contain private journals). */
-export function buildAssistantContext(input: { memories: readonly AssistantMemory[]; state: unknown }): string {
+export function buildAssistantContext(input: { memories: readonly AssistantMemory[]; state: unknown; scope?: AssistantContextScope }): string {
   const state = record(input.state);
-  const profile = record(state.profile);
-  const goals = rows(state.goals).filter(goal => !goal.archivedAt && !goal.deletedAt && goal.status !== 'archived');
-  const habits = rows(state.habits).filter(habit => !habit.deletedAt && !habit.archivedAt);
+  const scoped = input.scope?.kind === 'goal';
+  const goalId = scoped && typeof input.scope?.goalId === 'string' && input.scope.goalId.length <= 160 && input.scope.goalId.trim() === input.scope.goalId ? input.scope.goalId : undefined;
+  const profile = scoped ? {} : record(state.profile);
+  const goals = rows(state.goals).filter(goal => !goal.archivedAt && !goal.deletedAt && goal.status !== 'archived' && (!scoped || Boolean(goalId && goal.id === goalId)));
+  const habits = scoped ? [] : rows(state.habits).filter(habit => !habit.deletedAt && !habit.archivedAt);
   const memories: string[] = [];
   let memoryBudget = 4000;
   for (const memory of input.memories.slice(0, ASSISTANT_CONTEXT_MEMORY_LIMIT)) {
-    const content = cleanText(memory.content, ASSISTANT_MEMORY_MAX_LENGTH);
+    const content = cleanText(scoped ? goalMemoryPreference(memory.content) : memory.content, ASSISTANT_MEMORY_MAX_LENGTH);
     if (!content || content.length > memoryBudget) continue;
     memories.push(content);
     memoryBudget -= content.length;
   }
   const data = {
+    ...(scoped ? { contextScope: { kind: 'goal', ...(goalId ? { goalId } : {}) } } : {}),
     source: 'Сохранённые в аккаунте данные; несинхронизированные изменения с устройств могут отсутствовать.',
     stateUpdatedAt: cleanText(state.updated_at, 40),
     facts: memories,
@@ -64,6 +78,11 @@ export function buildAssistantContext(input: { memories: readonly AssistantMemor
       };
       return {
         title: cleanText(goal.title, 160), desiredResult: cleanText(goal.desiredResult, 240),
+        userUpdates: rows(record(goal.assistantDiscussion).messages)
+          .filter(message => message.role === 'user' && typeof message.at === 'string' && Number.isFinite(Date.parse(message.at))
+            && !(Array.isArray(record(goal.assistantDiscussion).removedIds) && (record(goal.assistantDiscussion).removedIds as unknown[]).includes(message.id)))
+          .sort((a, b) => Date.parse(String(b.at)) - Date.parse(String(a.at))).slice(0, 3)
+          .map(message => ({ at: cleanText(message.at, 40), content: cleanText(message.content, 300) })),
         status: cleanText(goal.status, 20), deadline: cleanText(goal.deadline, 40),
         actionsDone: completed.length,
         actionsTotal: actions.length,

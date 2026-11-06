@@ -7,5 +7,5 @@ module.exports = async function handler(req,res) {
   if (!(await authorizeAiRequest(req, res))) return;
   let messages;
   try{messages=normalizeChatInput(req.body);}catch{res.status(400).json({error:'Напишите сообщение.'});return;}
-  try{res.json(await generate({messages},await loadAssistantContext(req)));}catch{res.status(503).json({error:'Помощник сейчас недоступен. Попробуйте ещё раз.'});}
+  try{res.json(await generate({...req.body,messages},await loadAssistantContext(req)));}catch{res.status(503).json({error:'Помощник сейчас недоступен. Попробуйте ещё раз.'});}
 };

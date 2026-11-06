@@ -61,13 +61,16 @@ try{
   assert.equal(requests.length,2,'A provider without authorized OpenAI context support is never contacted');
   response={desiredResult:'Результат',directions:[{title:'Фактор',actions:['Действие']}]};
   await createGoalPlanGenerator({openAiApiKey:'test-key',preferredProvider:'openai'})({wish:'Цель',planningMethod:'otani'},accountContext);
-  assert.equal(requests[2].user.assistantContextData,accountContext,'Only the bounded account-context format is accepted by OpenAI');
+  const scopedContext=requests[2].user.assistantContextData;
+  assert.notEqual(scopedContext,accountContext,'General account context is narrowed for a new goal');
+  assert.doesNotMatch(String(scopedContext),/Мне удобны короткие занятия|Публичное выступление/);
+  assert.match(String(scopedContext),/contextScope/);
   assert.doesNotMatch(String(requests[2].user.assistantContextData),/private diary text/);
   assert.equal('assistantContextData' in requests[0].user,false,'Other providers never receive scoped account context');
   response={answerStatus:'resolved',desiredResult:'Отчёт опубликован',directions:Array.from({length:8},(_,i)=>({title:`Этап ${i+1}`,groundingSourceId:0,actions:Array.from({length:8},(_,j)=>`Операция ${i+1}/${j+1}`)}))};
   await createGoalPlanGenerator({openAiApiKey:'test-key',preferredProvider:'openai'})({wish:'Подготовить и опубликовать отчёт по теме X',desiredResult:'Отчёт опубликован',planningMethod:'roadmap',planScope:'full-map',clarifyRoadmap:true,clarifications:[{question:'Где опубликовать?',answer:'В личном блоге'}],currentState:'Есть исходные данные: поле А'},accountContext);
-  assert.equal(requests[3].user.assistantContextData,accountContext,'Initial roadmap generation uses the approved context');
-  assert.equal((requests[4].user.facts as Record<string,unknown>).assistantContextData,accountContext,'The independent roadmap review receives the same approved context');
+  assert.equal(requests[3].user.assistantContextData,scopedContext,'Initial roadmap generation uses the approved context');
+  assert.equal((requests[4].user.facts as Record<string,unknown>).assistantContextData,scopedContext,'The independent roadmap review receives the same approved context');
   const followUp={wish:'Стать Дата аналитиком',planningMethod:'otani' as const,clarifications:[{question:'Опыт?',answer:'Учусь на karpov.courses, Python, исследование данных и создание метрик'}]};
   queuedReplies.push({desiredResult:'Оффер',directions:[],clarificationQuestions:['Какой у вас опыт?']},{desiredResult:'Оффер',directions:[{slotIndex:0,title:'Исследование данных',actions:['Проверить пропуски в данных урока']} ]});
   const before=requests.length;
@@ -75,7 +78,7 @@ try{
   assert.equal(requests.length-before,2,'Invalid follow-up gets one repair instead of failing immediately');
   assert.equal(repaired.directions[0].title,'Исследование данных');
   assert.equal(repaired.clarificationQuestions,undefined);
-  assert.equal(requests.at(-1)!.user.assistantContextData,accountContext,'Repair keeps the same authorized account context');
+  assert.equal(requests.at(-1)!.user.assistantContextData,scopedContext,'Repair keeps the same authorized account context');
   assert.deepEqual(requests.at(-1)!.user.clarifications,followUp.clarifications,'Repair preserves user answers');
   queuedReplies.push({directions:[]},{desiredResult:'Оффер',directions:[],clarificationQuestions:['Какая стартовая точка?']});
   const initialRepair=await createGoalPlanGenerator({openAiApiKey:'test-key',preferredProvider:'openai'})({wish:'Стать аналитиком',planningMethod:'otani'});
