@@ -10,7 +10,6 @@ import type { Goal, GoalAction, GoalRoutine, OpenWindowChange, OpenWindowDirecti
 import { todayDateKey } from '../utils';
 import { accent, accentBorder, accentFaint, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-const WebCaptureView = View as React.ComponentType<any>;
 
 type Props = { initialDirectionId?: string | null; goal: Goal; isDesktop?: boolean; onUpdateGoal: (recipe: (goal: Goal) => Goal) => void; onRequestAI?: () => void };
 type Cell = ReturnType<typeof getOpenWindowCells>[number];
@@ -36,6 +35,9 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
   const focusProgress = useRef(new Animated.Value(0)).current;
   const [reduceMotion, setReduceMotion] = useState(false);
   const [animatedDirectionId, setAnimatedDirectionId] = useState<string | null>(null);
+  const [webFocusActive, setWebFocusActive] = useState(false);
+  const focusMoving = useRef(false);
+  const focusScopeId = useRef(`otani-${Math.random().toString(36).slice(2)}`).current;
   useEffect(()=>{if(initialDirectionId)setSelectedDirectionId(initialDirectionId);},[initialDirectionId]);
   useEffect(() => {
     let mounted = true;
@@ -57,12 +59,29 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
   const selectedDirection = directions.find((direction) => direction.id === selectedDirectionId) ?? null;
   const cells = useMemo(() => getOpenWindowCells(goal), [goal]);
   useEffect(() => {
+    if (Platform.OS === 'web') {
+      let firstFrame = 0, secondFrame = 0;
+      let timer: ReturnType<typeof setTimeout>;
+      focusMoving.current = true;
+      if (selectedDirectionId && gridMode === 'full') {
+        setAnimatedDirectionId(selectedDirectionId);
+        // Mount at the original geometry, then let the compositor move only the sector.
+        firstFrame = requestAnimationFrame(() => {
+          secondFrame = requestAnimationFrame(() => setWebFocusActive(true));
+        });
+        timer = setTimeout(() => { focusMoving.current = false; }, reduceMotion ? 0 : 360);
+      } else {
+        setWebFocusActive(false);
+        timer = setTimeout(() => { setAnimatedDirectionId(null); focusMoving.current = false; }, reduceMotion ? 0 : 320);
+      }
+      return () => { cancelAnimationFrame(firstFrame); cancelAnimationFrame(secondFrame); clearTimeout(timer); };
+    }
     if (selectedDirectionId) setAnimatedDirectionId(selectedDirectionId);
     const animation = Animated.timing(focusProgress, {
       toValue: gridMode === 'full' && selectedDirectionId ? 1 : 0,
       duration: reduceMotion ? 0 : 460,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: Platform.OS !== 'web',
+      useNativeDriver: true,
     });
     animation.start(({ finished }) => {
       if (finished && !selectedDirectionId) setAnimatedDirectionId(null);
@@ -98,6 +117,19 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
     document.addEventListener('keyup', onKeyDown, true);
     return () => document.removeEventListener('keyup', onKeyDown, true);
   }, [directionEditorOpen, editingActionId, gridMode, selectedDirectionId]);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !selectedDirectionId || gridMode !== 'full' || editingActionId || directionEditorOpen) return;
+    const dismiss = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest(`[data-otani-focus="${focusScopeId}"], [data-otani-controls="${focusScopeId}"]`)) return;
+      setSelectedDirectionId(null);
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    document.addEventListener('click', dismiss, true);
+    return () => document.removeEventListener('click', dismiss, true);
+  }, [selectedDirectionId, gridMode, editingActionId, directionEditorOpen, focusScopeId]);
   const activeActions = (direction: OpenWindowDirection) => direction.actionIds.map((id) => goal.actions.find((item) => item.id === id)).filter((item): item is GoalAction => Boolean(item));
   const activeRoutines = (direction: OpenWindowDirection) => direction.routineIds.map((id) => goal.routines.find((item) => item.id === id)).filter((item): item is GoalRoutine => Boolean(item));
 
@@ -247,7 +279,7 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
   ];
 
   function renderMatrixCell(cell: Cell, index: number, overviewGrid = false, fullscreenBlock = false) {
-    const focusGrid = overviewGrid || fullscreenBlock;
+    const focusGrid = (overviewGrid && !expandedGrid) || fullscreenBlock;
     const gridAreaSize = fullscreenBlock ? fullscreenAreaSize : overviewAreaSize;
     const isGoal = cell.kind === 'goal';
     const direction = cell.kind !== 'goal' ? directions.find((item) => item.id === cell.directionId) : undefined;
@@ -266,16 +298,17 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
     const isOuterDirectionCenter = cell.kind === 'direction' && (Math.floor(row / 3) * 3 + Math.floor(column / 3) !== 4) && row % 3 === 1 && column % 3 === 1;
     const previewRole = isGoal ? 'Главная цель' : cell.kind === 'direction' ? isOuterDirectionCenter ? 'Действия направления' : 'Направление' : routine ? 'Регулярное действие' : 'Действие';
     const previewCell = () => {
-      if (!focusGrid) return;
+      if (!fullscreenBlock || focusMoving.current) return;
       const fullText = action?.description?.trim() || action?.title || cellLabel;
       const shortText = action?.shortTitle?.trim();
-      setFullscreenPreview({ index: cell.index, title: fullText, detail: `${shortText ? `Коротко: ${shortText} · ` : ''}${previewRole}${status ? ` · ${status}` : ''}` });
+      setFullscreenPreview((current) => current?.index === cell.index ? current : { index: cell.index, title: fullText, detail: `${shortText ? `Коротко: ${shortText} · ` : ''}${previewRole}${status ? ` · ${status}` : ''}` });
     };
     const fullscreenLineHeight = compactFullscreen ? 15 : 16;
     const fullscreenStatusHeight = isGoal || cell.kind === 'direction' && Boolean(direction?.title && actionCount) ? 12 : cell.kind === 'action' && !action && !routine ? 15 : (action || routine) && visibleStatus ? 12 : 0;
     const fullscreenReservedHeight = 8 + (cell.kind === 'direction' ? 12 : 0) + fullscreenStatusHeight;
     const fullscreenTextLines = Math.max(1, Math.floor((gridAreaSize.height / 9 - fullscreenReservedHeight) / fullscreenLineHeight));
     const onCellPress = () => {
+      if (focusGrid && animatedDirectionId && !selectedDirectionId) return;
       previewCell();
       if (isGoal) { if (focusGrid && selectedDirectionId) setSelectedDirectionId(null); else onRequestAI?.(); return; }
       if (focusGrid && direction) {
@@ -309,7 +342,14 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
     const focusScale = 1.08;
     const targetX = gridAreaSize.width / 2 + (duplicateDirection ? 0 : column - originColumn) * (fullscreenCellWidth + 3) * focusScale;
     const targetY = gridAreaSize.height / 2 + (duplicateDirection ? 0 : row - originRow) * (fullscreenCellHeight + 3) * focusScale;
-    const focusedCellMotion = focusGrid && animatedDirectionId ? {
+    const focusedCellMotion = focusGrid && animatedDirectionId ? Platform.OS === 'web' ? {
+      opacity: webFocusActive && isFocusedBranchCell && duplicateDirection ? 0 : 1,
+      transform: [
+        { translateX: webFocusActive && isFocusedBranchCell ? targetX - cellCenterX : 0 },
+        { translateY: webFocusActive && isFocusedBranchCell ? targetY - cellCenterY : 0 },
+        { scale: webFocusActive && isFocusedBranchCell ? focusScale : 1 },
+      ],
+    } : {
       opacity: focusProgress.interpolate({ inputRange: [0, 1], outputRange: [1, isFocusedBranchCell ? duplicateDirection ? 0 : 1 : 0.24] }),
       transform: [
         { translateX: isFocusedBranchCell ? focusProgress.interpolate({ inputRange: [0, 1], outputRange: [0, targetX - cellCenterX] }) : 0 },
@@ -318,7 +358,7 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
       ],
     } : undefined;
     return (
-      <AnimatedPressable {...(Platform.OS === 'web' ? { title: action?.description || action?.title || cellLabel } : {})} {...webSpaceActivationProps(onCellPress)} key={`${cell.kind}-${index}-${direction?.id ?? ''}`} testID={focusGrid ? `goal-matrix-${fullscreenBlock ? 'fullscreen-' : 'overview-'}cell-${cell.index}` : undefined} accessibilityRole="button" accessibilityLabel={isGoal ? `Цель: ${goal.title}. Помочь с направлениями` : `${cell.kind === 'direction' ? `${isOuterDirectionCenter ? 'Действия' : 'Направление'} ${direction ? direction.position + 1 : 1}` : `Действие направления ${direction ? direction.position + 1 : ''}`}: ${accessibilityCellLabel}${status ? `, ${status}` : ''}`} accessibilityHint={focusGrid ? 'Наведи, сфокусируйся или удерживай ячейку, чтобы прочитать полный текст' : undefined} accessibilityActions={focusGrid ? [{ name: 'showFullText', label: 'Показать полный текст' }] : undefined} onAccessibilityAction={({ nativeEvent }) => { if (nativeEvent.actionName === 'showFullText') previewCell(); }} onFocus={previewCell} onHoverIn={previewCell} onLongPress={previewCell} accessibilityState={{ selected: isSelected }} onPress={onCellPress} style={[...cellBaseStyle, focusGrid && !reduceMotion && styles.fullscreenCellTransition, focusGrid && animatedDirectionId && isFocusedBranchCell && styles.focusedBranchCell, focusGrid && animatedDirectionId && !isFocusedBranchCell && styles.dimmedFocusCell, focusedCellMotion, fullscreenBlock && styles.fullscreenCellOverflow, (focusGrid ? isFocusedBranchCell : isSelected) && { borderColor: directionColor!.color, backgroundColor: directionColor!.backgroundColor }]}>
+      <AnimatedPressable {...(Platform.OS === 'web' ? { dataSet: { otaniFocus: focusGrid && isFocusedBranchCell && !duplicateDirection ? focusScopeId : undefined } } : {})} pointerEvents={focusGrid && animatedDirectionId && isFocusedBranchCell && duplicateDirection ? 'none' : 'auto'} {...(Platform.OS === 'web' ? { title: action?.description || action?.title || cellLabel } : {})} {...webSpaceActivationProps(onCellPress)} key={`${cell.kind}-${index}-${direction?.id ?? ''}`} testID={focusGrid ? `goal-matrix-${fullscreenBlock ? 'fullscreen-' : 'overview-'}cell-${cell.index}` : undefined} accessibilityRole="button" accessibilityLabel={isGoal ? `Цель: ${goal.title}. Помочь с направлениями` : `${cell.kind === 'direction' ? `${isOuterDirectionCenter ? 'Действия' : 'Направление'} ${direction ? direction.position + 1 : 1}` : `Действие направления ${direction ? direction.position + 1 : ''}`}: ${accessibilityCellLabel}${status ? `, ${status}` : ''}`} accessibilityHint={focusGrid ? 'Наведи, сфокусируйся или удерживай ячейку, чтобы прочитать полный текст' : undefined} accessibilityActions={focusGrid ? [{ name: 'showFullText', label: 'Показать полный текст' }] : undefined} onAccessibilityAction={({ nativeEvent }) => { if (nativeEvent.actionName === 'showFullText') previewCell(); }} onFocus={previewCell} onHoverIn={previewCell} onLongPress={previewCell} accessibilityState={{ selected: isSelected }} onPress={onCellPress} style={[...cellBaseStyle, focusGrid && !reduceMotion && styles.fullscreenCellTransition, focusGrid && animatedDirectionId && isFocusedBranchCell && styles.focusedBranchCell, Platform.OS !== 'web' && focusGrid && animatedDirectionId && !isFocusedBranchCell && styles.dimmedFocusCell, focusedCellMotion, fullscreenBlock && styles.fullscreenCellOverflow, (focusGrid ? isFocusedBranchCell : isSelected) && { borderColor: directionColor!.color, backgroundColor: directionColor!.backgroundColor }]}>
         {isGoal ? <><Text numberOfLines={focusGrid ? fullscreenTextLines : gridMode === 'full' ? undefined : 2} style={[styles.goalCellText, fullscreenBlock && { fontSize: fullscreenLineHeight - 1, lineHeight: fullscreenLineHeight }]}>{goal.title}</Text><Text style={[styles.goalCellStatus, fullscreenBlock && { fontSize: 10, lineHeight: 12 }]}>Главная цель</Text></> : (
           <>
             {direction && (cell.kind === 'direction' || action || routine) ? <View style={styles.cellDirectionLabel}>{!focusGrid || cell.kind === 'direction' ? <View style={[styles.directionBadge, focusGrid && styles.smallDirectionBadge, { backgroundColor: directionColor!.backgroundColor }]}><Text style={[styles.directionBadgeText, focusGrid && styles.smallDirectionBadgeText, { color: directionColor!.color }]}>{direction.position + 1}</Text></View> : null}{!focusGrid ? <Text numberOfLines={1} style={[styles.cellRole, isSelected && styles.selectedCellText]}>{cell.kind === 'action' ? 'Действие' : isOuterDirectionCenter ? 'Действия' : 'Направление'}</Text> : cell.kind === 'direction' ? <Text numberOfLines={1} style={[styles.cellRole, isSelected && styles.selectedCellText]}>{isOuterDirectionCenter ? 'Действия' : 'Направление'}</Text> : null}</View> : null}
@@ -333,39 +373,35 @@ export function GoalMatrix({ initialDirectionId, goal, isDesktop = false, onUpda
   const grid = (items: Cell[], desktopGrid: boolean, overviewGrid = false) => (
     <View style={[styles.grid, (desktopGrid || overviewGrid) && styles.desktopGrid, desktopGrid && { width: 9 * 102 + 8 * 3 }, overviewGrid && isDesktop && { width: '100%' }, overviewGrid && !isDesktop && { width: 9 * 154 + 8 * 3 }, !desktopGrid && !overviewGrid && styles.mobileGrid]}>
       {items.map((cell, index) => renderMatrixCell(cell, index, overviewGrid))}
+      {overviewGrid && renderFocusBackdrop()}
     </View>
   );
 
-  const renderSelectionBar = (compact = false) => selectedDirection ? <View style={[styles.selectionBar, compact && styles.compactSelectionBar]}><View style={[styles.directionBadge, compact && styles.smallDirectionBadge, { backgroundColor: directionColors[selectedDirection.position % directionColors.length]!.backgroundColor }]}><Text style={[styles.directionBadgeText, compact && styles.smallDirectionBadgeText, { color: directionColors[selectedDirection.position % directionColors.length]!.color }]}>{selectedDirection.position + 1}</Text></View><Text numberOfLines={1} style={[styles.selectedTitle, compact && styles.compactSelectedTitle]}>{selectedDirection.title || `Направление ${selectedDirection.position + 1}`}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Редактировать направление ${selectedDirection.position + 1}`} onPress={() => setDirectionEditorOpen(true)} style={[styles.editDirectionButton, compact && styles.compactSelectionAction]}><Text style={[styles.editDirectionButtonText, compact && {color: text}]}>Изменить</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Сбросить выбор направления" onPress={() => setSelectedDirectionId(null)} style={[styles.clearSelectionButton, compact && styles.compactSelectionAction]}><Text style={styles.clearSelectionText}>Сброс</Text></Pressable></View> : compact ? <Text style={styles.fullscreenLegend}>Цель → направления → действия</Text> : null;
+  const renderSelectionBar = (compact = false) => selectedDirection ? <View {...(Platform.OS === 'web' ? { dataSet: { otaniControls: focusScopeId } } : {})} style={[styles.selectionBar, compact && styles.compactSelectionBar]}><View style={[styles.directionBadge, compact && styles.smallDirectionBadge, { backgroundColor: directionColors[selectedDirection.position % directionColors.length]!.backgroundColor }]}><Text style={[styles.directionBadgeText, compact && styles.smallDirectionBadgeText, { color: directionColors[selectedDirection.position % directionColors.length]!.color }]}>{selectedDirection.position + 1}</Text></View><Text numberOfLines={1} style={[styles.selectedTitle, compact && styles.compactSelectedTitle]}>{selectedDirection.title || `Направление ${selectedDirection.position + 1}`}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Редактировать направление ${selectedDirection.position + 1}`} onPress={() => setDirectionEditorOpen(true)} style={[styles.editDirectionButton, compact && styles.compactSelectionAction]}><Text style={[styles.editDirectionButtonText, compact && {color: text}]}>Изменить</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Сбросить выбор направления" onPress={() => setSelectedDirectionId(null)} style={[styles.clearSelectionButton, compact && styles.compactSelectionAction]}><Text style={styles.clearSelectionText}>Сброс</Text></Pressable></View> : compact ? <Text style={styles.fullscreenLegend}>Цель → направления → действия</Text> : null;
 
-  const dismissFocusWhenClickingOutsideCells = (event: any) => {
-    const target = event?.target as HTMLElement | undefined;
-    if (typeof document === 'undefined' || typeof target?.closest !== 'function') return;
-    if (!target.closest('[role="button"]')) setSelectedDirectionId(null);
-  };
-  const outsideDismissCapture = Platform.OS === 'web' ? { onClickCapture: dismissFocusWhenClickingOutsideCells } : {};
+  const renderFocusBackdrop = (fullscreen = false) => Platform.OS === 'web' && animatedDirectionId && (fullscreen || !expandedGrid) ? <View pointerEvents="none" style={[styles.focusBackdrop, { opacity: webFocusActive ? 1 : 0, transitionDuration: reduceMotion ? '0ms' : '320ms' } as ViewStyle]} /> : null;
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerText}><Text style={styles.title}>Квадраты ОТАНИ</Text><Text style={styles.subtitle}>Цель в центре · направления вокруг</Text></View>
-        {gridMode === 'full' ? <Pressable accessibilityRole="button" accessibilityLabel="Открыть сетку на весь экран" onPress={() => setExpandedGrid(true)} style={styles.expandButton}><Text style={styles.expandButtonText}>На весь экран</Text></Pressable> : null}
+        {gridMode === 'full' ? <Pressable {...(Platform.OS === 'web' ? { dataSet: { otaniControls: focusScopeId } } : {})} accessibilityRole="button" accessibilityLabel="Открыть сетку на весь экран" onPress={() => setExpandedGrid(true)} style={styles.expandButton}><Text style={styles.expandButtonText}>На весь экран</Text></Pressable> : null}
         {onRequestAI ? <Pressable accessibilityRole="button" accessibilityLabel="Попросить AI предложить направления для цели" onPress={onRequestAI} style={styles.aiButton}><Sparkles size={16} color={activeText}/><Text style={styles.aiButtonText}>Собрать с помощником</Text></Pressable> : null}
       </View>
 
       <Text style={styles.matrixLegend}>Цель → направления → действия</Text>
-      {renderSelectionBar()}
+      {gridMode === 'full' ? <View style={{ height: 40, justifyContent: 'center' }}>{selectedDirection ? renderSelectionBar(true) : null}</View> : renderSelectionBar()}
 
       <View style={styles.mobileTabs} accessibilityRole="tablist"><Pressable accessibilityRole="tab" aria-pressed={gridMode === 'compact'} accessibilityState={{ selected: gridMode === 'compact' }} onPress={() => setGridMode('compact')} style={[styles.mobileTab, gridMode === 'compact' && styles.mobileTabActive]}><Text style={[styles.mobileTabText, gridMode === 'compact' && styles.mobileTabTextActive]}>Направления</Text></Pressable><Pressable accessibilityRole="tab" aria-pressed={gridMode === 'full'} accessibilityState={{ selected: gridMode === 'full' }} onPress={() => setGridMode('full')} style={[styles.mobileTab, gridMode === 'full' && styles.mobileTabActive]}><Text style={[styles.mobileTabText, gridMode === 'full' && styles.mobileTabTextActive]}>Все 64 шага</Text></Pressable></View>
 
       {gridMode === 'full' ? (
-        <WebCaptureView {...outsideDismissCapture} style={styles.overview}>
+        <View style={styles.overview}>
           <Text style={styles.overviewHint}>Выбери ячейку — её направление соберётся в центре. Клик мимо вернёт сетку.</Text>
           {isDesktop ? <View style={[styles.overviewGridArea, { height: Math.min(648, Math.max(450, viewportHeight - 270)) }]} onLayout={({ nativeEvent }) => { const { width, height } = nativeEvent.layout; setOverviewAreaSize((current) => current.width === width && current.height === height ? current : { width, height }); }}><View style={styles.overviewGridContent}>{grid(cells, true, true)}</View></View> : <ScrollView horizontal showsHorizontalScrollIndicator><View style={styles.mobileOverviewArea} onLayout={({ nativeEvent }) => { const { width, height } = nativeEvent.layout; setOverviewAreaSize((current) => current.width === width && current.height === height ? current : { width, height }); }}><View style={styles.mobileOverviewGrid}>{grid(cells, false, true)}</View></View></ScrollView>}
-        </WebCaptureView>
+        </View>
       ) : <View style={styles.compactGridWrap}><View style={styles.desktopGridWrap}>{grid(compactGridCells, false)}</View></View>}
 
-      {expandedGrid && gridMode === 'full' ? <Modal animationType="fade" onRequestClose={() => { if (selectedDirectionId) setSelectedDirectionId(null); else setExpandedGrid(false); }} visible><WebCaptureView {...outsideDismissCapture} style={styles.fullscreenContainer}><View style={styles.fullscreenHeader}><Text accessibilityRole="header" numberOfLines={1} style={styles.fullscreenTitle}>ОТАНИ · 9×9</Text>{renderSelectionBar(true)}<Pressable accessibilityRole="button" accessibilityLabel="Закрыть полноэкранную сетку" onPress={() => setExpandedGrid(false)} style={styles.fullscreenClose}><X color={text} size={18}/></Pressable></View><View accessibilityLiveRegion="polite" style={styles.fullscreenPreviewPanel}>{fullscreenPreview ? <ScrollView style={styles.fullscreenPreviewScroll} contentContainerStyle={styles.fullscreenPreviewContent}><Text style={styles.fullscreenPreviewTitle}>{fullscreenPreview.title}</Text><Text style={styles.fullscreenPreviewDetail}>{fullscreenPreview.detail}</Text></ScrollView> : <Text style={styles.fullscreenPreviewHint}>Наведи, сфокусируйся или удерживай ячейку — полный текст появится здесь.</Text>}</View><View testID="goal-matrix-fullscreen-grid" style={styles.fullscreenGridArea} onLayout={({ nativeEvent }) => { const { width, height } = nativeEvent.layout; setFullscreenAreaSize((current) => current.width === width && current.height === height ? current : { width, height }); }}><View style={styles.fullscreenGrid}>{cells.map((cell, index) => renderMatrixCell(cell, index, true, true))}</View></View></WebCaptureView></Modal> : null}
+      {expandedGrid && gridMode === 'full' ? <Modal animationType="fade" onRequestClose={() => { if (selectedDirectionId) setSelectedDirectionId(null); else setExpandedGrid(false); }} visible><View style={styles.fullscreenContainer}><View style={styles.fullscreenHeader}><Text accessibilityRole="header" numberOfLines={1} style={styles.fullscreenTitle}>ОТАНИ · 9×9</Text>{renderSelectionBar(true)}<Pressable {...(Platform.OS === 'web' ? { dataSet: { otaniControls: focusScopeId } } : {})} accessibilityRole="button" accessibilityLabel="Закрыть полноэкранную сетку" onPress={() => setExpandedGrid(false)} style={styles.fullscreenClose}><X color={text} size={18}/></Pressable></View><View accessibilityLiveRegion="polite" style={styles.fullscreenPreviewPanel}>{fullscreenPreview ? <ScrollView style={styles.fullscreenPreviewScroll} contentContainerStyle={styles.fullscreenPreviewContent}><Text style={styles.fullscreenPreviewTitle}>{fullscreenPreview.title}</Text><Text style={styles.fullscreenPreviewDetail}>{fullscreenPreview.detail}</Text></ScrollView> : <Text style={styles.fullscreenPreviewHint}>Наведи, сфокусируйся или удерживай ячейку — полный текст появится здесь.</Text>}</View><View testID="goal-matrix-fullscreen-grid" style={styles.fullscreenGridArea} onLayout={({ nativeEvent }) => { const { width, height } = nativeEvent.layout; setFullscreenAreaSize((current) => current.width === width && current.height === height ? current : { width, height }); }}><View style={styles.fullscreenGrid}>{cells.map((cell, index) => renderMatrixCell(cell, index, true, true))}{renderFocusBackdrop(true)}</View></View></View></Modal> : null}
 
       {selectedDirection && directionEditorOpen ? <Modal animationType="none" onRequestClose={() => setDirectionEditorOpen(false)} transparent visible><View accessibilityViewIsModal accessibilityLabel={`Редактор направления ${selectedDirection.title || selectedDirection.position + 1}`} style={styles.editorOverlay}><ScrollView keyboardShouldPersistTaps="handled" style={styles.directionModalScroll} contentContainerStyle={styles.directionModalContent}><View style={styles.editor}>
           <View style={styles.editorHeader}><Text accessibilityRole="header" style={styles.editorTitle}>Направление {selectedDirection.position + 1}</Text><View style={styles.editorHeaderActions}>{selectedDirection.archivedAt ? <Pressable accessibilityRole="button" onPress={() => restoreDirection(selectedDirection)} style={styles.smallButton}><RotateCcw color={accent} size={14} /><Text style={styles.smallButtonText}>Восстановить</Text></Pressable> : <Pressable accessibilityRole="button" onPress={() => archiveDirection(selectedDirection)} style={styles.smallButton}><X color={muted} size={14} /><Text style={styles.smallButtonText}>В архив</Text></Pressable>}<Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактор направления" onPress={() => setDirectionEditorOpen(false)} style={styles.unlinkButton}><X color={muted} size={16} /></Pressable></View></View>
@@ -456,9 +492,10 @@ const styles = StyleSheet.create({
   fullscreenGridArea: { flex: 1, minHeight: 0, width: '100%' },
   fullscreenGrid: { gap: 3, alignContent: 'stretch', alignItems: 'stretch', flex: 1, flexDirection: 'row', flexWrap: 'wrap', width: '100%' },
   fullscreenCell: { borderRadius: 0, borderWidth: 0.5, flexBasis: '11.111%', flexGrow: 0, flexShrink: 0, height: 'auto', alignItems: 'center', justifyContent: 'center', minHeight: 24, padding: 2 },
+  focusBackdrop: { ...StyleSheet.absoluteFill, zIndex: 1, backgroundColor: 'rgba(190,198,184,0.30)', backdropFilter: 'blur(2px)', transitionProperty: 'opacity', transitionTimingFunction: 'ease' } as ViewStyle,
   focusedBranchCell: { elevation: 8, zIndex: 2, boxShadow: '0 8px 24px rgba(15,23,42,0.28)' } as ViewStyle,
   dimmedFocusCell: { filter: 'blur(1px)' } as ViewStyle,
-  fullscreenCellTransition: { transition: 'filter 460ms ease, box-shadow 460ms ease' } as ViewStyle,
+  fullscreenCellTransition: { transitionProperty: 'transform, opacity', transitionDuration: '320ms', transitionTimingFunction: 'cubic-bezier(.2,.8,.2,1)' } as ViewStyle,
   fullscreenCellOverflow: { overflow: 'hidden' },
   quickEditorScroll: { maxHeight: '92%', width: '94%' },
   quickEditorScrollContent: { paddingVertical: 8 },
