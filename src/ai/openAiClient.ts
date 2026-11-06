@@ -6,7 +6,7 @@ export class OpenAiError extends Error {
 type Request = { messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>; temperature?: number; max_tokens: number };
 
 /** Server-only Responses API client. No credentials are ever returned to callers or logged. */
-export async function requestOpenAI(config: { apiKey?: string; model?: string; timeoutMs?: number }, request: Request): Promise<string> {
+export async function requestOpenAI(config: { apiKey?: string; model?: string; timeoutMs?: number; reasoningEffort?: 'low' }, request: Request): Promise<string> {
   const apiKey = config.apiKey?.trim();
   if (!apiKey) throw new OpenAiError(401, 'authentication');
   const timeoutMs = typeof config.timeoutMs === 'number' && Number.isFinite(config.timeoutMs) ? Math.max(1, Math.min(40000, config.timeoutMs)) : 40000;
@@ -20,6 +20,7 @@ export async function requestOpenAI(config: { apiKey?: string; model?: string; t
         model: config.model?.trim() || 'gpt-6-luna',
         input: request.messages.map(message => ({ role: message.role, content: message.content })),
         max_output_tokens: request.max_tokens,
+        ...(config.reasoningEffort ? {reasoning: {effort: config.reasoningEffort}} : {}),
         text: { format: { type: 'json_object' } },
         store: false,
       }),

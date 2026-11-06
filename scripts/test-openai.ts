@@ -25,6 +25,9 @@ async function main() {
     assert.equal(body.text.format.type, 'json_object');
     assert.equal(body.input.length, 2);
     assert.equal(body.input[1].content, 'Hello');
+    assert.equal(body.reasoning, undefined, 'Other callers retain model defaults');
+    await requestOpenAI({apiKey:'test-secret',model:'gpt-6-luna',reasoningEffort:'low'}, {messages:[{role:'user',content:'Return JSON'}],max_tokens:100});
+    assert.deepEqual(JSON.parse(String(captured?.init?.body)).reasoning,{effort:'low'});
 
     globalThis.fetch = (async () => new Response(JSON.stringify({ error: { message: 'secret detail' } }), { status: 401 })) as typeof fetch;
     await assert.rejects(requestOpenAI({ apiKey: 'test-secret' }, { messages: [{ role: 'user', content: 'x' }], max_tokens: 10 }), (error: unknown) => error instanceof OpenAiError && error.reason === 'authentication');

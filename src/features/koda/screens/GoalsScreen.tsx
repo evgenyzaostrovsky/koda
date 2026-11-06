@@ -64,7 +64,7 @@ const weekDays = [
 const workDays = [1, 2, 3, 4, 5];
 const weekendDays = [6, 7];
 
-export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline, userId, hasCloudSync = Boolean(userId), initialGoalId, onOpenWorkspace }: { goals: Goal[]; onGoalsChange: GoalsChange; isDesktop?: boolean; isOnline: boolean; hasCloudSync?: boolean; userId?: string | null; initialGoalId?: string | null; onOpenWorkspace?: () => void }) {
+export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline, userId, hasCloudSync = Boolean(userId), initialGoalId, initialDetailTab, onOpenWorkspace }: { goals: Goal[]; onGoalsChange: GoalsChange; isDesktop?: boolean; isOnline: boolean; hasCloudSync?: boolean; userId?: string | null; initialGoalId?: string | null; initialDetailTab?: 'matrix'|'roadmap'; onOpenWorkspace?: () => void }) {
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
   const lastInitialGoalId = useRef<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -125,7 +125,7 @@ export function GoalsScreen({ goals, onGoalsChange, isDesktop = false, isOnline,
   if (selectedGoal) {
     return (
       <>
-        <GoalDetails goal={selectedGoal} userId={userId} hasCloudSync={hasCloudSync} isDesktop={isDesktop} isOnline={isOnline} onBack={() => setSelectedGoalId(null)} onGoalsChange={onGoalsChange} />
+        <GoalDetails goal={selectedGoal} initialDetailTab={selectedGoal.id===initialGoalId?initialDetailTab:undefined} userId={userId} hasCloudSync={hasCloudSync} isDesktop={isDesktop} isOnline={isOnline} onBack={() => setSelectedGoalId(null)} onGoalsChange={onGoalsChange} />
         <GoalWizard open={createOpen} userId={userId} onClose={() => setCreateOpen(false)} onSave={saveWizardGoal} />
         <CreateGoalFlow open={legacyCreateOpen} onClose={() => setLegacyCreateOpen(false)} onSave={saveGoal} />
         <ConfirmSheet title="Сделать цель главной?" text="Предыдущая главная цель станет важной. Одновременно активной главной может быть только одна." visible={Boolean(confirmMainGoal)} onCancel={() => setConfirmMainGoal(null)} onConfirm={confirmMainGoalSave} />
@@ -198,12 +198,12 @@ function GoalCard({ desktop, goal, featured, onPress }: { desktop?: boolean; goa
   );
 }
 
-function GoalDetails({ goal, userId, isDesktop = false, hasCloudSync = true, onBack, onGoalsChange }: { goal: Goal; userId?:string|null; isDesktop?: boolean; hasCloudSync?: boolean; isOnline: boolean; onBack: () => void; onGoalsChange: GoalsChange }) {
+function GoalDetails({ goal, initialDetailTab='matrix', userId, isDesktop = false, hasCloudSync = true, onBack, onGoalsChange }: { goal: Goal; initialDetailTab?: 'matrix'|'roadmap'; userId?:string|null; isDesktop?: boolean; hasCloudSync?: boolean; isOnline: boolean; onBack: () => void; onGoalsChange: GoalsChange }) {
   const [structureOpen,setStructureOpen]=useState(false);
-  const [detailTab, setDetailTab] = useState<'roadmap' | 'actions' | 'matrix' | 'context'>('matrix');
+  const [detailTab, setDetailTab] = useState<'roadmap' | 'actions' | 'matrix' | 'context'>(initialDetailTab);
   const [matrixFullGrid, setMatrixFullGrid] = useState(false);
   const compactMatrixPage = isDesktop && detailTab === 'matrix' && matrixFullGrid;
-  useEffect(()=>{setStructureOpen(false);setDetailTab('matrix');setMatrixFullGrid(false);},[goal.id]);
+  useEffect(()=>{setStructureOpen(false);setDetailTab(initialDetailTab);setMatrixFullGrid(false);},[goal.id,initialDetailTab]);
   useEffect(()=>{if(detailTab!=='matrix')setMatrixFullGrid(false);},[detailTab]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [addKind, setAddKind] = useState<AddKind | null>(null);
