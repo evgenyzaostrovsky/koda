@@ -24,6 +24,7 @@ type Props = {
   ownerId?: string | null;
   onAddItem: (item: Pick<PlannerItem, 'date' | 'time' | 'title'> & { subtasks?: PlannerItem['subtasks'] }) => void;
   onDeleteItem: (id: string) => void;
+  onDeleteItems?: (ids: string[]) => void;
   onMoveProjectedItemDate?: (item: PlannerItem, date: string) => void;
   onToggleProjectedItem?: (item: PlannerItem) => void;
   onToggleItem: (id: string) => void;
@@ -39,7 +40,7 @@ type Props = {
   autoPlanControl?: ReactNode;
 };
 
-export function PlannerScreen({ initialFocus, isDesktop = false, items, projectItems = [], goals = [], ownerId, onAddItem, onDeleteItem, onMoveProjectedItemDate, onToggleProjectedItem, onToggleItem, onSetItemFailed, onToggleSubtask, onUpdateItem, onOpenSection, onOpenWorkspace, syncText, autoPlanControl }: Props) {
+export function PlannerScreen({ initialFocus, isDesktop = false, items, projectItems = [], goals = [], ownerId, onAddItem, onDeleteItem, onDeleteItems, onMoveProjectedItemDate, onToggleProjectedItem, onToggleItem, onSetItemFailed, onToggleSubtask, onUpdateItem, onOpenSection, onOpenWorkspace, syncText, autoPlanControl }: Props) {
   const [selectedDate, setSelectedDate] = useState(normalizeDateKey(initialFocus?.date ?? '') ?? todayDateKey());
   const [mode, setMode] = useState<CalendarMode>(initialFocus ? 'day' : isDesktop ? 'week' : 'day');
   useEffect(() => {
@@ -54,6 +55,8 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
   const [subtaskDraft, setSubtaskDraft] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(() => dateFromKey(todayDateKey()));
+  const [clearCandidates, setClearCandidates] = useState<string[] | null>(null);
+  const removableItems = items.filter(item => !item.deletedAt && !isProjectedPlannerItem(item));
   const [deleteCandidate, setDeleteCandidate] = useState<PlannerItem | null>(null);
   const displayItems = useMemo(() => plannerCalendarItems([...items, ...projectItems], goals, selectedDate, mode, ownerId), [items, projectItems, goals, selectedDate, mode, ownerId]);
   const pickerItems = useMemo(() => plannerCalendarItems([...items, ...projectItems], goals, toDateKey(pickerMonth), 'month', ownerId), [items, projectItems, goals, pickerMonth, ownerId]);
@@ -125,7 +128,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
         }}
         onOpenWorkspace={onOpenWorkspace}
         syncText={syncText}
-        toolbarActions={autoPlanControl}
+        toolbarActions={<View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>{autoPlanControl}{onDeleteItems && removableItems.length > 0 ? <Pressable accessibilityRole="button" accessibilityLabel="Очистить дела планнера" onPress={() => setClearCandidates(removableItems.map(item => item.id))} style={styles.iconButton}><Trash2 color={muted} size={17} /></Pressable> : null}</View>}
       />
       <Modal transparent animationType="fade" visible={Boolean(editor)} onRequestClose={() => setEditor(null)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: 'rgba(0,0,0,0.3)' }}>
@@ -174,6 +177,16 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+      <Modal transparent animationType="fade" visible={clearCandidates !== null} onRequestClose={() => setClearCandidates(null)}>
+        <View style={styles.modalOverlay}><View style={[styles.plannerConfirmCard, { maxWidth: 400, width: '100%' }]}>
+          <Text style={styles.modalTitle}>Очистить дела планнера?</Text>
+          <Text style={styles.cardText}>Будут удалены все самостоятельные дела: {clearCandidates?.length ?? 0}, включая завершённые и прошлые даты. Цели, проекты, привычки, заметки и дневник сохранятся. Отменить удаление нельзя.</Text>
+          <View style={styles.plannerConfirmActions}>
+            <Pressable accessibilityRole="button" onPress={() => setClearCandidates(null)} style={styles.plannerCancelButton}><Text style={styles.rowMeta}>Отмена</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={() => { if (clearCandidates) onDeleteItems?.(clearCandidates); setClearCandidates(null); }} style={styles.plannerDangerButton}><Text style={styles.notificationButtonText}>Удалить все дела</Text></Pressable>
+          </View>
+        </View></View>
       </Modal>
       <Modal transparent animationType="fade" visible={Boolean(deleteCandidate)} onRequestClose={() => setDeleteCandidate(null)}>
         <View style={styles.modalOverlay}><View style={[styles.plannerConfirmCard, { maxWidth: 400, width: '100%' }]}>
