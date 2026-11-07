@@ -1,3 +1,4 @@
+import {petSurfaceLanding} from './PetWandererGeometry';
 import { createElement, useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, AppState, Easing, Keyboard, Platform, View, useWindowDimensions } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -135,10 +136,38 @@ export function PetWanderer({ name, state, pose, onPress }: {
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(() => { debounce = null; setNavigationPaused(false); }, 260);
     };
+    // A responsive card can move while the pet approaches it (fonts, cloud
+    // data, expanded route). Cancel the old trajectory and measure it again.
+    const sizes = new WeakMap<Element, string>();
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(entries => {
+      let changed = false;
+      for (const entry of entries) {
+        const size = `${entry.contentRect.width}:${entry.contentRect.height}`;
+        const previous = sizes.get(entry.target);
+        sizes.set(entry.target, size);
+        if (previous !== undefined && previous !== size) changed = true;
+      }
+      if (changed) pause();
+    });
+    const observed = new Set<Element>();
+    let surfacesReady = false;
+    const observeCards = () => {
+      let changed = false;
+      for (const element of observed) if (!element.isConnected) { resize?.unobserve(element); observed.delete(element); changed = true; }
+      document.querySelectorAll(SURFACE_SELECTOR).forEach(element => {
+        if (!observed.has(element)) { observed.add(element); resize?.observe(element); changed = true; }
+      });
+      if (surfacesReady && changed) pause();
+      surfacesReady = true;
+    };
+    observeCards();
+    const cards = new MutationObserver(observeCards);
+    cards.observe(document.body, {childList: true, subtree: true});
     window.addEventListener('scroll', pause, { capture: true, passive: true });
     window.addEventListener('hashchange', pause);
     window.addEventListener('popstate', pause);
     return () => {
+      resize?.disconnect(); cards.disconnect();
       window.removeEventListener('scroll', pause, true);
       window.removeEventListener('hashchange', pause);
       window.removeEventListener('popstate', pause);
@@ -271,12 +300,18 @@ export function PetWanderer({ name, state, pose, onPress }: {
       if (!element?.isConnected) return null;
       return measureSurface(element, widget.id);
     };
+    const obstaclesFor = (target: WidgetRect) => Array.from(document.querySelectorAll<HTMLElement>(SURFACE_SELECTOR))
+      .filter(element => element !== target.element && !element.contains(target.element ?? null) && !target.element?.contains(element))
+      .filter(element => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden')
+      .map(element => element.getBoundingClientRect());
     const sideFor = (widget: WidgetRect): WidgetApproach | null => {
       const bounds = getPetActionFrameBounds('push-ready', PET_SIZE);
-      const leftOk = widget.left >= bounds.right + 8;
+      const y = widget.top + widget.height / 2 - PET_SIZE / 2;
+      const clear = (x: number) => !obstaclesFor(widget).some(rect => rect.left < x + PET_SIZE - .5 && rect.right > x + .5 && rect.top < y + PET_SIZE && rect.bottom > y);
+      const leftOk = widget.left >= bounds.right + 8 && clear(widget.left - bounds.right);
       // The push frames are right-aligned to the canvas before mirroring, so
       // their mirrored left edge is exactly the canvas edge.
-      const rightOk = width - widget.right >= PET_SIZE + 8;
+      const rightOk = width - widget.right >= PET_SIZE + 8 && clear(widget.right);
       if (!leftOk && !rightOk) return null;
       const side: 'left' | 'right' = leftOk && rightOk ? (Math.random() < .8 ? 'left' : 'right') : leftOk ? 'left' : 'right';
       const x = side === 'left' ? widget.left - bounds.right : widget.right;
@@ -291,7 +326,13 @@ export function PetWanderer({ name, state, pose, onPress }: {
       })() : null);
       if (!side) { wait(800, startPush); return; }
       setTargetId(fresh.id); setScene('approach'); setScenePose(basePose.current); setActionPose(null);
-      moveTo(side.point, () => { facing.setValue(side.facing); point.current = side.point; done(fresh, side); });
+      moveTo(side.point, () => {
+        const arrived = freshWidget(widget);
+        if (!arrived || Math.abs(arrived.left - fresh.left) > 1 || Math.abs(arrived.top - fresh.top) > 1 || Math.abs(arrived.width - fresh.width) > 1 || Math.abs(arrived.height - fresh.height) > 1) {
+          wait(100, startPush); return;
+        }
+        facing.setValue(side.facing); point.current = side.point; done(arrived, side);
+      });
     };
     const widgetAnimation = (widget: WidgetRect, dx: number, dy: number, duration: number) => new Promise<void>(resolve => {
       const element = widget.element;
@@ -346,15 +387,24 @@ export function PetWanderer({ name, state, pose, onPress }: {
         });
       });
     };
+    const landingFor = (target: WidgetRect) => {
+      // Even a partly clipped card can obstruct the air above another card.
+      const obstacles = obstaclesFor(target);
+      return petSurfaceLanding(target, obstacles, width, PET_SIZE);
+    };
     const hop = (widget: WidgetRect, side: WidgetApproach) => {
       const current = freshWidget(widget);
       if (!current) { roam(() => wait(3500, startPush)); return; }
       setTargetId(current.id);
-      const bounds = getPetActionFrameBounds('land-brace', PET_SIZE);
-      const landing = safePoint({ x: current.left + current.width / 2 - (bounds.left + bounds.right) / 2, y: current.top - bounds.bottom });
+      const landing = landingFor(current);
+      if (!landing) { setActionPose(null); roam(() => wait(800, startPush)); return; }
       setScene('hop'); setScenePose(null); setActionPose('jump-tuck'); facing.setValue(landing.x < side.point.x ? -1 : 1);
       const desiredPeak = Math.max(8, landing.y - 60);
       arc(side.point, landing, desiredPeak, 1100, () => {
+        const arrived = freshWidget(widget);
+        if (!arrived || Math.abs(arrived.top - current.top) > 1 || Math.abs(arrived.left - current.left) > 1 || Math.abs(arrived.width - current.width) > 1) {
+          setActionPose(null); wait(100, startPush); return;
+        }
         point.current = landing; setActionPose('land-brace');
         springOffset.setValue(0);
         const bounceDone = new Promise<boolean>(resolve => {
@@ -366,7 +416,8 @@ export function PetWanderer({ name, state, pose, onPress }: {
           point.current = landing;
           const stamp = (index: number) => {
             if (index >= 2) {
-              setScene('look-user'); setActionPose(null); setScenePose('poses_01'); facing.setValue(1);
+              // Keep the feet-aligned landing frame while standing on the card.
+              setScene('look-user'); setActionPose('land-brace'); setScenePose(null); facing.setValue(1);
               wait(1300, () => roam(() => wait(8000 + Math.random() * 7000, startPush)));
               return;
             }
@@ -391,7 +442,9 @@ export function PetWanderer({ name, state, pose, onPress }: {
     };
     function startPush() {
       if (cancelled) return;
-      const visible = widgets(); const widget = visible.length ? pick(visible) : null;
+      const visible = widgets();
+      const reachable = visible.filter(candidate => landingFor(candidate));
+      const widget = reachable.length ? pick(reachable) : visible.length ? pick(visible) : null;
       if (!widget) { roam(() => wait(3500 + Math.random() * 2500, startPush)); return; }
       const side = sideFor(widget);
       if (!side) { approach(widget, true, (target, fallback) => hop(target, fallback)); return; }

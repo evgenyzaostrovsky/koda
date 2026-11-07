@@ -1,10 +1,10 @@
 import { markGoalDeleted } from '../goalDeletion';
-import { compactGoalMilestones, currentGoalMilestone, nextAvailableGoalAction, nextRoadmapAction } from '../components/goalPresentation';
+import { currentGoalMilestone, nextAvailableGoalAction, nextRoadmapAction } from '../components/goalPresentation';
 import { BentoCard, BentoGrid, BentoPage, EmptyStateCard, SectionHeader } from '../components/Bento';
 import { ArrowLeft, Check, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-react-native';
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { createElement, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import {
   calculateGoalProgress,
   calculateMilestoneProgress,
@@ -30,6 +30,7 @@ import { GoalStructureAssistant } from '../components/GoalStructureAssistant';
 import { GoalWizard, removeGoalWizardDraft } from '../components/GoalWizard';
 import { accent, accentBorder, accentFaint, activeBg, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
 import { getActiveRoadmapClarifications, updateRoadmapAnswer } from '../goalRoadmapClarifications';
+import { roadmapStageLabel } from '../roadmapLabels';
 
 type GoalsChange = (updater: (goals: Goal[]) => Goal[]) => void;
 type AddKind = 'milestone' | 'action' | 'routine';
@@ -225,14 +226,15 @@ function FeaturedGoalCard({ goal, onPress }: { goal: Goal; onPress: () => void }
   const compact = useWindowDimensions().width < 700;
   const progress = calculateGoalProgress(goal);
   const nextAction = nextAvailableGoalAction(goal);
-  const route = compactGoalMilestones(goal, 5);
-  const completedIds = new Set(goal.milestones.filter((stage) => calculateMilestoneProgress(stage, goal.actions) >= 100).map((stage) => stage.id));
+  const milestones = [...goal.milestones].sort((first, second) => first.position - second.position || (first.id < second.id ? -1 : first.id > second.id ? 1 : 0));
+  const completedIds = new Set(milestones.filter((stage) => stage.status === 'completed' || calculateMilestoneProgress(stage, goal.actions) >= 100).map((stage) => stage.id));
+  const completedCount = completedIds.size;
   const currentId = currentGoalMilestone(goal)?.id;
   return <BentoCard tone="lime" style={[local.featuredOverviewCard, compact && local.featuredOverviewCardCompact]}>
     <Pressable accessibilityRole="button" accessibilityLabel={`Открыть главную цель «${goal.title}»`} onPress={onPress} style={[local.featuredOverviewPress, compact && local.featuredOverviewPressCompact]}>
       <View style={local.featuredOverviewTop}>
         <View style={local.featuredOverviewText}>
-          <Text style={local.limeLabel}>{goal.priority === 'main' ? 'ГЛАВНАЯ ЦЕЛЬ' : 'В ФОКУСЕ'}{route.totalCount ? ` · ${route.completedCount} ИЗ ${route.totalCount} ЭТАПОВ` : ''}</Text>
+          <Text style={local.limeLabel}>{goal.priority === 'main' ? 'ГЛАВНАЯ ЦЕЛЬ' : 'В ФОКУСЕ'}{milestones.length ? ` · ${completedCount} ИЗ ${milestones.length} ЭТАПОВ` : ''}</Text>
           <Text style={local.featuredOverviewTitle}>{goal.title}</Text>
           <Text numberOfLines={2} style={local.limeMeta}>{goal.desiredResult || 'Результат пока не задан'}</Text>
         </View>
@@ -241,11 +243,10 @@ function FeaturedGoalCard({ goal, onPress }: { goal: Goal; onPress: () => void }
       <View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: progress }} style={local.limeProgressTrack}>
         <View style={[local.limeProgressFill, { width: `${progress}%` }]} />
       </View>
-      {route.milestones.length ? <View style={[local.routeList, compact && local.routeListCompact]} accessibilityLabel="Этапы цели">
-                  {route.milestones.map((milestone, index) => <View key={milestone.id} style={[local.routeItem, compact && local.routeItemCompact]}>
-          {index > 0 ? <View style={[local.routeConnector, compact && local.routeConnectorCompact]} /> : null}
-          <View style={[local.routeDot, completedIds.has(milestone.id) && local.routeDotDone, currentId === milestone.id && local.routeDotCurrent]} />
-          <Text numberOfLines={2} style={[local.routeText, compact && local.routeTextCompact]}>{milestone.title}</Text>
+      {milestones.length ? <View style={local.routeList} accessibilityLabel="Полный маршрут цели">
+                  {milestones.map((milestone, index) => <View key={milestone.id} accessibilityLabel={`Этап ${index + 1}: ${milestone.title}`} aria-label={`Этап ${index + 1}: ${milestone.title}`} style={[local.routeItem, compact && local.routeItemCompact, completedIds.has(milestone.id) && local.routeItemDone, currentId === milestone.id && local.routeItemCurrent]}>
+          <View style={[local.routeDot, completedIds.has(milestone.id) && local.routeDotDone, currentId === milestone.id && local.routeDotCurrent]}><Text style={[local.routeNumber, completedIds.has(milestone.id) && local.routeNumberDone]}>{index + 1}</Text></View>
+          <Text accessibilityLabel={milestone.title} style={[local.routeText, compact && local.routeTextCompact]}>{Platform.OS === 'web' ? createElement('span', {title: milestone.title}, roadmapStageLabel(milestone.title, index + 1)) : roadmapStageLabel(milestone.title, index + 1)}</Text>
         </View>)}
       </View> : null}
       <View style={local.featuredNextAction}>
@@ -1270,17 +1271,18 @@ const local = StyleSheet.create({
   featuredOverviewPercent: { color: activeText, fontSize: 24, fontWeight: '500', lineHeight: 30 },
   goalFactTiles: { flexDirection: 'row', gap: 8 },
   goalFactTilesCompact: { flexDirection: 'column' },
-  routeList: { flexDirection: 'row', gap: 4, maxWidth: '100%' },
-  routeListCompact: { flexDirection: 'column', gap: 2 },
-  routeItem: { alignItems: 'center', flex: 1, flexDirection: 'column', gap: 6, minHeight: 52, minWidth: 0, position: 'relative' },
-  routeItemCompact: { alignItems: 'flex-start', flex: 0, flexDirection: 'row', gap: 9, minHeight: 30 },
-  routeConnector: { backgroundColor: accentBorder, height: 2, left: '-50%', position: 'absolute', top: 6, width: '100%' },
-  routeConnectorCompact: { height: '100%', left: 6, top: -24, width: 2 },
-  routeDot: { backgroundColor: panel, borderColor: accentBorder, borderRadius: 99, borderWidth: 1.5, height: 14, width: 14 },
+  routeList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, maxWidth: '100%' },
+  routeItem: { alignItems: 'flex-start', backgroundColor: 'rgba(255,255,255,0.48)', borderColor: 'rgba(67,91,49,0.25)', borderRadius: 13, borderWidth: 1, flexBasis: '30%', flexDirection: 'row', flexGrow: 1, gap: 8, minHeight: 44, minWidth: 0, paddingHorizontal: 10, paddingVertical: 9 },
+  routeItemCompact: { flexBasis: '100%', flexGrow: 0, flexShrink: 0 },
+  routeItemDone: { backgroundColor: 'rgba(255,255,255,0.62)' },
+  routeItemCurrent: { borderColor: '#435b31', borderWidth: 1.5 },
+  routeDot: { alignItems: 'center', backgroundColor: panel, borderColor: accentBorder, borderRadius: 99, borderWidth: 1.5, height: 22, justifyContent: 'center', width: 22 },
   routeDotDone: { backgroundColor: '#435b31', borderColor: '#435b31' },
   routeDotCurrent: { borderColor: '#435b31', borderWidth: 4 },
-  routeText: { color: '#435b31', fontSize: 11, lineHeight: 15, textAlign: 'center', width: '100%' },
-  routeTextCompact: { flex: 1, textAlign: 'left' },
+  routeNumber: { color: '#435b31', fontSize: 11, fontWeight: '700', lineHeight: 16 },
+  routeNumberDone: { color: '#ffffff' },
+  routeText: { color: '#435b31', flex: 1, fontSize: 12, lineHeight: 17, minWidth: 0 },
+  routeTextCompact: { flex: 1 },
   limeProgressTrack: { backgroundColor: 'rgba(255,255,255,0.65)', borderRadius: 99, height: 8, overflow: 'hidden', width: '100%' },
   limeProgressFill: { backgroundColor: '#435b31', borderRadius: 99, height: 8 },
   featuredNextAction: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.55)', borderRadius: 16, flexDirection: 'row', gap: 10, justifyContent: 'space-between', minHeight: 64, paddingHorizontal: 13, paddingVertical: 10 },

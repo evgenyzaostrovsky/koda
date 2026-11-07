@@ -50,12 +50,12 @@ export function ProgressScreen({
         </View>
         <View style={{flex:wide?1.1:undefined,minWidth:0,gap:14}}>
           <View style={{flexDirection:'row',flexWrap:'wrap',gap:14}}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Открыть прогресс целей" onPress={()=>setDetail('goals')} style={[local.bubble,{backgroundColor:'#e8ff55'}]}>
+            <Pressable accessibilityRole="button" {...({dataSet:{petSurface:"progress-goals"}} as any)} accessibilityLabel="Открыть прогресс целей" onPress={()=>setDetail('goals')} style={[local.bubble,{backgroundColor:'#e8ff55'}]}>
               <Text style={[local.label,{color:'#435b31'}]}>ЦЕЛИ В РАБОТЕ</Text><Text style={[local.value,{color:'#263c19'}]}>{activeGoals.length?`${goalScore}%`:'—'}</Text><Text style={[local.noteText,{color:'#435b31'}]}>{activeGoals.length?`${activeGoals.length} активных целей`:'Пока нет активных целей'}</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Посмотреть сводку дел" onPress={()=>setDetail('planner')} style={local.bubble}><Text style={local.label}>ПЛАННЕР</Text><Text style={local.value}>{completedTasks} / {totalTasks}</Text><Text style={local.noteText}>Выполнено в текущем списке</Text></Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="Посмотреть сводку привычек" onPress={()=>setDetail('habits')} style={[local.bubble,{backgroundColor:panelSoft}]}><Text style={local.label}>ПРИВЫЧКИ · 7 ДНЕЙ</Text><Text style={local.value}>{habitScore}%</Text><Text style={local.noteText}>Запланированных отметок</Text></Pressable>
-            <View style={local.bubble}><Text style={local.label}>КАК ЧИТАТЬ</Text><Text style={[local.noteText,{marginTop:8}]}>У каждого блока свой источник: план дня, действия целей, дела календаря и привычки.</Text></View>
+            <Pressable accessibilityRole="button" {...({dataSet:{petSurface:"progress-planner"}} as any)} accessibilityLabel="Посмотреть сводку дел" onPress={()=>setDetail('planner')} style={local.bubble}><Text style={local.label}>ПЛАННЕР</Text><Text style={local.value}>{completedTasks} / {totalTasks}</Text><Text style={local.noteText}>Выполнено в текущем списке</Text></Pressable>
+            <Pressable accessibilityRole="button" {...({dataSet:{petSurface:"progress-habits"}} as any)} accessibilityLabel="Посмотреть сводку привычек" onPress={()=>setDetail('habits')} style={[local.bubble,{backgroundColor:panelSoft}]}><Text style={local.label}>ПРИВЫЧКИ · 7 ДНЕЙ</Text><Text style={local.value}>{habitScore}%</Text><Text style={local.noteText}>Запланированных отметок</Text></Pressable>
+            <View {...({dataSet:{petSurface:"progress-guide"}} as any)} style={local.bubble}><Text style={local.label}>КАК ЧИТАТЬ</Text><Text style={[local.noteText,{marginTop:8}]}>У каждого блока свой источник: план дня, действия целей, дела календаря и привычки.</Text></View>
           </View>
         </View>
       </View>
