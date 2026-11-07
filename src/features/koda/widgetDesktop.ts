@@ -43,3 +43,12 @@ export function scoreWeek(days:KodaDay[],date:string,count=7){
     return {date:key,day,value:current?day.totalScore!:null,status:current?'completed':day?.status==='completed'?'legacy':day?.status==='active'?'active':'empty'} as const;
   });
 }
+
+/** Keep the compact hero when day and goal are swapped; do not reset saved ordering. */
+export function desktopHeroColumns(visibleOrder: readonly WidgetId[]) {
+  if (visibleOrder[2] !== 'score' || !['day','goal'].every(id => visibleOrder.slice(0,2).includes(id as WidgetId))) return null;
+  const goalLeft = visibleOrder[0] === 'goal';
+  return { goal: goalLeft ? '1 / span 6' : '7 / span 6', day: goalLeft ? '7 / span 6' : '1 / span 6',
+    score: `${goalLeft ? 7 : 1} / span ${visibleOrder.includes('focus') ? 3 : 6}`,
+    focus: goalLeft ? '10 / span 3' : '4 / span 3' };
+}

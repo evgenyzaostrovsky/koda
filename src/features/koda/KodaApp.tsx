@@ -44,6 +44,7 @@ import { DailyPlanScreen } from './screens/DailyPlanScreen';
 import { PlannerScreen } from './screens/PlannerScreen';
 import { parseQuickTaskInput } from './quickTaskInput';
 import { goalOverviewItems, isPlannerDate } from './plannerOverview';
+import { isGoalRoutinePlannerItem, toggleGoalCalendarItem, moveGoalCalendarAction } from './plannerCalendarModel';
 import { NotesScreen } from './screens/NotesScreen';
 import { PomodoroProvider } from './usePomodoroTimer';
 import { PomodoroScreen, playPomodoroSound } from './screens/PomodoroScreen';
@@ -926,11 +927,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
 
   function toggleProjectedPlannerItem(item: PlannerItem) {
     if (item.sourceType === 'goal') {
-      if (item.ownerId !== userId) return;
-      const at = new Date().toISOString();
-      updateGoals(current => current.map(goal => goal.id === item.goalId ? { ...goal, updatedAt: at,
-        actions: goal.actions.map(action => action.id === item.goalActionId ? { ...action, status: item.done ? 'pending' : 'completed', completedAt: item.done ? null : at } : action),
-      } : goal));
+      updateGoals(current => toggleGoalCalendarItem(current,item,userId??null,new Date().toISOString()));
       return;
     }
     if (item.sourceType !== 'project' || !item.ownerId || !item.sourceId) return;
@@ -954,7 +951,12 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   }
 
   function moveProjectedPlannerItemDate(item: PlannerItem, date: string) {
-    if (item.sourceType === 'goal') { autoPlan.move(item, date); return; }
+    if (item.sourceType === 'goal') {
+      if (isGoalRoutinePlannerItem(item)) return;
+      if (item.id.startsWith('goal-action:')) updateGoals(current=>moveGoalCalendarAction(current,item,date,userId??null,new Date().toISOString()));
+      else autoPlan.move(item, date);
+      return;
+    }
     if (item.sourceType !== 'project' || !item.ownerId || !item.sourceId) return;
 
     const now = new Date().toISOString();
@@ -1128,7 +1130,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
     }
   }
   const widgetItems = useMemo(() => [...plannerDayItems, ...buildHabitPlannerItems(habits, localDate)], [plannerDayItems, habits, localDate]);
-  const overviewItems = useMemo(() => [...plannerDayItems, ...goalOverviewItems(effectiveGoals, localDate).filter(item => !autoPlanItems.some(auto => auto.goalId === item.goalId && auto.goalActionId === item.goalActionId))], [plannerDayItems, effectiveGoals, localDate, autoPlanItems]);
+  const overviewItems = useMemo(() => [...plannerDayItems, ...goalOverviewItems(effectiveGoals, localDate, userId).filter(item => !autoPlanItems.some(auto => auto.goalId === item.goalId && auto.goalActionId === item.goalActionId))], [plannerDayItems, effectiveGoals, localDate, autoPlanItems, userId]);
   useEffect(() => {
     if (!appStateLoaded || !plannerLoaded || appStateLoadedStorageKey !== scopedStorageKey(kodaStateStorageKey,userId)) return;
     const day=kodaDays.find(d=>d.localDate===localDate&&d.status==='active'&&d.plan);
@@ -1158,7 +1160,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
     if (activeTab === 'routines') return <HabitsScreen onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} habits={habits} onHabitsChange={updateHabitSources} onToggleToday={toggleHabitToday} />;
 
     if (activeTab === 'planner') {
-      return <PlannerScreen autoPlanControl={<AutoPlanControl {...autoPlan.control} />} onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} initialFocus={focusedPlannerItem} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} />;
+      return <PlannerScreen goals={effectiveGoals} ownerId={userId} autoPlanControl={<AutoPlanControl {...autoPlan.control} />} onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} initialFocus={focusedPlannerItem} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} />;
     }
     if (activeTab === 'goals') {
       return <GoalsScreen onOpenWorkspace={()=>setActiveTab('habits')} goals={effectiveGoals} hasCloudSync={Boolean(userId) && isSupabaseConfigured()} isDesktop={isDesktopLayout} isOnline={isOnline} onGoalsChange={updateGoals} userId={userId} initialGoalId={focusedGoalId} initialDetailTab={focusedGoalView} />;

@@ -131,7 +131,8 @@ export function PomodoroScreen({
 
   return (
     <>
-    <ScrollView style={{flex:1}} contentContainerStyle={{flexGrow:1,justifyContent:'center',alignItems:'center',paddingVertical:16}} showsVerticalScrollIndicator={false}>
+    <View style={{flex:1,minHeight:0}}>
+    <ScrollView style={{flex:1,minHeight:0}} contentContainerStyle={{flexGrow:1,alignItems:'center',paddingTop:16,paddingBottom:24}} showsVerticalScrollIndicator>
       <View style={{gap:12,width:'100%',maxWidth:640}}>
         <View style={isDesktop ? local.mainColumn : undefined}>
           <SectionTitle title="Таймер" subtitle="Помодоро без лишнего шума" />
@@ -187,6 +188,7 @@ export function PomodoroScreen({
       </View>
     </ScrollView>
     <SectionSheet title={openPanel==='sounds'?'Звук таймера':'Настройки таймера'} visible={openPanel!==null} onClose={()=>setOpenPanel(null)}>{openPanel==='sounds'?soundsPanel:settingsPanel}</SectionSheet>
+    </View>
     </>
   );
 }

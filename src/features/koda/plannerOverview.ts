@@ -38,22 +38,26 @@ export function plannerGoalEntries(goal:Goal,date:string){
     (entry.action.dependsOn??[]).every(id=>goal.actions.some(a=>a.id===id&&a.status==='completed'))));
 }
 /** Read-only projection, never a second persisted task or recurrence engine. */
-export function goalOverviewItems(goals:Goal[],today:string):PlannerItem[]{
+export function goalOverviewItems(goals:Goal[],today:string,ownerId?:string|null):PlannerItem[]{
+  return goalPlannerItemsInRange(goals,today,plannerDateOffset(today,31),ownerId,2);
+}
+/** Shared source projection; the calendar supplies its actual visible period. */
+export function goalPlannerItemsInRange(goals:Goal[],from:string,to:string,ownerId?:string|null,routineLimit=Infinity):PlannerItem[]{
+  if(!isPlannerDate(from)||!isPlannerDate(to)||from>to)return [];
   const result:PlannerItem[]=[];
   for(const goal of goals){
-    if(goal.status!=='active'||goal.archivedAt)continue;
+    if(goal.status!=='active'||goal.archivedAt||goal.deletedAt)continue;
     for(const action of goal.actions){
       if(!isPlannerDate(action.dueDate)||action.archivedAt||
         !(action.dependsOn??[]).every(id=>goal.actions.some(a=>a.id===id&&a.status==='completed')))continue;
-      result.push({id:`goal-action:${goal.id}:${action.id}`,title:action.title,date:action.deferredUntil&&isPlannerDate(action.deferredUntil)&&action.deferredUntil>action.dueDate?action.deferredUntil:action.dueDate,time:'',done:action.status==='completed',sourceType:'goal',sourceId:action.id,goalId:goal.id,goalActionId:action.id,milestoneId:action.milestoneId});
+      result.push({id:`goal-action:${goal.id}:${action.id}`,title:action.title,goalTitle:goal.title,description:action.description,ownerId,date:action.deferredUntil&&isPlannerDate(action.deferredUntil)&&action.deferredUntil>action.dueDate?action.deferredUntil:action.dueDate,time:'',done:action.status==='completed',sourceType:'goal',sourceId:action.id,goalId:goal.id,goalActionId:action.id,milestoneId:action.milestoneId});
     }
     const seen=new Map<string,number>();
-    for(let offset=0;offset<32;offset++){
-      const date=plannerDateOffset(today,offset);
+    for(let date=from;date<=to;date=plannerDateOffset(date,1)){
       for(const entry of plannerGoalEntries(goal,date)){
-        if(entry.kind!=='routine'||(seen.get(entry.routine.id)??0)>=2)continue;
+        if(entry.kind!=='routine'||(seen.get(entry.routine.id)??0)>=routineLimit)continue;
         seen.set(entry.routine.id,(seen.get(entry.routine.id)??0)+1);
-        result.push({id:`goal-routine:${goal.id}:${entry.routine.id}:${date}`,title:entry.routine.title,date,time:'',done:entry.completionRatio>=1,sourceType:'goal',sourceId:entry.routine.id,goalId:goal.id});
+        result.push({id:`goal-routine:${goal.id}:${entry.routine.id}:${date}`,title:entry.routine.title,goalTitle:goal.title,ownerId,date,time:'',done:entry.completionRatio>=1,sourceType:'goal',sourceId:entry.routine.id,goalId:goal.id});
       }
     }
   }

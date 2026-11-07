@@ -4,8 +4,9 @@ import { parseQuickTaskInput } from '../quickTaskInput';
 export { parseQuickTaskInput } from '../quickTaskInput';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Calendar, Check, ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react-native';
-import type { PlannerItem, TabKey, ThemeId } from '../types';
+import type { Goal, PlannerItem, TabKey, ThemeId } from '../types';
 import { isProjectedPlannerItem } from '../plannerProjections';
+import { isGoalRoutinePlannerItem, plannerCalendarItems } from '../plannerCalendarModel';
 import { PlannerCalendar, type CalendarMode } from '../components/PlannerCalendar';
 import { accent, activeText, faint, line, muted, panel, text } from '../theme';
 import { styles } from '../styles';
@@ -19,6 +20,8 @@ type Props = {
   initialFocus?: PlannerItem | null;
   isDesktop?: boolean;
   items: PlannerItem[];
+  goals?: Goal[];
+  ownerId?: string | null;
   onAddItem: (item: Pick<PlannerItem, 'date' | 'time' | 'title'> & { subtasks?: PlannerItem['subtasks'] }) => void;
   onDeleteItem: (id: string) => void;
   onMoveProjectedItemDate?: (item: PlannerItem, date: string) => void;
@@ -36,7 +39,7 @@ type Props = {
   autoPlanControl?: ReactNode;
 };
 
-export function PlannerScreen({ initialFocus, isDesktop = false, items, projectItems = [], onAddItem, onDeleteItem, onMoveProjectedItemDate, onToggleProjectedItem, onToggleItem, onSetItemFailed, onToggleSubtask, onUpdateItem, onOpenSection, onOpenWorkspace, syncText, autoPlanControl }: Props) {
+export function PlannerScreen({ initialFocus, isDesktop = false, items, projectItems = [], goals = [], ownerId, onAddItem, onDeleteItem, onMoveProjectedItemDate, onToggleProjectedItem, onToggleItem, onSetItemFailed, onToggleSubtask, onUpdateItem, onOpenSection, onOpenWorkspace, syncText, autoPlanControl }: Props) {
   const [selectedDate, setSelectedDate] = useState(normalizeDateKey(initialFocus?.date ?? '') ?? todayDateKey());
   const [mode, setMode] = useState<CalendarMode>(initialFocus ? 'day' : isDesktop ? 'week' : 'day');
   useEffect(() => {
@@ -52,9 +55,11 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(() => dateFromKey(todayDateKey()));
   const [deleteCandidate, setDeleteCandidate] = useState<PlannerItem | null>(null);
-  const displayItems = useMemo(() => [...items, ...projectItems].filter(item => !item.deletedAt), [items, projectItems]);
+  const displayItems = useMemo(() => plannerCalendarItems([...items, ...projectItems], goals, selectedDate, mode, ownerId), [items, projectItems, goals, selectedDate, mode, ownerId]);
+  const pickerItems = useMemo(() => plannerCalendarItems([...items, ...projectItems], goals, toDateKey(pickerMonth), 'month', ownerId), [items, projectItems, goals, pickerMonth, ownerId]);
   const projected = Boolean(editor?.item && isProjectedPlannerItem(editor.item));
   const goalProjected = Boolean(projected && editor?.item?.sourceType === 'goal');
+  const routineProjected = Boolean(editor?.item && isGoalRoutinePlannerItem(editor.item));
   const parsedNewItem = parseQuickTaskInput(title, date, time);
   const valid = projected ? Boolean(normalizeDateKey(date)) : editor?.item ? canSubmitPlannerItem(date, time, title) : Boolean(parsedNewItem);
 
@@ -128,7 +133,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
           <View style={{ width: '100%', maxWidth: 460, maxHeight: '92%', backgroundColor: panel, borderRadius: 20, borderWidth: 1, borderColor: line, overflow: 'hidden' }}>
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, gap: 16 }}>
               <View style={styles.rowBetween}>
-                <Text style={{ color: text, fontSize: 18, fontWeight: '700' }}>{goalProjected ? 'Шаг цели' : projected ? 'Задача проекта' : editor?.item ? 'Задача' : 'Новая задача'}</Text>
+                <Text style={{ color: text, fontSize: 18, fontWeight: '700' }}>{routineProjected ? 'Ритуал цели' : goalProjected ? 'Шаг цели' : projected ? 'Задача проекта' : editor?.item ? 'Задача' : 'Новая задача'}</Text>
                 <Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактор" onPress={() => setEditor(null)} style={styles.iconButton}><X color={muted} size={19} /></Pressable>
               </View>
               <TextInput autoFocus={!projected} editable={!projected} accessibilityLabel="Название задачи" placeholder="Название задачи" placeholderTextColor={faint} value={title} onChangeText={setTitle} onSubmitEditing={() => saveEditor()} style={[styles.modalInput, { fontSize: 18 }]} />
@@ -136,10 +141,10 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
                 {editor.item.goalTitle ? <Text style={{ color: accent, fontWeight: '600' }}>{editor.item.goalTitle}</Text> : null}
                 {editor.item.description ? <Text style={{ color: text, fontSize: 14, lineHeight: 21 }}>{editor.item.description}</Text> : null}
               </View>}
-              <Pressable accessibilityRole="button" accessibilityLabel="Изменить дату и время" onPress={() => setPickerOpen(open => !open)} style={[styles.plannerDateTimeButton, { minHeight: 44 }]}>
+              <Pressable accessibilityRole="button" disabled={routineProjected} accessibilityLabel={routineProjected ? 'Дата повторения по расписанию цели' : 'Изменить дату и время'} onPress={() => setPickerOpen(open => !open)} style={[styles.plannerDateTimeButton, { minHeight: 44 }]}>
                 <Calendar color={accent} size={17} /><Text style={styles.plannerDateTimeText}>{formatShortDateTime(date, time)}</Text>
               </Pressable>
-              {pickerOpen ? <DateTimePickerPopover compact items={displayItems} moveMonth={delta => setPickerMonth(month => addMonthsToDate(month, delta))} onClearTime={() => setTime('')} onClose={() => setPickerOpen(false)} onSelectDate={nextDate => { setDate(nextDate); setPickerMonth(dateFromKey(nextDate)); }} onTimeChange={setTime} selectedDate={date} selectedTime={time} showTime={!projected} visibleMonth={pickerMonth} /> : null}
+              {pickerOpen ? <DateTimePickerPopover compact items={pickerItems} moveMonth={delta => setPickerMonth(month => addMonthsToDate(month, delta))} onClearTime={() => setTime('')} onClose={() => setPickerOpen(false)} onSelectDate={nextDate => { setDate(nextDate); setPickerMonth(dateFromKey(nextDate)); }} onTimeChange={setTime} selectedDate={date} selectedTime={time} showTime={!projected} visibleMonth={pickerMonth} /> : null}
               {!projected ? <>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                   <Text style={[styles.rowMeta, { flex: 1 }]}>Время</Text>
@@ -157,7 +162,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
                   <TextInput accessibilityLabel="Новая подзадача" placeholder="Добавить подзадачу" placeholderTextColor={faint} value={subtaskDraft} onChangeText={setSubtaskDraft} onSubmitEditing={addSubtask} style={styles.plannerTaskInput} />
                   <Pressable accessibilityRole="button" accessibilityLabel="Добавить подзадачу" disabled={!subtaskDraft.trim()} onPress={addSubtask} style={styles.iconButton}><Plus color={subtaskDraft.trim() ? accent : faint} size={18} /></Pressable>
                 </View>
-              </> : goalProjected ? <View style={{ gap: 4, padding: 12, borderRadius: 12, backgroundColor: 'var(--koda-surface-2, #f8f9f6)' }}><Text style={{ color: accent, fontSize: 12, fontWeight: '700' }}>Шаг из автоплана главной цели</Text><Text style={styles.cardText}>После выполнения следующий шаг этой цели появится завтра.</Text></View> : <Pressable accessibilityRole="button" onPress={() => { setEditor(null); onOpenSection?.('projects'); }}><Text style={{ color: accent }}>Открыть проект</Text></Pressable>}
+              </> : goalProjected ? <View style={{ gap: 4, padding: 12, borderRadius: 12, backgroundColor: 'var(--koda-surface-2, #f8f9f6)' }}><Text style={{ color: accent, fontSize: 12, fontWeight: '700' }}>{routineProjected ? 'Ритуал цели' : 'Шаг цели'}</Text><Text style={styles.cardText}>{routineProjected ? 'Повторения следуют расписанию цели. Отметка выполнения относится к выбранной дате.' : 'Изменения сохраняются в исходной цели.'}</Text></View> : <Pressable accessibilityRole="button" onPress={() => { setEditor(null); onOpenSection?.('projects'); }}><Text style={{ color: accent }}>Открыть проект</Text></Pressable>}
               <Pressable accessibilityRole="button" disabled={!valid} onPress={() => saveEditor()} style={[styles.notificationButton, !valid && styles.notificationButtonDisabled]}><Text style={styles.notificationButtonText}>{editor?.item ? 'Сохранить' : 'Добавить'}</Text></Pressable>
               {editor?.item ? <View style={{ borderTopWidth: 1, borderColor: line, paddingTop: 8, gap: 4 }}>
                 <Pressable accessibilityRole="button" disabled={!valid} onPress={toggleCompletion} style={styles.taskContextAction}><Check color={accent} size={18} /><Text style={styles.plannerTitle}>{editor.item.done ? 'Вернуть в работу' : 'Отметить выполненной'}</Text></Pressable>

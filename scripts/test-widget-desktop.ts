@@ -40,3 +40,13 @@ for (const id of ['assistant','journal','progress'] as const) {
  assert.deepEqual(normalizeWidgetLayout(JSON.parse(JSON.stringify(moved))),moved);
 }
 console.log('Companion widgets: old layouts migrate without losing hidden/order, new cards drag and round-trip.');
+
+// Saved goal-first layouts must retain the compact day/SCORE group after reload.
+import { desktopHeroColumns } from '../src/features/koda/widgetDesktop';
+assert.equal(desktopHeroColumns(['day','goal','score','focus'])?.goal,'7 / span 6');
+assert.equal(desktopHeroColumns(['goal','day','score','focus'])?.goal,'1 / span 6');
+assert.equal(desktopHeroColumns(['goal','day','score','focus'])?.day,'7 / span 6');
+assert.equal(desktopHeroColumns(['goal','day','score'])?.score,'7 / span 6');
+assert.equal(desktopHeroColumns(['goal','score','focus']),null);
+assert.equal(desktopHeroColumns(['notes','day','goal','score']),null);
+console.log('Compact hero preserves swapped day/goal order and hidden focus.');

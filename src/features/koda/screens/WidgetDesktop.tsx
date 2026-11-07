@@ -8,7 +8,7 @@ import { syncDayPlanProgress } from '../dayPlanSync';
 import { calculateGoalProgress, calculateMilestoneProgress } from '../goalLogic';
 import { currentGoalMilestone, nextRoadmapAction } from '../components/goalPresentation';
 import { roadmapStageLabel } from '../roadmapLabels';
-import { cleanNotePreview, displayedWidgetOrder, moveWidget, widgetMainGoal, widgetIds, type WidgetLayout, type WidgetId } from '../widgetDesktop';
+import { cleanNotePreview, displayedWidgetOrder, moveWidget, widgetMainGoal, desktopHeroColumns, type WidgetLayout, type WidgetId } from '../widgetDesktop';
 import { HabitIcon } from '../components/HabitIcon';
 import { MyDayWidget } from '../components/MyDayWidget';
 import { WidgetDragGrid } from '../components/WidgetDragGrid';
@@ -45,7 +45,8 @@ export function WidgetDesktop(props:Props) {
  const seconds=timer.remainingSeconds; const time=`${Math.floor(seconds/60).toString().padStart(2,'0')}:${(seconds%60).toString().padStart(2,'0')}`;
  const order=displayedWidgetOrder(props.layout,wide);
  const visibleOrder=order.filter(id=>!props.layout.hidden.includes(id));
- const defaultDesktopBento=wide&&Boolean(goal)&&stages.length>0&&props.layout.order.join(',')===widgetIds.join(',')&&visibleOrder.slice(0,3).join(',')==='day,goal,score';
+ const heroColumns=wide&&goal&&stages.length>0?desktopHeroColumns(visibleOrder):null;
+ const defaultDesktopBento=Boolean(heroColumns);
  function card(id:WidgetId,children:ReactNode,dark=false,variant:'none'|'top-right'|'corner-action'|'stepped'='none',action?:ReactNode){
   const phone=width<680;
   const heights:Record<WidgetId,number>={day:defaultDesktopBento?170:190,goal:defaultDesktopBento?330:150,score:145,planner:165,notes:150,focus:145,projects:145,habits:145,assistant:175,journal:165,progress:155};
@@ -85,7 +86,7 @@ export function WidgetDesktop(props:Props) {
   const destinations:Record<Exclude<WidgetId,'goal'|'journal'>,TabKey>={day:'day',planner:'planner',score:'progress',notes:'notes',focus:'timer',projects:'projects',habits:'routines',assistant:'koda',progress:'progress'};
   onOpen(destinations[id as Exclude<WidgetId,'goal'|'journal'>]);
  };
- const dragItems=visibleOrder.map(id=>({id,label:widgetLabels[id],content:cards[id],onOpen:()=>openWidget(id),placement:wide?defaultDesktopBento&&id==='day'?{gridColumn:'span 6',gridRow:'1'}:defaultDesktopBento&&id==='goal'?{gridColumn:'span 6',gridRow:'1 / span 2'}:defaultDesktopBento&&id==='score'?{gridColumn:visibleOrder.includes('focus')?'span 3':'span 6',gridRow:'2'}:defaultDesktopBento&&id==='focus'?{gridColumn:'span 3',gridRow:'2'}:{gridColumn:`span ${desktopSpans[id]}`} : width>=680?{gridColumn:['day','goal','habits','progress'].includes(id)?'span 12':'span 6'}:{gridColumn:`span ${width>=365?phoneSpans[id]:12}`}}));
+ const dragItems=visibleOrder.map(id=>({id,label:widgetLabels[id],content:cards[id],onOpen:()=>openWidget(id),placement:wide?defaultDesktopBento&&id==='day'?{gridColumn:heroColumns!.day,gridRow:'1'}:defaultDesktopBento&&id==='goal'?{gridColumn:heroColumns!.goal,gridRow:'1 / span 2'}:defaultDesktopBento&&id==='score'?{gridColumn:heroColumns!.score,gridRow:'2'}:defaultDesktopBento&&id==='focus'?{gridColumn:heroColumns!.focus,gridRow:'2'}:{gridColumn:`span ${desktopSpans[id]}`} : width>=680?{gridColumn:['day','goal','habits','progress'].includes(id)?'span 12':'span 6'}:{gridColumn:`span ${width>=365?phoneSpans[id]:12}`}}));
  return <ScrollView showsVerticalScrollIndicator={false} style={{flex:1}} contentContainerStyle={[w.desktop,{paddingHorizontal:width>=680?24:16}]}><WidgetDragGrid items={dragItems} masonry={false} columns={12} enabled={props.layoutReady} gap={wide?20:12} onMove={(source,target)=>props.onLayout(moveWidget(props.layout,order,source,target))}/>{visibleOrder.length===0&&<Text style={w.meta}>Все виджеты скрыты. Верни нужные через «Настроить рабочий стол».</Text>}</ScrollView>;
 
 }
