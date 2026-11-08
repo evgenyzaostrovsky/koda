@@ -1,5 +1,6 @@
 import {normalizeGoalDiscussion,type GoalDiscussionData} from './goalDiscussion';
 import { restoreWizardClarifications } from './wizardDraft';
+import { normalizeGoalActionDetails, type GoalActionDetail } from '../../ai/goalPlanContract';
 
 export type WizardDraftPayload = {
   assistantDiscussion?: GoalDiscussionData;
@@ -10,7 +11,7 @@ export type WizardDraftPayload = {
   desiredResult: string;
   deadline: string;
   priority: 'main' | 'important' | 'supporting';
-  directions: Array<{ id: string; title: string; actions: string[] }>;
+  directions: Array<{ id: string; title: string; actions: string[]; actionDetails?: GoalActionDetail[] }>;
   clarificationQuestions: string[];
   clarificationAnswers: string[];
 };
@@ -54,11 +55,19 @@ export function normalizeWizardDraft(value: unknown): WizardDraftPayload | null 
     desiredResult: text(value.desiredResult, 4000),
     deadline: text(value.deadline, 32),
     priority: value.priority === 'main' || value.priority === 'supporting' ? value.priority : 'important',
-    directions: (Array.isArray(value.directions) ? value.directions : []).slice(0, 8).map((item, index) => ({
-      id: record(item) && validId(item.id) ? item.id : `restored-direction-${index}`,
-      title: record(item) ? text(item.title, 300) : '',
-      actions: record(item) && Array.isArray(item.actions) ? item.actions.slice(0, 8).map((action) => text(action, 300)) : [],
-    })),
+    directions: (Array.isArray(value.directions) ? value.directions : []).slice(0, 8).map((item, index) => {
+      const actions = record(item) && Array.isArray(item.actions) ? item.actions.slice(0, 8).map((action) => text(action, 300)) : [];
+      const actionDetails = normalizeGoalActionDetails(record(item) ? item.actionDetails : undefined, actions.filter((action) => action.trim()))
+        // Truncation can leave trailing whitespace; canonical snapshots must normalize idempotently.
+        .map((detail) => ({ ...detail, description: detail.description.trim() }));
+      return {
+        id: record(item) && validId(item.id) ? item.id : `restored-direction-${index}`,
+        title: record(item) ? text(item.title, 300) : '',
+        actions,
+        // Old immutable revisions must keep exactly their original shape.
+        ...(actionDetails.length ? { actionDetails } : {}),
+      };
+    }),
     ...restoreWizardClarifications(value),
     ...(value.assistantDiscussion ? {assistantDiscussion:normalizeGoalDiscussion(value.assistantDiscussion)} : {}),
   };

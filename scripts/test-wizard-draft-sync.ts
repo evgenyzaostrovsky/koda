@@ -94,9 +94,62 @@ async function main() {
   assert.deepEqual(bounded.clarificationAnswers.map((answer) => answer.length), [400, 0]);
   assert.equal(bounded.directions.length, 8); assert.equal(bounded.directions[0].actions.length, 8);
   assert.equal(bounded.directions[0].title.length, 300); assert.equal(bounded.directions[0].actions[0].length, 300);
+  const detail = { title: 'Read chapter', shortTitle: 'Read', description: 'Read chapter one and write three notes.' };
+  const detailed = normalizeWizardDraft({ ...draft('study'), directions: [{ id: 'reading', title: 'Reading', actions: [detail.title], actionDetails: [detail] }] })!;
+  assert.deepEqual(detailed.directions[0].actionDetails, [detail]);
+  const invalidDetails = normalizeWizardDraft({ ...draft('bounds'), directions: [{
+    id: 'bounds', title: 'Bounds', actions: [detail.title, 'Long description', 'No label', 'No description', 'Too long label', '', 'x'.repeat(301), 'Last retained', 'Dropped action'],
+    actionDetails: [null, 42, { ...detail, title: 'read chapter' }, { ...detail, title: 'Read chapter ' },
+      { ...detail, title: 'Renamed action' }, { ...detail, title: 'Dropped action' }, { ...detail, title: 'x'.repeat(301) },
+      { ...detail, title: '', shortTitle: 'Blank action' }, { ...detail, title: 'No label', shortTitle: '  ' },
+      { ...detail, title: 'No description', description: 42 }, { ...detail, title: 'Too long label', shortTitle: 'x'.repeat(49) },
+      { ...detail, shortTitle: '  Read\n chapter  ', description: '  Some notes  ' }, { ...detail, description: 'Duplicate loses' },
+      { ...detail, title: 'Long description', description: `${'d'.repeat(999)} more` },
+      { ...detail, title: 'Last retained', shortTitle: 'l'.repeat(48) }],
+  }] })!;
+  assert.deepEqual(invalidDetails.directions[0].actionDetails, [
+    { ...detail, shortTitle: 'Read chapter', description: 'Some notes' },
+    { ...detail, title: 'Long description', description: 'd'.repeat(999) },
+    { ...detail, title: 'Last retained', shortTitle: 'l'.repeat(48) },
+  ], 'Only valid, unique metadata matching retained actions exactly is kept');
+  assert.deepEqual(normalizeWizardDraft(invalidDetails), invalidDetails, 'Canonical details remain stable when normalized again');
+  assert.doesNotThrow(() => stageWizardDraft(emptyWizardSyncState(A), invalidDetails, 'canonical-details'));
+  const detailLimit = normalizeWizardDraft({ ...detailed, directions: [{ ...detailed.directions[0],
+    actions: Array.from({ length: 10 }, (_, index) => `Action ${index}`),
+    actionDetails: Array.from({ length: 10 }, (_, index) => ({ ...detail, title: `Action ${index}`, description: 'd'.repeat(1001) })),
+  }] })!;
+  assert.equal(detailLimit.directions[0].actionDetails?.length, 8);
+  assert.ok(detailLimit.directions[0].actionDetails?.every((item) => item.description.length === 1000));
+  const scannedLimit = normalizeWizardDraft({ ...detailed, directions: [{ ...detailed.directions[0], actionDetails: [...Array(32).fill(null), detail] }] })!;
+  assert.ok(!Object.hasOwn(scannedLimit.directions[0], 'actionDetails'), 'Metadata scan is bounded and empty fields are omitted');
+  const legacy: WizardDraftPayload = { version: 1, step: 2, wish: 'Old wish', goalTitle: 'Old goal', desiredResult: '', deadline: '', priority: 'important',
+    directions: [{ id: 'old-direction', title: 'Old direction', actions: ['Old action'] }], clarificationQuestions: [], clarificationAnswers: [] };
+  const legacyState = { version: 1, owner: A, revisions: [{ id: 'legacy', parentIds: [], draft: legacy }], outbox: [] };
+  assert.deepEqual(parseWizardSyncState(JSON.stringify(legacyState), A), legacyState, 'Previously stored immutable revisions remain identical');
+  assert.deepEqual(normalizeWizardDraft(legacy), legacy);
+  for (const actionDetails of [undefined, null, [], [null], [{ ...detail, title: 'Other action' }]]) {
+    assert.deepEqual(normalizeWizardDraft({ ...legacy, directions: [{ ...legacy.directions[0], actionDetails }] }), legacy);
+  }
+  assert.throws(() => mergeWizardRevisions(emptyWizardSyncState(A), [{ id: 'invalid-details', parentIds: [], draft: {
+    ...detailed, directions: [{ ...detailed.directions[0], actionDetails: [{ ...detail, title: 'Unretained action' }] }],
+  } }]), /Invalid wizard draft payload/, 'Malformed immutable metadata must fail closed rather than silently change history');
   assert.throws(() => emptyWizardSyncState('guest'), /authenticated account/);
   assert.throws(() => parseWizardSyncState(JSON.stringify(emptyWizardSyncState(A)), B), /account mismatch/);
   assert.throws(() => parseWizardSyncState('{bad', A));
+
+  const detailRows = new Map<string, Row>();
+  const detailDevice1 = mockSupabase(detailRows), detailDevice2 = mockSupabase(detailRows);
+  const detailPending = stageWizardDraft(emptyWizardSyncState(A), detailed, 'with-details');
+  detailDevice1.loseNextAck();
+  await assert.rejects(syncWizardDraft(detailPending, detailDevice1.transport), /lost acknowledgement/);
+  const detailSynced = await syncWizardDraft(parseWizardSyncState(JSON.stringify(detailPending), A), detailDevice1.transport);
+  const detailRestored = parseWizardSyncState(JSON.stringify(await syncWizardDraft(emptyWizardSyncState(A), detailDevice2.transport)), A);
+  assert.deepEqual(wizardSyncView(detailRestored).draft, detailed, 'Metadata survives lost ACK, retry, another device and reload');
+  assert.deepEqual(detailSynced.outbox, []);
+  assert.equal(detailDevice1.insertCalls, 1, 'Metadata snapshots are idempotent after lost acknowledgement');
+  assert.equal(wizardSyncView(await syncWizardDraft(emptyWizardSyncState(B), mockSupabase(detailRows, B).transport)).kind, 'empty', 'Action metadata stays within its account');
+  const oldDevice = mockSupabase(new Map([[`${A}/legacy`, row(A, legacyState.revisions[0] as WizardRevision)]]));
+  assert.deepEqual(wizardSyncView(await syncWizardDraft(emptyWizardSyncState(A), oldDevice.transport)).draft, legacy, 'Old cloud revisions still restore without added metadata');
 
   const shared = new Map<string, Row>();
   const device1 = mockSupabase(shared), device2 = mockSupabase(shared), accountB = mockSupabase(shared, B);
@@ -202,7 +255,7 @@ async function main() {
   const fullHistory = await paged.transport.pull(A);
   assert.equal(fullHistory.length, 205); assert.equal(paged.selectCalls, 2);
   assert.equal(wizardSyncView(mergeWizardRevisions(emptyWizardSyncState(A), fullHistory)).draft?.clarificationAnswers[0], '204');
-  console.log('Wizard draft sync: two devices/accounts, bounded payloads, offline/reload, conflicts, tombstones, lost ACK, out-of-order DAG, concurrent edits, owner guards, missing table, pagination PASS (local mocks; hosted RLS not tested)');
+  console.log('Wizard draft sync: two devices/accounts, bounded action metadata, legacy revisions, offline/reload, conflicts, tombstones, lost ACK, out-of-order DAG, concurrent edits, owner guards, missing table, pagination PASS (local mocks; hosted RLS not tested)');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });
