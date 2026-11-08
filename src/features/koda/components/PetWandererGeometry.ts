@@ -16,17 +16,19 @@ export function horizontalPetPath(start: PetRoutePoint, end: PetRoutePoint, widt
   return Math.abs(start.x - end.x) <= 1 ? [] : [end];
 }
 
-/** A landing must have space for the whole pet above the card, not inside a
- * neighbouring bubble. All coordinates are viewport coordinates. */
+/** Prefer clear air above a card, but dense widget rows may overlap the pet
+ * artwork: the pet is a foreground overlay. Feet still land on the exact edge. */
 export function petSurfaceLanding(target: PetRouteRect, obstacles: PetRouteRect[], viewportWidth: number, size = 72): PetRoutePoint | null {
   const y = target.top - size;
   if (y < 8 || target.right - target.left < size) return null;
   const inset = Math.min(34, (target.right - target.left - size) / 2);
   const centers = [(target.left + target.right - size) / 2, target.left + inset, target.right - size - inset];
+  let fallback: PetRoutePoint | null = null;
   for (const x of centers) {
     if (x < 8 || x + size > viewportWidth - 8) continue;
+    fallback ??= { x, y };
     if (obstacles.some(rect => rect.left < x + size && rect.right > x && rect.top < target.top - .5 && rect.bottom > y + .5)) continue;
     return {x, y};
   }
-  return null;
+  return fallback;
 }

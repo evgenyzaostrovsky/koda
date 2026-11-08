@@ -1,7 +1,7 @@
 import {petSurfaceLanding} from './PetWandererGeometry';
 import { createElement, useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, AppState, Easing, Keyboard, Platform, View, useWindowDimensions } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import { PetVine } from './PetVine';
 import { getPetActionFrameBounds, getPetClimbHandX, PetCompanion, type PetActionPose, type PetClimbPose, type PetLifeState, type PetPose } from './PetCompanion';
 import { useReducedMotion } from './RightPanel';
 
@@ -187,7 +187,8 @@ export function PetWanderer({ name, state, pose, onPress }: {
     return elements.flatMap((element, index) => {
       // Dashboard slots already contain a marked card: animate their outer slot once.
       if (element.parentElement?.closest(SURFACE_SELECTOR)) return [];
-      const measured = measureSurface(element, element.dataset.widgetSlot || `${element.dataset.petSurface || 'card'}-${index}`);
+      const surface = element.hasAttribute('data-widget-slot') ? element.querySelector<HTMLElement>('[data-pet-surface]') ?? element : element;
+      const measured = measureSurface(surface, element.dataset.widgetSlot || `${element.dataset.petSurface || 'card'}-${index}`);
       return measured ? [measured] : [];
     });
   }, []);
@@ -224,7 +225,7 @@ export function PetWanderer({ name, state, pose, onPress }: {
     const climbVertical = (target: Point, done: () => void) => {
       const from = point.current;
       const direction = target.y < from.y ? -1 : 1;
-      if (Math.abs(target.y - from.y) <= 24) { point.current = target; setClimbing(false); done(); return; }
+      if (Math.abs(target.y - from.y) <= 24) { point.current = target; position.setValue(target); setClimbing(false); done(); return; }
       const vineTop = Math.max(8, Math.min(from.y, target.y) - 18);
       const vineHeight = Math.max(24, Math.min(height - vineTop - 8, Math.abs(target.y - from.y) + PET_SIZE + 36));
       const opacity = new Animated.Value(0);
@@ -266,7 +267,7 @@ export function PetWanderer({ name, state, pose, onPress }: {
       const vertical = () => climbVertical(target, done);
       const walk = (walkTarget: Point, finish: () => void) => {
         const start = point.current;
-        if (Math.hypot(walkTarget.x - start.x, walkTarget.y - start.y) < 2) { point.current = walkTarget; finish(); return; }
+        if (Math.hypot(walkTarget.x - start.x, walkTarget.y - start.y) < 2) { point.current = walkTarget; position.setValue(walkTarget); finish(); return; }
         if (Math.abs(walkTarget.x - start.x) > 2) facing.setValue(walkTarget.x < start.x ? -1 : 1);
         setWalking(true); setClimbing(false);
         const duration = Math.max(850, Math.min(3600, Math.hypot(walkTarget.x - start.x, walkTarget.y - start.y) / 40 * 1000));
@@ -379,12 +380,12 @@ export function PetWanderer({ name, state, pose, onPress }: {
       const from = point.current;
       const to = safePoint({ x: 8 + Math.random() * Math.max(1, width - PET_SIZE - 16), y: 8 + Math.random() * Math.max(1, height - PET_SIZE - 16) });
       moveTo(to, () => {
-        if (Math.random() > .2) { wait(700, done); return; }
-        const landing = safePoint({ x: 8 + Math.random() * Math.max(1, width - PET_SIZE - 16), y: 8 + Math.random() * Math.max(1, height - PET_SIZE - 16) });
-        setScene('big-jump'); setActionPose('jump-tuck'); facing.setValue(landing.x < to.x ? -1 : 1);
-        arc(to, landing, Math.max(8, Math.min(to.y, landing.y) - 80), 1050, () => {
-          setScenePose(basePose.current); setActionPose('land-brace'); wait(850, done);
-        });
+        // A jump must finish on a measured card, never at an arbitrary
+        // screen point that looks like a missed landing.
+        const candidates = widgets().filter(candidate => landingFor(candidate));
+        if (Math.random() > .2 || !candidates.length) { wait(700, done); return; }
+        const target = pick(candidates);
+        hop(target, { side: 'current', facing: 1, point: to });
       });
     };
     const landingFor = (target: WidgetRect) => {
@@ -405,7 +406,10 @@ export function PetWanderer({ name, state, pose, onPress }: {
         if (!arrived || Math.abs(arrived.top - current.top) > 1 || Math.abs(arrived.left - current.left) > 1 || Math.abs(arrived.width - current.width) > 1) {
           setActionPose(null); wait(100, startPush); return;
         }
-        point.current = landing; setActionPose('land-brace');
+        const finalLanding = landingFor(arrived);
+        if (!finalLanding) { setActionPose(null); wait(100, startPush); return; }
+        landing.x = finalLanding.x; landing.y = finalLanding.y;
+        position.setValue(landing); point.current = landing; setActionPose('land-brace');
         springOffset.setValue(0);
         const bounceDone = new Promise<boolean>(resolve => {
           activeAnimation.current = Animated.timing(springOffset, { toValue: 1, duration: 650, easing: Easing.linear, useNativeDriver: true });
@@ -493,10 +497,7 @@ export function PetWanderer({ name, state, pose, onPress }: {
   const landingOffset = springOffset.interpolate({ inputRange: [0, .25, .52, .77, 1], outputRange: [0, 7, -3, 1, 0] });
   const translation = flightMode && flightPath.current ? [{ translateX: flightPath.current.x }, { translateY: flightPath.current.y }] : [...position.getTranslateTransform(), { translateY: landingOffset }];
   const vineVisual = vine ? <Animated.View testID="pet-vine" pointerEvents="none" style={{ position: 'absolute', left: vine.x, top: vine.top, width: 36, height: vine.height, opacity: vine.opacity, zIndex: 0 }}>
-    <Svg pointerEvents="none" width="36" height={vine.height} viewBox={`0 0 36 ${vine.height}`}>
-      <Path d={`M18 0 C6 ${vine.height * .2} 29 ${vine.height * .35} 17 ${vine.height * .52} C7 ${vine.height * .67} 28 ${vine.height * .82} 18 ${vine.height}`} fill="none" stroke="#819b62" strokeWidth="2.4" strokeLinecap="round" />
-      <Path d={`M17 ${vine.height * .24} C6 ${vine.height * .17} 4 ${vine.height * .26} 10 ${vine.height * .31} C14 ${vine.height * .3} 16 ${vine.height * .28} 17 ${vine.height * .24} M20 ${vine.height * .48} C30 ${vine.height * .4} 33 ${vine.height * .48} 27 ${vine.height * .55} C24 ${vine.height * .55} 21 ${vine.height * .53} 20 ${vine.height * .48} M15 ${vine.height * .72} C5 ${vine.height * .65} 3 ${vine.height * .74} 9 ${vine.height * .8} C13 ${vine.height * .79} 15 ${vine.height * .76} 15 ${vine.height * .72}`} fill="#a8bd7b" opacity=".94" />
-    </Svg>
+    <PetVine height={vine.height} />
   </Animated.View> : null;
   const pet = <Animated.View testID="pet-body" pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: 0, width: PET_SIZE, height: PET_SIZE, transform: translation }}>
     <PetCompanion name={displayName} state={displayState} pose={scenePose ?? pose} actionPose={actionPose ?? undefined} climbPose={climbing ? climbFrame : undefined} size={PET_SIZE} walking={walking && live && !reducedMotion} animatingScene={Boolean(actionPose) || climbing || scene === 'hop' || scene === 'big-jump'} facing={facing} accessibilityLabel={state === 'egg' ? `Познакомиться с питомцем ${displayName}` : `Открыть домик питомца ${displayName}`} onPress={onPress} />

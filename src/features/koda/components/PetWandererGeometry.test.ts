@@ -26,9 +26,11 @@ test('landing feet touch the bubble top at every responsive size', () => {
     assert.ok(point.x >= rect.left && point.x + 72 <= rect.right);
   }
 });
-test('never lands through a neighbouring bubble in a narrow row gap', () => {
+test('dense rows still provide a precise foreground landing', () => {
   const target = {left:16, right:374, top:414, bottom:600};
-  assert.equal(petSurfaceLanding(target, [{left:16,right:374,top:180,bottom:400}],390),null);
+  const landing = petSurfaceLanding(target, [{left:16,right:374,top:180,bottom:400}],390)!;
+  assert.equal(landing.y + 72, target.top);
+  assert.ok(landing.x >= target.left && landing.x + 72 <= target.right);
 });
 test('chooses a clear part of the edge and rejects clipped tops', () => {
   const target = {left:100, right:700, top:200, bottom:500};
