@@ -1,11 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const { randomUUID } = require('crypto');
+const { randomUUID, createHash } = require('crypto');
 
 const projectRoot = path.resolve(__dirname, '..');
 const outputDir = path.resolve(projectRoot, process.argv[2] || 'dist');
 const indexPath = path.join(outputDir, 'index.html');
 const sourceIcon = path.join(projectRoot, 'assets', 'koda-pwa-icon.png');
+const iconVersion = createHash('sha256').update(fs.readFileSync(sourceIcon)).digest('hex').slice(0, 12);
 const appleIcon = path.join(outputDir, 'apple-touch-icon.png');
 const icon192 = path.join(outputDir, 'pwa-icon-192.png');
 const icon512 = path.join(outputDir, 'pwa-icon-512.png');
@@ -19,9 +20,9 @@ if (!fs.existsSync(indexPath)) {
   throw new Error(`Missing web export index.html at ${indexPath}`);
 }
 
-fs.copyFileSync(sourceIcon, appleIcon);
-fs.copyFileSync(sourceIcon, icon192);
-fs.copyFileSync(sourceIcon, icon512);
+fs.copyFileSync(path.join(projectRoot, 'assets', 'koda-apple-touch-icon.png'), appleIcon);
+fs.copyFileSync(path.join(projectRoot, 'assets', 'koda-pwa-icon-192.png'), icon192);
+fs.copyFileSync(path.join(projectRoot, 'assets', 'koda-pwa-icon-512.png'), icon512);
 
 const manifest = {
   id: '/',
@@ -39,22 +40,22 @@ const manifest = {
   categories: ['productivity', 'lifestyle'],
   icons: [
     {
-      src: '/pwa-icon-192.png',
+      src: `/pwa-icon-192.png?v=${iconVersion}`,
       sizes: '192x192',
       type: 'image/png',
       purpose: 'any',
     },
     {
-      src: '/pwa-icon-512.png',
+      src: `/pwa-icon-512.png?v=${iconVersion}`,
       sizes: '512x512',
       type: 'image/png',
-      purpose: 'any maskable',
+      purpose: 'any',
     },
     {
-      src: '/apple-touch-icon.png',
-      sizes: '1024x1024',
+      src: `/apple-touch-icon.png?v=${iconVersion}`,
+      sizes: '180x180',
       type: 'image/png',
-      purpose: 'any maskable',
+      purpose: 'any',
     },
   ],
 };
@@ -317,7 +318,7 @@ const pwaTags = [
   '<meta name="apple-mobile-web-app-title" content="KODA">',
   '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
   '<link rel="manifest" href="/manifest.webmanifest">',
-  '<link rel="apple-touch-icon" href="/apple-touch-icon.png">',
+  `<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=${iconVersion}">`,
   '<style id="koda-pwa-shell">html,body,#root{height:100%;min-height:100%;background:var(--koda-app-bg,#f5f6f2);touch-action:manipulation;}@supports (height:100dvh){html,body,#root{height:100dvh;min-height:100dvh;}}body{overflow:hidden;-webkit-text-size-adjust:100%;}@media(pointer:coarse){input,textarea,select{font-size:16px!important;}}*{scrollbar-width:thin;scrollbar-color:var(--koda-border-strong) var(--koda-app-bg);}*::-webkit-scrollbar{width:8px;height:8px;}*::-webkit-scrollbar-track{background:var(--koda-app-bg);border-left:1px solid var(--koda-border);}*::-webkit-scrollbar-thumb{background:var(--koda-border-strong);border:2px solid var(--koda-app-bg);border-radius:999px;}*::-webkit-scrollbar-thumb:hover{background:var(--koda-accent);}*::-webkit-scrollbar-button{display:none;width:0;height:0;}*::-webkit-scrollbar-corner{background:var(--koda-app-bg);}</style>',
 ].join('\n');
 
