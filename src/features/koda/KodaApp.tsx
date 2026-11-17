@@ -44,6 +44,7 @@ import { DailyPlanScreen } from './screens/DailyPlanScreen';
 import { PlannerScreen } from './screens/PlannerScreen';
 import { parseQuickTaskInput } from './quickTaskInput';
 import { goalOverviewItems, isPlannerDate } from './plannerOverview';
+import { rolloverUntimedPlannerItems } from './plannerRollover';
 import { isGoalRoutinePlannerItem, toggleGoalCalendarItem, moveGoalCalendarAction } from './plannerCalendarModel';
 import { NotesScreen } from './screens/NotesScreen';
 import { PomodoroProvider } from './usePomodoroTimer';
@@ -117,7 +118,19 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   }, []);
   const desktopLayout = useWidgetLayout(userId ?? null);
   const [localDate, setLocalDate] = useState(todayDateKey());
-  useEffect(() => { const interval=setInterval(()=>setLocalDate(todayDateKey()),30000); return ()=>clearInterval(interval); }, []);
+  useEffect(() => {
+    const refreshDate = () => setLocalDate(todayDateKey());
+    const interval = setInterval(refreshDate, 30000);
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') refreshDate(); });
+    if (typeof window !== 'undefined') window.addEventListener('focus', refreshDate);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', refreshDate);
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+      if (typeof window !== 'undefined') window.removeEventListener('focus', refreshDate);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', refreshDate);
+    };
+  }, []);
   const [focusedPlannerItem,setFocusedPlannerItem] = useState<PlannerItem|null>(()=>plannerFocusFromHash());
   function openPlannerItem(item:PlannerItem){if(item.sourceType==='goal'&&item.goalId){setFocusedGoalView('matrix');setFocusedGoalId(item.goalId);setActiveTab('goals');return;}setFocusedPlannerItem(item);setActiveTabState('planner');if(typeof window!=='undefined'){const query=new URLSearchParams({date:item.date,item:item.id,title:item.title,type:item.sourceType??'planner'});window.location.hash=`planner?${query}`;}}
   const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null);
@@ -135,6 +148,14 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   const noteRecords = useSyncedRecords<Note>({owner:userId, domain:'notes', legacyKey:notesStorageKey, pullToken:plannerPullToken,retryToken:syncRetryToken,online:isOnline});
   const plannerItems = plannerRecords.items, setPlannerItems = plannerRecords.update;
   const plannerLoaded = plannerRecords.ready;
+  useEffect(() => {
+    if (!plannerLoaded || plannerRecords.recovery) return;
+    // On an online launch, first reconcile stale cached completions/deletions.
+    // Offline edits still enter the existing durable, account-scoped queue.
+    if (userId && isOnline && isSupabaseConfigured() && !plannerRecords.cloudReady) return;
+    const today = todayDateKey();
+    setPlannerItems(current => rolloverUntimedPlannerItems(current, today, new Date().toISOString()));
+  }, [plannerItems, plannerLoaded, plannerRecords.recovery, plannerRecords.cloudReady, localDate, isOnline, userId, setPlannerItems]);
   const plannerLoadedStorageKey = plannerLoaded ? scopedStorageKey(plannerStorageKey,userId) : '';
   const calendarKey = userId ? plannerOwnerKey(userId) : '';
   const calendarSync: CalendarSyncState = {count:plannerItems.length,message:plannerRecords.error || (plannerRecords.pending?'Синхронизирую планнер...':'Синхронизировано'),status:plannerRecords.error?'error':plannerRecords.pending?'syncing':'synced'};
