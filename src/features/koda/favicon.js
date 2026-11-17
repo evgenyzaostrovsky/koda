@@ -3,10 +3,9 @@
  */
 function applyKodaFavicon(colors) {
   if (typeof document === 'undefined') return;
-  const accent = colors['--koda-accent'];
-  const background = colors['--koda-app-bg'];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="6" fill="${background}"/><g fill="none" stroke="${accent}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17c3-6 5-7 8-4s5 1 8-3M5 21h14M5 8l3-3 3 3"/><circle cx="17" cy="6" r="2"/></g></svg>`;
-  const href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  // Keep the install icon and browser tab consistent across all themes.
+  // Inline PNG also works before the app loads and in local Expo previews.
+  const href = 'data:image/png;base64,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';
   let icons = Array.from(document.querySelectorAll('link[rel~="icon"]'));
   if (!icons.length) {
     const icon = document.createElement('link');
@@ -15,8 +14,8 @@ function applyKodaFavicon(colors) {
     icons = [icon];
   }
   icons.forEach(icon => {
-    icon.setAttribute('type', 'image/svg+xml');
-    icon.setAttribute('sizes', 'any');
+    icon.setAttribute('type', 'image/png');
+    icon.setAttribute('sizes', '32x32');
     if (icon.getAttribute('href') !== href) icon.setAttribute('href', href);
   });
 }
