@@ -11,7 +11,7 @@ function withActionDetail(action:GoalAction,details:GoalActionDetail[]):GoalActi
   if(!detail||action.archivedAt)return action;
   // Existing descriptions may be personal notes. AI may fill an empty field, never erase notes.
   const description=action.description.trim()?action.description:detail.description;
-  return action.shortTitle===detail.shortTitle&&action.description===description?action:{...action,shortTitle:detail.shortTitle,description};
+  return action.shortTitle===detail.shortTitle&&action.description===description&&action.studyModuleId===detail.studyModuleId?action:{...action,shortTitle:detail.shortTitle,description,...(detail.estimatedMinutes&&!action.estimatedMinutes?{estimatedMinutes:detail.estimatedMinutes}:{}),...(detail.studyModuleId?{studyModuleId:detail.studyModuleId}:{})};
 }
 
 function recordStructureChange(goal:Goal,directions:OpenWindowDirection[],label:string,at=new Date().toISOString()):Goal {

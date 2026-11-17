@@ -1,3 +1,4 @@
+import {studyPlanContext} from '../../ai/studyPlanning';
 import type {GoalPlanInput} from '../../ai/goalPlanContract';
 import {createOpenWindow} from './openWindow';
 import {calculateMilestoneProgress} from './goalLogic';
@@ -33,4 +34,13 @@ export function buildGoalPlanContext(goal:Goal,planningMethod:'otani'|'roadmap'=
       ...(goal.deadline?{deadline:goal.deadline}:{}),
     },
   };
+}
+
+export function goalStudyPlanContext(goal:Goal){
+ const plan=goal.studyPlan;if(!plan)return undefined;
+ const current=[...goal.milestones].sort((a,b)=>a.position-b.position).find(m=>m.studyModuleId&&m.status!=='completed');
+ return studyPlanContext({...plan,modules:plan.modules.map(module=>{
+  const stage=goal.milestones.find(m=>m.studyModuleId===module.id);
+  return stage?.status==='completed'?{...module,status:'completed' as const,estimatedMinutes:0}:stage?.id===current?.id?{...module,status:'current' as const}:module;
+ })});
 }

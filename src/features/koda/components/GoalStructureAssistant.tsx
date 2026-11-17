@@ -1,3 +1,5 @@
+import {applyGoalStudyPlan} from '../goalStudyPlan';
+import {StudyPlanPreview} from './StudyPlanPreview';
 import {findGoalCompletionCandidates} from '../goalCompletion';
 import {GoalDiscussion} from './GoalDiscussion';
 import {goalDiscussionContext,normalizeGoalDiscussion} from '../goalDiscussion';
@@ -11,7 +13,7 @@ import type {GoalActionDetail,GoalPlanSuggestion} from '../../../ai/goalPlanCont
 import {diffGoalProposals} from '../../../ai/proposalCorrections';
 import {addGoalStructure} from '../goalStructure';
 import {applyGoalRoadmap,goalRoadmapStructureSignature} from '../goalRoadmapStructure';
-import {buildGoalPlanContext} from '../goalPlanContext';
+import {buildGoalPlanContext,goalStudyPlanContext} from '../goalPlanContext';
 import {getActiveRoadmapClarifications,upsertRoadmapQuestions,updateRoadmapAnswer,removeRoadmapClarification} from '../goalRoadmapClarifications';
 import type {Goal} from '../types';
 import {accent,activeBg,activeText,line,muted,panel,panelSoft,text} from '../theme';
@@ -21,7 +23,7 @@ export function GoalStructureAssistant({open,goal,userId,planningMethod='roadmap
   const isOtani=planningMethod==='otani';
   const [planScope,setPlanScope]=useState<'starter'|'full-map'>('full-map');
   const context=goal.planningContext??'';
-  const [minutes,setMinutes]=useState('20');
+  const [minutes,setMinutes]=useState(String(goal.studyPlan?.dailyMinutes??120));
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [proposal,setProposal]=useState<GoalPlanSuggestion|null>(null);
@@ -48,7 +50,7 @@ export function GoalStructureAssistant({open,goal,userId,planningMethod='roadmap
   const [pendingApply,setPendingApply]=useState<{base:string;expected:string;changeId?:string}|null>(null);
   const requestId=useRef(0);
   useEffect(()=>{
-    requestId.current++;setPlanScope('full-map');setMinutes('20');setProposal(null);setInitialProposal(null);setActionCopyOnly(false);setProposalSource(null);setOtaniQuestions([]);setExpandedDirections([]);setPendingApply(null);setError('');setBusy(false);
+    requestId.current++;setPlanScope('full-map');setMinutes(String(goal.studyPlan?.dailyMinutes??120));setProposal(null);setInitialProposal(null);setActionCopyOnly(false);setProposalSource(null);setOtaniQuestions([]);setExpandedDirections([]);setPendingApply(null);setError('');setBusy(false);
     return()=>{requestId.current++;};
   },[open,goal.id,planningMethod]);
   useEffect(()=>{
@@ -64,7 +66,7 @@ export function GoalStructureAssistant({open,goal,userId,planningMethod='roadmap
     if(!Number.isFinite(available)||available<10||available>480){setError('Укажи от 10 до 480 минут на один подход. Это не ежедневное обязательство.');return;}
     const id=++requestId.current,requestedSource=requestSource,requestedScope=planScope,requestedStepDensity=isOtani?undefined:stepDensity;setActionCopyOnly(requestedActionCopyOnly);setBusy(true);setError('');setProposal(null);setInitialProposal(null);setProposalSource(null);
     try{
-      const result=await requestGoalPlan({contextScope:{kind:'goal',goalId:goal.id},discussionContext:goalDiscussionContext(goal.assistantDiscussion),wish:requestedActionCopyOnly?`Главная цель: ${goal.title.slice(0,400)}\nУлучши только краткие подписи (до 48 знаков) и конкретные пояснения существующих действий в переданном списке. Сохрани исходные названия действий без изменений, не добавляй и не удаляй действия.`:isOtani?`Главная цель: ${goal.title.slice(0,400)}\nСформируй независимые поддерживающие факторы по методу OTANI, не последовательные этапы.`:[`Главная цель: ${goal.title.slice(0,400)}`,requestedScope==='full-map'?'Подготовь полный последовательный путь от текущего прогресса до результата главной цели, до 8 содержательных этапов. Текущий урок — только ближайший шаг, а не весь путь. Используй программу и сообщения этой цели; не назначай пройденное заново. Сначала используй все уже переданные факты; не проси повторять их. Неизвестные части явно обозначь, не выдавая их за программу курса. Не выдумывай модули курса и не заполняй 64 шага ради числа.':'Предложи ближайшие полезные шаги от текущей точки, не начинай заново.'].join('\n'),desiredResult:goal.desiredResult||undefined,availableMinutes:available,...(isOtani?{planningMethod:'otani' as const,actionCopyOnly:requestedActionCopyOnly,clarifyGoal:!requestedActionCopyOnly,planScope:'full-map' as const,clarifications:requestedActionCopyOnly?undefined:clarifications}:{planningMethod:'roadmap' as const,clarifyRoadmap:true,clarifications,planScope:requestedScope,stepDensity:requestedStepDensity}),currentState:context.trim().slice(0,2000)||undefined,goalProgress:autoContext.goalProgress,existingDirections:requestedActionCopyOnly?copySourceDirections:autoContext.existingDirections});
+      const result=await requestGoalPlan({contextScope:{kind:'goal',goalId:goal.id},discussionContext:goalDiscussionContext(goal.assistantDiscussion,JSON.stringify({studyPlan:goalStudyPlanContext(goal),progress:autoContext.goalProgress})),wish:requestedActionCopyOnly?`Главная цель: ${goal.title.slice(0,400)}\nУлучши только краткие подписи (до 48 знаков) и конкретные пояснения существующих действий в переданном списке. Сохрани исходные названия действий без изменений, не добавляй и не удаляй действия.`:isOtani?`Главная цель: ${goal.title.slice(0,400)}\nСформируй независимые поддерживающие факторы по методу OTANI, не последовательные этапы.`:[`Главная цель: ${goal.title.slice(0,400)}`,requestedScope==='full-map'?'Подготовь полный последовательный путь от текущего прогресса до результата главной цели, до 8 содержательных этапов. Текущий урок — только ближайший шаг, а не весь путь. Используй программу и сообщения этой цели; не назначай пройденное заново. Сначала используй все уже переданные факты; не проси повторять их. Неизвестные части явно обозначь, не выдавая их за программу курса. Не выдумывай модули курса и не заполняй 64 шага ради числа.':'Предложи ближайшие полезные шаги от текущей точки, не начинай заново.'].join('\n'),desiredResult:goal.desiredResult||undefined,availableMinutes:available,...(isOtani?{planningMethod:'otani' as const,actionCopyOnly:requestedActionCopyOnly,clarifyGoal:!requestedActionCopyOnly,planScope:'full-map' as const,clarifications:requestedActionCopyOnly?undefined:clarifications}:{planningMethod:'roadmap' as const,clarifyRoadmap:true,clarifications,planScope:requestedScope,stepDensity:requestedStepDensity}),currentState:context.trim().slice(0,2000)||undefined,goalProgress:autoContext.goalProgress,existingDirections:requestedActionCopyOnly?copySourceDirections:autoContext.existingDirections});
       if(id!==requestId.current)return;
       if(requestedSource!==latestSource.current){setProposal(null);setError('Цель изменилась, пока KODA готовила предложения. Запроси новый вариант для актуальной цели.');return;}
       if(result.clarificationQuestions?.length){
@@ -95,7 +97,8 @@ export function GoalStructureAssistant({open,goal,userId,planningMethod='roadmap
     if(staleProposal){setError('Цель изменилась. Запроси предложения заново перед добавлением.');return;}
     if(isOtani&&proposal.directions.some(direction=>direction.actions.some(title=>{const detail=direction.actionDetails?.find(item=>item.title===title);return !detail||!detail.shortTitle.trim()||detail.shortTitle.length>48||!detail.description.trim()||detail.description.length>1000;}))){setError('Для каждого действия проверь короткую подпись до 48 знаков и непустые подробности до 1000 знаков.');return;}
     try{
-      const prepared=isOtani?addGoalStructure(goal,proposal,{actionCopyOnly}):applyGoalRoadmap(goal,proposal);
+      const structured=proposal.studyPlan&&!actionCopyOnly?addGoalStructure(goal,proposal):isOtani?addGoalStructure(goal,proposal,{actionCopyOnly}):applyGoalRoadmap(goal,proposal);
+      const prepared=proposal.studyPlan&&!actionCopyOnly?applyGoalStudyPlan(structured,proposal.studyPlan):structured;
       const base=JSON.stringify(goal),expected=goalRoadmapStructureSignature(prepared),changeId=isOtani?prepared.openWindow?.history.at(-1)?.id:undefined;
       setBusy(true);setError('');setPendingApply({base,expected,changeId});
       // Stable prepared IDs, pure updater, and confirmation only after the resulting goal renders.
@@ -107,11 +110,11 @@ export function GoalStructureAssistant({open,goal,userId,planningMethod='roadmap
     <View style={styles.overlay}><View accessibilityViewIsModal accessibilityLabel={isOtani?'KODA: квадраты ОТАНИ':'KODA: путь к главной цели'} style={styles.sheet}>
       <View style={styles.header}><Text accessibilityRole="header" style={styles.title}>{isOtani?'Квадраты ОТАНИ':'Путь к главной цели'}</Text><Pressable accessibilityRole="button" accessibilityLabel="Закрыть помощь с направлениями" onPress={onClose} style={styles.close}><X size={20} color={text}/></Pressable></View>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
-        <Text style={styles.goal}>{goal.title}</Text>
+        <Text style={styles.goal}>{goal.title}</Text>{proposal?.studyPlan?<StudyPlanPreview plan={proposal.studyPlan}/>:null}
         {!!goal.desiredResult&&<Text style={styles.help}>{goal.desiredResult}</Text>}
         <Text style={styles.help}>{isOtani?'Расскажи о своей стартовой точке, времени и доступных ресурсах. KODA предложит независимые факторы и наблюдаемые действия; ты проверишь их до добавления в цель.':'Расскажи, где ты сейчас и чего уже достиг. KODA подготовит следующий план, а ты проверишь его до добавления в цель.'}</Text>
         {userId?<AssistantMemory key={userId} userId={userId}/>:null}
-        <GoalDiscussion completionGoal={goal} onCompleteAction={(_goalId,actionId,message)=>onUpdateGoal(current=>findGoalCompletionCandidates(current,message).some(action=>action.id===actionId)?{...current,actions:current.actions.map(action=>action.id===actionId?{...action,status:'completed' as const,completedAt:new Date().toISOString()}:action)}:current)} key={`${userId}:${goal.id}`} userId={userId} goalId={goal.id} title={goal.title} desiredResult={goal.desiredResult} value={goal.assistantDiscussion} onChange={recipe=>onUpdateGoal(current=>({...current,assistantDiscussion:recipe(normalizeGoalDiscussion(current.assistantDiscussion))}))} onSuggest={()=>void suggest()} disabled={busy}/>
+        <GoalDiscussion completionGoal={goal} onCompleteAction={(_goalId,actionId,message)=>onUpdateGoal(current=>findGoalCompletionCandidates(current,message).some(action=>action.id===actionId)?{...current,actions:current.actions.map(action=>action.id===actionId?{...action,status:'completed' as const,completedAt:new Date().toISOString()}:action)}:current)} key={`${userId}:${goal.id}`} userId={userId} goalId={goal.id} title={goal.title} desiredResult={goal.desiredResult} planningContext={JSON.stringify({studyPlan:goalStudyPlanContext(goal),progress:autoContext.goalProgress})} value={goal.assistantDiscussion} onChange={recipe=>onUpdateGoal(current=>({...current,assistantDiscussion:recipe(normalizeGoalDiscussion(current.assistantDiscussion))}))} onSuggest={()=>void suggest()} disabled={busy}/>
         {!isOtani&&<Text style={styles.label}>Какую карту подготовить?</Text>}
         {!isOtani&&
         <View style={styles.scopeRow}>

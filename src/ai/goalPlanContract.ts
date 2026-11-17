@@ -1,5 +1,5 @@
-import { calculateStudyPlan, planningDate, type StudyPlan } from './studyPlanning';
-export type GoalActionDetail = {title:string;shortTitle:string;description:string};
+import { calculateStudyPlan, planningDate, studyPlanNote, type StudyPlan } from './studyPlanning';
+export type GoalActionDetail = {title:string;shortTitle:string;description:string;studyModuleId?:string;estimatedMinutes?:number};
 export type GoalActionContextDetail = {title:string;shortTitle?:string;description:string};
 export type GoalPlanInput = { wish: string; planningDate?:string; goalId?:string; contextScope?:{kind:'goal';goalId?:string}; discussionContext?:string; desiredResult?: string; availableMinutes?: number; planningMethod?:'otani'|'roadmap'; actionCopyOnly?:boolean; clarifyGoal?:boolean; clarifyRoadmap?:boolean; clarifications?:Array<{question:string;answer:string}>; planScope?:'starter'|'full-map'; stepDensity?:'adaptive'; currentState?:string; revisionMode?:'rebuild-pending'; goalProgress?:{completedActions:string[];pendingActions:string[];milestones:Array<{title:string;status:'not_started'|'in_progress'|'completed'}>;deadline?:string}; existingDirections?:Array<{title:string;actions:string[];actionDetails?:GoalActionContextDetail[];completedActions?:string[];routineTitles:string[];archived:boolean}> };
 export type GoalAssistantContext = { memory?:string[]; goals?:Array<{title:string;desiredResult?:string}>; squares?:Array<{title:string;actions:string[];completedActions?:string[]}>; progress?:Array<{title:string;completedActions:string[];pendingActions:string[]}> };
@@ -18,7 +18,7 @@ export function normalizeGoalActionDetails(value:unknown,actions:readonly string
     // Reject an overlong label rather than cutting a meaningful phrase mid-word.
     if(!shortTitle||shortTitle.length>48||!description)return [];
     seen.add(raw.title);
-    return [{title:raw.title,shortTitle,description}];
+    return [{title:raw.title,shortTitle,description,...(typeof raw.estimatedMinutes==='number'&&Number.isInteger(raw.estimatedMinutes)&&raw.estimatedMinutes>=5&&raw.estimatedMinutes<=480?{estimatedMinutes:raw.estimatedMinutes}:{}),...(typeof raw.studyModuleId==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(raw.studyModuleId)?{studyModuleId:raw.studyModuleId}:{})}];
   }).slice(0,8);
 }
 
@@ -71,7 +71,7 @@ export function validateGoalPlan(value: unknown): GoalPlanSuggestion {
   const studyStart=planningDate(studyRaw?.startDate);
   const studyPlan=studyStart?calculateStudyPlan(studyRaw,studyStart,planningDate(studyRaw?.deadline)):undefined;
   if (!directions.length && !questions.length && !planningNote) throw new Error('Не получилось предложить направления. Их можно добавить самостоятельно.');
-  return { ...(studyPlan?{studyPlan}:{}),...(goalTitle?{goalTitle}:{}), desiredResult, directions,...(questions.length?{clarificationQuestions:questions}:{}),...(planningNote?{planningNote}:{}) };
+  return { ...(studyPlan?{studyPlan}:{}),...(goalTitle?{goalTitle}:{}), desiredResult, directions,...(questions.length?{clarificationQuestions:questions}:{}),...(studyPlan?{planningNote:studyPlanNote(studyPlan)}:planningNote?{planningNote}:{}) };
 }
 
 export function normalizeGoalPlanInput(value: unknown): GoalPlanInput {

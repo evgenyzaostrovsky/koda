@@ -18,3 +18,10 @@ assert.throws(()=>calculateStudyPlan({...raw,modules:[raw.modules[1],raw.modules
 assert.throws(()=>calculateStudyPlan({...raw,dailyMinutes:Infinity},'2026-11-06'));
 assert.equal(calculateStudyPlan(undefined,'2026-11-06'),undefined);
 console.log('Study planning capacity, weekends, completed modules, module count and client roundtrip: PASS');
+const gated=calculateStudyPlan({dailyMinutes:120,studyDays:[0,1,2,3,4,5,6],modules:[{id:'python',title:'Python',status:'current',estimatedMinutes:60},{id:'airflow',title:'Airflow',status:'remaining',estimatedMinutes:180,availableFrom:'2026-12-25'},{id:'end',title:'Эпилог',status:'remaining',estimatedMinutes:60,availableFrom:'2026-12-28'}]},'2026-11-08','2026-11-30')!;
+assert.equal(gated.modules[1].startDate,'2026-12-25');
+assert.equal(gated.modules[1].endDate,'2026-12-26');
+assert.equal(gated.modules[2].startDate,'2026-12-28');
+assert(gated.warnings.some(w=>w.includes('позже срока')),'Calendar availability makes deadline impossible even when capacity is sufficient');
+assert.throws(()=>calculateStudyPlan({...raw,modules:[{...raw.modules[1],availableFrom:'2026-02-30'}]},'2026-11-08'));
+console.log('Availability gates and infeasible deadline warning: PASS');

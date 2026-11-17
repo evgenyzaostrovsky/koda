@@ -1,3 +1,4 @@
+import {StudyPlanSummary} from '../components/StudyPlanPreview';
 import { markGoalDeleted } from '../goalDeletion';
 import { currentGoalMilestone, nextAvailableGoalAction, nextRoadmapAction } from '../components/goalPresentation';
 import { BentoCard, BentoGrid, BentoPage, EmptyStateCard, SectionHeader } from '../components/Bento';
@@ -401,6 +402,7 @@ function GoalDetails({ goal, initialDetailTab='matrix', userId, isDesktop = fals
 
             {detailTab === 'roadmap' ? (
               <View style={local.tabContent}>
+                {goal.studyPlan?<StudyPlanSummary plan={goal.studyPlan}/>:null}
                 <View style={local.blockHeadingRow}>
                   <View style={local.flexText}><Text style={local.blockTitle}>Этапы пути</Text><Text style={local.goalMeta}>Продвигайся по одному понятному этапу за раз.</Text></View>
                   <View style={local.roadmapActions}>{goal.milestones.length>0&&<Pressable accessibilityRole="button" aria-expanded={manageStages} onPress={()=>setManageStages(value=>!value)} style={local.roadmapOutlineButton}><Text style={local.roadmapOutlineText}>{manageStages?'Готово':'Настроить этапы'}</Text></Pressable>}<Pressable accessibilityRole="button" onPress={() => setStageDraftOpen((value) => !value)} style={local.roadmapButton}><Text style={local.roadmapButtonText}>{stageDraftOpen ? 'Скрыть форму' : 'Добавить этап'}</Text></Pressable><Pressable accessibilityRole="button" onPress={() => setStructureOpen(true)} style={local.roadmapOutlineButton}><Text style={local.roadmapOutlineText}>Собрать с помощником</Text></Pressable></View>

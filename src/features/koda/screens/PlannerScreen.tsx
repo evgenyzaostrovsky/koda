@@ -54,6 +54,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
   const [subtasks, setSubtasks] = useState<NonNullable<PlannerItem['subtasks']>>([]);
   const [subtaskDraft, setSubtaskDraft] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(() => dateFromKey(todayDateKey()));
   const [clearCandidates, setClearCandidates] = useState<string[] | null>(null);
   const removableItems = items.filter(item => !item.deletedAt && !isProjectedPlannerItem(item));
@@ -74,6 +75,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
     setSubtaskDraft('');
     setPickerMonth(dateFromKey(item?.date ?? nextDate));
     setPickerOpen(false);
+    setDetailsOpen(Boolean(item?.subtasks?.length));
     setEditor({ item });
   }
 
@@ -122,13 +124,17 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
         items={displayItems}
         onNewItem={(nextDate, nextTime) => openEditor(null, nextDate, nextTime)}
         onOpenItem={item => openEditor(item)}
+        onToggleItem={item => {
+          if (isProjectedPlannerItem(item)) onToggleProjectedItem?.(item);
+          else onToggleItem(item.id);
+        }}
         onMoveItem={(item, nextDate, nextTime) => {
           if (isProjectedPlannerItem(item)) onMoveProjectedItemDate?.(item, nextDate);
           else onUpdateItem(item.id, { date: nextDate, time: nextTime, title: item.title, subtasks: item.subtasks ?? [] });
         }}
         onOpenWorkspace={onOpenWorkspace}
         syncText={syncText}
-        toolbarActions={<View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>{autoPlanControl}{onDeleteItems && removableItems.length > 0 ? <Pressable accessibilityRole="button" accessibilityLabel="Очистить дела планнера" onPress={() => setClearCandidates(removableItems.map(item => item.id))} style={styles.iconButton}><Trash2 color={muted} size={17} /></Pressable> : null}</View>}
+        toolbarActions={<View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>{autoPlanControl}{onDeleteItems && removableItems.length > 0 ? <Pressable accessibilityRole="button" accessibilityLabel="Очистить дела планнера" onPress={() => setClearCandidates(removableItems.map(item => item.id))} style={[styles.iconButton, !isDesktop && { width: 44, height: 44 }]}><Trash2 color={muted} size={17} /></Pressable> : null}</View>}
       />
       <Modal transparent animationType="fade" visible={Boolean(editor)} onRequestClose={() => setEditor(null)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: 'rgba(0,0,0,0.3)' }}>
@@ -137,7 +143,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, gap: 16 }}>
               <View style={styles.rowBetween}>
                 <Text style={{ color: text, fontSize: 18, fontWeight: '700' }}>{routineProjected ? 'Ритуал цели' : goalProjected ? 'Шаг цели' : projected ? 'Задача проекта' : editor?.item ? 'Задача' : 'Новая задача'}</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактор" onPress={() => setEditor(null)} style={styles.iconButton}><X color={muted} size={19} /></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактор" onPress={() => setEditor(null)} style={[styles.iconButton, !isDesktop && { width: 44, height: 44 }]}><X color={muted} size={19} /></Pressable>
               </View>
               <TextInput autoFocus={!projected} editable={!projected} accessibilityLabel="Название задачи" placeholder="Название задачи" placeholderTextColor={faint} value={title} onChangeText={setTitle} onSubmitEditing={() => saveEditor()} style={[styles.modalInput, { fontSize: 18 }]} />
               {editor?.item?.sourceType === 'goal' && <View style={{ gap: 6 }}>
@@ -149,22 +155,25 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
               </Pressable>
               {pickerOpen ? <DateTimePickerPopover compact items={pickerItems} moveMonth={delta => setPickerMonth(month => addMonthsToDate(month, delta))} onClearTime={() => setTime('')} onClose={() => setPickerOpen(false)} onSelectDate={nextDate => { setDate(nextDate); setPickerMonth(dateFromKey(nextDate)); }} onTimeChange={setTime} selectedDate={date} selectedTime={time} showTime={!projected} visibleMonth={pickerMonth} /> : null}
               {!projected ? <>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                {!isDesktop && <Pressable accessibilityRole="button" accessibilityState={{ expanded: detailsOpen }} onPress={() => setDetailsOpen(value => !value)} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={{ color: accent, fontSize: 14 }}>{detailsOpen ? 'Скрыть подзадачи' : `Подзадачи${subtasks.length ? ` · ${subtasks.length}` : ' · добавить'}`}</Text></Pressable>}
+                {isDesktop && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                   <Text style={[styles.rowMeta, { flex: 1 }]}>Время</Text>
                   <TextInput accessibilityLabel="Время задачи" placeholder="Без времени" placeholderTextColor={faint} value={time} onChangeText={setTime} maxLength={5} style={[styles.modalInput, { width: 120, minHeight: 40, textAlign: 'center' }]} />
-                  {time ? <Pressable accessibilityRole="button" accessibilityLabel="Убрать время" onPress={() => setTime('')} style={styles.iconButton}><X color={muted} size={16} /></Pressable> : null}
-                </View>
+                  {time ? <Pressable accessibilityRole="button" accessibilityLabel="Убрать время" onPress={() => setTime('')} style={[styles.iconButton, !isDesktop && { width: 44, height: 44 }]}><X color={muted} size={16} /></Pressable> : null}
+                </View>}
+                {(isDesktop || detailsOpen) && <>
                 {subtasks.map(subtask => <View key={subtask.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: subtask.done }} accessibilityLabel={subtask.title} onPress={() => setSubtasks(previous => previous.map(entry => entry.id === subtask.id ? { ...entry, done: !entry.done } : entry))} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 40 }}>
+                  <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: subtask.done }} aria-checked={subtask.done} accessibilityLabel={subtask.title} onPress={() => setSubtasks(previous => previous.map(entry => entry.id === subtask.id ? { ...entry, done: !entry.done } : entry))} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 }}>
                     <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: subtask.done ? accent : line, backgroundColor: subtask.done ? accent : panel, alignItems: 'center', justifyContent: 'center' }}>{subtask.done ? <Check color={activeText} size={14} /> : null}</View>
                     <Text style={[styles.plannerTitle, { flex: 1 }, subtask.done && styles.doneText]}>{subtask.title}</Text>
                   </Pressable>
-                  <Pressable accessibilityRole="button" accessibilityLabel={`Удалить подзадачу ${subtask.title}`} onPress={() => setSubtasks(previous => previous.filter(entry => entry.id !== subtask.id))} style={styles.iconButton}><X color={muted} size={16} /></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Удалить подзадачу ${subtask.title}`} onPress={() => setSubtasks(previous => previous.filter(entry => entry.id !== subtask.id))} style={[styles.iconButton, !isDesktop && { width: 44, height: 44 }]}><X color={muted} size={16} /></Pressable>
                 </View>)}
                 <View style={styles.plannerTaskInputRow}>
                   <TextInput accessibilityLabel="Новая подзадача" placeholder="Добавить подзадачу" placeholderTextColor={faint} value={subtaskDraft} onChangeText={setSubtaskDraft} onSubmitEditing={addSubtask} style={styles.plannerTaskInput} />
-                  <Pressable accessibilityRole="button" accessibilityLabel="Добавить подзадачу" disabled={!subtaskDraft.trim()} onPress={addSubtask} style={styles.iconButton}><Plus color={subtaskDraft.trim() ? accent : faint} size={18} /></Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Добавить подзадачу" disabled={!subtaskDraft.trim()} onPress={addSubtask} style={[styles.iconButton, !isDesktop && { width: 44, height: 44 }]}><Plus color={subtaskDraft.trim() ? accent : faint} size={18} /></Pressable>
                 </View>
+                </>}
               </> : goalProjected ? <View style={{ gap: 4, padding: 12, borderRadius: 12, backgroundColor: 'var(--koda-surface-2, #f8f9f6)' }}><Text style={{ color: accent, fontSize: 12, fontWeight: '700' }}>{routineProjected ? 'Ритуал цели' : 'Шаг цели'}</Text><Text style={styles.cardText}>{routineProjected ? 'Повторения следуют расписанию цели. Отметка выполнения относится к выбранной дате.' : 'Изменения сохраняются в исходной цели.'}</Text></View> : <Pressable accessibilityRole="button" onPress={() => { setEditor(null); onOpenSection?.('projects'); }}><Text style={{ color: accent }}>Открыть проект</Text></Pressable>}
               <Pressable accessibilityRole="button" disabled={!valid} onPress={() => saveEditor()} style={[styles.notificationButton, !valid && styles.notificationButtonDisabled]}><Text style={styles.notificationButtonText}>{editor?.item ? 'Сохранить' : 'Добавить'}</Text></Pressable>
               {editor?.item ? <View style={{ borderTopWidth: 1, borderColor: line, paddingTop: 8, gap: 4 }}>

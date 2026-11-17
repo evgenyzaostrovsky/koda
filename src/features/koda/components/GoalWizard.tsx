@@ -1,7 +1,9 @@
 import {GoalDiscussion} from './GoalDiscussion';
 import {DeadlinePicker} from './DeadlinePicker';
-import {StudyPlanPreview,studyPlanSummary} from './StudyPlanPreview';
-import type {StudyPlan} from '../../../ai/studyPlanning';
+import {StudyPlanPreview,StudyPlanSummary,studyPlanSummary} from './StudyPlanPreview';
+import {calculateStudyPlan,studyPlanContext,type StudyPlan} from '../../../ai/studyPlanning';
+import {applyGoalStudyPlan,normalizeGoalStudyPlan} from '../goalStudyPlan';
+import type {GoalActionDetail} from '../../../ai/goalPlanContract';
 import {normalizeGoalActionDetails} from '../../../ai/goalPlanContract';
 import {assertDiscussionCapacity,normalizeGoalDiscussion,goalDiscussionContext,type GoalDiscussionData} from '../goalDiscussion';
 import { webSpaceActivationProps } from './keyboard';
@@ -17,9 +19,9 @@ import {cloudWizardDraftStorage,watchWizardDraft,refreshWizardDraft,chooseWizard
 import { requestGoalPlan } from '../../../services/kodaApi';
 import { accent, accentBorder, accentFaint, activeBg, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
 
-type PlanSuggestion = { goalTitle?: string; desiredResult: string; clarificationQuestions?: string[]; planningNote?:string; studyPlan?:StudyPlan; directions: Array<{ title: string; actions: string[]; actionDetails?:Array<{title:string;shortTitle:string;description:string}>;slotIndex?:number }> };
-type WizardDirection = { id: string; title: string; actions: string[]; actionDetails?:Array<{title:string;shortTitle:string;description:string}> };
-type StoredDraft = { assistantDiscussion?:GoalDiscussionData; version: 1; step: number; wish: string; goalTitle?: string; desiredResult: string; deadline: string; priority: GoalPriority; directions: WizardDirection[] } & WizardClarifications;
+type PlanSuggestion = { goalTitle?: string; desiredResult: string; clarificationQuestions?: string[]; planningNote?:string; studyPlan?:StudyPlan; directions: Array<{ title: string; actions: string[]; actionDetails?:GoalActionDetail[];slotIndex?:number }> };
+type WizardDirection = { id: string; title: string; actions: string[]; actionDetails?:GoalActionDetail[] };
+type StoredDraft = { studyPlan?:StudyPlan; assistantDiscussion?:GoalDiscussionData; version: 1; step: number; wish: string; goalTitle?: string; desiredResult: string; deadline: string; priority: GoalPriority; directions: WizardDirection[] } & WizardClarifications;
 type Props = { open: boolean; userId?: string | null; onClose: () => void; onSave: (goal: Goal) => boolean };
 const draftStorage = createWizardDraftStorage(cloudWizardDraftStorage);
 export function removeGoalWizardDraft(key:string){return draftStorage.removeItem(key);}
@@ -59,6 +61,7 @@ function studyPlanMessages(plan:StudyPlan){
 }
 
 export function GoalWizard({ open, userId, onClose, onSave }: Props) {
+  const [studyPlan,setStudyPlan]=useState<StudyPlan|undefined>();
   const [discussion,setDiscussion]=useState<GoalDiscussionData>(()=>normalizeGoalDiscussion(null));
   const [step, setStep] = useState(0);
   const [wish, setWish] = useState('');
@@ -93,6 +96,7 @@ export function GoalWizard({ open, userId, onClose, onSave }: Props) {
     setDeadline(typeof saved.deadline==='string'?saved.deadline:'');
     setPriority(priorities.some(item=>item.value===saved.priority)?saved.priority as GoalPriority:'important');
     setDiscussion(normalizeGoalDiscussion(saved.assistantDiscussion));
+    setStudyPlan(normalizeGoalStudyPlan(saved.studyPlan));
     setDirections(restoreWizardDirections(saved.directions));
     const pairs=restoreWizardClarifications(saved);
     setClarificationQuestions(pairs.clarificationQuestions);setClarificationAnswers(pairs.clarificationAnswers);
@@ -126,7 +130,7 @@ export function GoalWizard({ open, userId, onClose, onSave }: Props) {
     discardedKey.current = null;
     setRestoredKey(null);
     setStep(0);
-    setWish('');
+    setWish('');setStudyPlan(undefined);
     setDiscussion(normalizeGoalDiscussion(null));
     setGoalTitle('');
     setDesiredResult('');
@@ -152,6 +156,7 @@ export function GoalWizard({ open, userId, onClose, onSave }: Props) {
             setDeadline(typeof saved.deadline === 'string' ? saved.deadline : '');
             setPriority(priorities.some((item) => item.value === saved.priority) ? saved.priority as GoalPriority : 'important');
             setDiscussion(normalizeGoalDiscussion(saved.assistantDiscussion));
+    setStudyPlan(normalizeGoalStudyPlan(saved.studyPlan));
     setDirections(restoreWizardDirections(saved.directions));
             const clarifications = restoreWizardClarifications(saved);
             setClarificationQuestions(clarifications.clarificationQuestions);
@@ -168,9 +173,9 @@ export function GoalWizard({ open, userId, onClose, onSave }: Props) {
 
   useEffect(() => {
     if (!open || restoredKey !== storageKey || hydratingKey.current === storageKey || discardedKey.current === storageKey) return;
-    latestDraft.current = { key: storageKey, value: { assistantDiscussion:discussion, version: 1, step, wish, goalTitle, desiredResult, deadline, priority, directions, clarificationQuestions, clarificationAnswers } };
+    latestDraft.current = { key: storageKey, value: { studyPlan, assistantDiscussion:discussion, version: 1, step, wish, goalTitle, desiredResult, deadline, priority, directions, clarificationQuestions, clarificationAnswers } };
     persistDraft();
-  }, [open, restoredKey, storageKey, step, wish, goalTitle, desiredResult, deadline, priority, directions, clarificationQuestions, clarificationAnswers, discussion]);
+  }, [open, restoredKey, storageKey, step, wish, goalTitle, desiredResult, deadline, priority, directions, clarificationQuestions, clarificationAnswers, discussion, studyPlan]);
 
   function persistDraft(patch: Partial<StoredDraft> = {}) {
     const current = latestDraft.current;
@@ -214,7 +219,7 @@ export function GoalWizard({ open, userId, onClose, onSave }: Props) {
     // An explicit clear is different from an untouched empty form on a new
     // device: retire the old cloud draft instead of restoring its questions.
     if(userId&&!value.trim())void draftStorage.removeItem(storageKey).catch(()=>undefined);
-    if(!value.trim()){setDiscussion(normalizeGoalDiscussion(null));persistDraft({assistantDiscussion:normalizeGoalDiscussion(null)});}
+    if(!value.trim()){setStudyPlan(undefined);setDiscussion(normalizeGoalDiscussion(null));persistDraft({assistantDiscussion:normalizeGoalDiscussion(null),studyPlan:undefined});}
     setWish(value);
     setGoalTitle(value);
     setClarificationQuestions([]);
@@ -252,7 +257,7 @@ export function GoalWizard({ open, userId, onClose, onSave }: Props) {
         ...answeredQuestions.map(({ question, answer }) => `Уточнение: ${question}\nОтвет: ${answer}`),
       ].join('\n');
       const currentDirections=directions.map(item=>({title:item.title.trim(),actions:item.actions.map(action=>action.trim()).filter(Boolean),actionDetails:item.actionDetails,routineTitles:[],archived:false}));
-      const result = await requestGoalPlan({ contextScope:{kind:'goal'},discussionContext:goalDiscussionContext(discussion,JSON.stringify(currentDirections)),wish: goalPlanWish, desiredResult: forMainGoal ? undefined : desiredResult.trim() || undefined, ...(!forMainGoal?{planningMethod:'otani' as const,planningDate:todayDateKey(),goalProgress:{completedActions:[],pendingActions:[],milestones:[],deadline:deadline||undefined},existingDirections:currentDirections}:{}), ...(forMainGoal ? { clarifyGoal: true, ...(answerClarifications ? { clarifications: answeredQuestions } : {}) } : {}) });
+      const result = await requestGoalPlan({ contextScope:{kind:'goal'},discussionContext:goalDiscussionContext(discussion,JSON.stringify({studyPlan:studyPlanContext(studyPlan),directions:currentDirections})),wish: goalPlanWish, availableMinutes:studyPlan?.dailyMinutes??120, desiredResult: forMainGoal ? undefined : desiredResult.trim() || undefined, ...(!forMainGoal?{planningMethod:'otani' as const,planningDate:todayDateKey(),goalProgress:{completedActions:[],pendingActions:[],milestones:[],deadline:deadline||undefined},existingDirections:currentDirections}:{}), ...(forMainGoal ? { clarifyGoal: true, ...(answerClarifications ? { clarifications: answeredQuestions } : {}) } : {}) });
       if (requestId !== aiRequestId.current) return;
       const extended=result as typeof result & {studyPlan?:StudyPlan};
       const validDirections = (result.directions ?? []).slice(0, 8).map((direction) => ({ title: String(direction.title ?? '').trim().slice(0, 300), actions: (direction.actions ?? []).map((action) => String(action).trim()).filter(Boolean).slice(0, 8),actionDetails:direction.actionDetails,slotIndex:direction.slotIndex })).filter((direction) => direction.title);
@@ -269,9 +274,9 @@ export function GoalWizard({ open, userId, onClose, onSave }: Props) {
         setClarificationProposalReady(forMainGoal && answerClarifications);
         setAiMessage(forMainGoal ? (proposal.goalTitle || proposal.desiredResult ? 'Предложение готово. Проверь формулировку и подтверди переход.' : 'Не удалось получить формулировку. Можно продолжить вручную.') : validDirections.length ? 'Варианты готовы. Просмотри их и реши, что добавить в черновик.' : 'Не удалось получить подходящий план. Можно продолжить вручную.');
       }
-    } catch {
+    } catch (error) {
       if (requestId !== aiRequestId.current) return;
-      setAiMessage('Подсказка сейчас недоступна. Продолжи вручную — черновик сохранён.');
+      setAiMessage(error instanceof Error ? error.message : 'Не удалось составить план. Попробуй ещё раз — беседа и материалы сохранены.');
     } finally { if (requestId === aiRequestId.current) setAiBusy(false); }
   }
 
@@ -280,6 +285,7 @@ export function GoalWizard({ open, userId, onClose, onSave }: Props) {
   function changeDeadline(value:string){
     if(value===deadline)return;
     invalidateAI();setDeadline(value);
+    if(studyPlan){const nextPlan=calculateStudyPlan(studyPlan,studyPlan.startDate,value);setStudyPlan(nextPlan);persistDraft({studyPlan:nextPlan,deadline:value});return;}
     if(!latestStudyMessage){persistDraft({deadline:value});return;}
     const notice={id:uid('study-plan-stale'),role:'assistant' as const,at:new Date().toISOString(),content:`Срок цели изменён на ${value||'без срока'}. Предыдущий график обучения устарел: его даты и вывод о достижимости больше не действуют. Запроси новое предложение на шаге направлений или действий.`};
     const messages=discussion.messages.map(message=>message.id.startsWith('study-plan')?{...message,content:message.content.replace(/^Принятый план обучения/u,'Архивный план обучения').replace(/^Продолжение плана обучения/u,'Продолжение архивного плана обучения')}:message);
@@ -290,7 +296,7 @@ export function GoalWizard({ open, userId, onClose, onSave }: Props) {
 
   function applySuggestions() {
     if (!suggestion) return;
-    if(suggestion.studyPlan){const next=normalizeGoalDiscussion({...discussion,messages:[...discussion.messages,...studyPlanMessages(suggestion.studyPlan)]});try{assertDiscussionCapacity(next);}catch{setAiMessage('Память беседы заполнена. Удали ненужные сообщения или материалы, затем прими план ещё раз.');return;}setDiscussion(next);persistDraft({assistantDiscussion:next});}
+    if(suggestion.studyPlan){const next=normalizeGoalDiscussion({...discussion,messages:[...discussion.messages,...studyPlanMessages(suggestion.studyPlan)]});try{assertDiscussionCapacity(next);}catch{setAiMessage('Память беседы заполнена. Удали ненужные сообщения или материалы, затем прими план ещё раз.');return;}setDiscussion(next);setStudyPlan(suggestion.studyPlan);persistDraft({assistantDiscussion:next,studyPlan:suggestion.studyPlan});}
     setDirections((current) => {
       const next = current.map((item) => ({ ...item, actions: [...item.actions] }));
       for (const proposal of suggestion.directions) {
@@ -356,11 +362,13 @@ export function GoalWizard({ open, userId, onClose, onSave }: Props) {
     const goal = createGoal(draft);
     const window = createOpenWindow(goal.id);
     const normalizedDirections = directions.filter((direction) => direction.title.trim()).slice(0, 8);
-    const canonicalByDirection = normalizedDirections.map((source) => source.actions.map((rawTitle) => rawTitle.trim()).filter(Boolean).slice(0, 8).map((title, actionIndex) => {const detail=source.actionDetails?.find(item=>item.title===title)??suggestion?.directions.flatMap(item=>item.actionDetails??[]).find(item=>item.title===title);return createGoalAction({ title,shortTitle:detail?.shortTitle,description:detail?.description, position: actionIndex });}));
+    const canonicalByDirection = normalizedDirections.map((source) => source.actions.map((rawTitle) => rawTitle.trim()).filter(Boolean).slice(0, 8).map((title, actionIndex) => {const detail=source.actionDetails?.find(item=>item.title===title)??suggestion?.directions.flatMap(item=>item.actionDetails??[]).find(item=>item.title===title);return createGoalAction({ title,shortTitle:detail?.shortTitle,description:detail?.description, studyModuleId:detail?.studyModuleId, estimatedMinutes:detail?.estimatedMinutes, position: actionIndex });}));
     const canonicalActions = canonicalByDirection.flat();
     const linkedDirections: OpenWindowDirection[] = window.directions.map((direction, index) => ({ ...direction, title: normalizedDirections[index]?.title.trim().slice(0, 300) ?? '', actionIds: canonicalByDirection[index]?.map((action) => action.id) ?? [] }));
     const finalGoal: Goal = { ...goal, assistantDiscussion:discussion, actions: canonicalActions, openWindow: { ...window, directions: linkedDirections } };
-    const saved=onSave(finalGoal);
+    let readyGoal:Goal;
+    try{readyGoal=studyPlan?applyGoalStudyPlan(finalGoal,studyPlan):finalGoal;}catch(error){setAiMessage(error instanceof Error?error.message:'Не удалось связать учебный план. Черновик сохранён.');return;}
+    const saved=onSave(readyGoal);
     if(saved) {
       discardedKey.current = storageKey;
       latestDraft.current = null;
@@ -397,24 +405,24 @@ export function GoalWizard({ open, userId, onClose, onSave }: Props) {
             {directions.length < 8 ? <Pressable accessibilityRole="button" onPress={addDirection} style={styles.addDirection}><Plus color={accent} size={16} /><Text style={styles.addDirectionText}>Добавить направление</Text></Pressable> : null}
           </> : null}
           {step === 3 ? <>
-            <Text accessibilityRole="header" style={styles.prompt}>Какие первые действия помогут?</Text><Text style={styles.help}>Добавляй только понятные следующие шаги. В каждом направлении до восьми действий.</Text>
+            <Text accessibilityRole="header" style={styles.prompt}>Какие первые действия помогут?</Text><Text style={styles.help}>Составь план с KODA по цели, беседе и материалам или добавь шаги вручную.</Text>
             {directions.filter((item) => item.title.trim()).length ? directions.filter((item) => item.title.trim()).map((direction) => <View key={direction.id} style={styles.actionGroup}><Text style={styles.actionGroupTitle}>{direction.title}</Text>{direction.actions.map((action, index) => <View key={`${direction.id}-${index}`} style={styles.actionInputRow}><TextInput accessibilityLabel={`Действие ${index + 1} для ${direction.title}`} onChangeText={(value) => updateDirection(direction.id, (item) => ({ ...item, actions: item.actions.map((candidate, candidateIndex) => candidateIndex === index ? value : candidate) }))} placeholder="Короткий следующий шаг" placeholderTextColor={faint} style={styles.actionInput} value={action} />{direction.actions.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="Удалить действие из черновика" onPress={() => updateDirection(direction.id, (item) => ({ ...item, actions: item.actions.filter((_, actionIndex) => actionIndex !== index) }))} style={styles.actionRemove}><X color={muted} size={15} /></Pressable> : null}</View>)}{direction.actions.length < 8 ? <Pressable accessibilityRole="button" onPress={() => addAction(direction)} style={styles.addAction}><Plus color={accent} size={14} /><Text style={styles.addDirectionText}>Добавить действие</Text></Pressable> : null}</View>) : <Text style={styles.help}>Направлений пока нет. Их можно создать позже внутри цели.</Text>}
           </> : null}
           {step === 4 ? <>
-            <Text accessibilityRole="header" style={styles.prompt}>Какой приоритет и срок подойдут сейчас?</Text><Text style={styles.help}>Оба поля можно изменить позже.</Text>
+            <Text accessibilityRole="header" style={styles.prompt}>Какой приоритет и срок подойдут сейчас?</Text><Text style={styles.help}>Оба поля можно изменить позже.</Text>{aiMessage?<Text accessibilityLiveRegion="polite" style={styles.help}>{aiMessage}</Text>:null}{studyPlan?<StudyPlanSummary plan={studyPlan}/>:null}
             <View style={styles.priorityRow}>{priorities.map((item) => <Pressable key={item.value} {...webSpaceActivationProps(() => setPriority(item.value))} accessibilityRole="radio" aria-checked={priority === item.value} accessibilityState={{ checked: priority === item.value }} onPress={() => setPriority(item.value)} style={[styles.priority, priority === item.value && styles.priorityActive]}><Text style={[styles.priorityText, priority === item.value && styles.priorityTextActive]}>{item.label}</Text></Pressable>)}</View>
             {aiMessage.includes('дату')?<Text accessibilityRole="alert" style={styles.help}>{aiMessage}</Text>:null}<Text style={styles.help}>Срок необязателен.</Text><DeadlinePicker value={deadline} onChange={changeDeadline} />
             <View style={styles.summary}><Text style={styles.summaryTitle}>{goalTitle || wish || 'Цель без названия'}</Text>{desiredResult ? <Text style={styles.help}>{desiredResult}</Text> : null}<Text style={styles.summaryMeta}>{directions.filter((item) => item.title.trim()).length} направлений · {directions.reduce((sum, item) => sum + item.actions.filter((action) => action.trim()).length, 0)} действий</Text></View>
           </> : null}
           {(step===2||step===3)?<View style={styles.sharedAi}>
-            <GoalDiscussion key={storageKey} userId={userId} title={goalTitle||wish} desiredResult={desiredResult} planningContext={JSON.stringify({directions:directions.map(({title,actions})=>({title,actions})),deadline})} value={discussion} onChange={recipe=>{invalidateAI();const next=recipe(normalizeGoalDiscussion(latestDraft.current?.value.assistantDiscussion??discussion));setDiscussion(next);persistDraft({assistantDiscussion:next});}} onSuggest={()=>void getSuggestions()} disabled={aiBusy}/>
-            <View style={styles.aiCard}><View style={styles.aiHeader}><Sparkles color={accent} size={17}/><Text style={styles.aiTitle}>Предложение структуры по текущим направлениям</Text></View><Pressable accessibilityRole="button" disabled={!goalTitle.trim()||aiBusy} onPress={()=>getSuggestions()} style={[styles.aiButton,(!goalTitle.trim()||aiBusy)&&styles.disabled]}><Text style={styles.aiButtonText}>{aiBusy?'Подбираю…':'Предложить направления и действия'}</Text></Pressable>{aiMessage?<Text accessibilityLiveRegion="polite" style={styles.aiMessage}>{aiMessage}</Text>:null}{suggestion?.planningNote?<Text style={styles.help}>{suggestion.planningNote}</Text>:null}{suggestion?.clarificationQuestions?.length?<View style={styles.pendingQuestions}><Text style={styles.aiTitle}>Нужно уточнить перед применением:</Text>{suggestion.clarificationQuestions.map((question,index)=><Text key={`q${index}`} style={styles.help}>• {question}</Text>)}</View>:null}{suggestion?.studyPlan?<StudyPlanPreview plan={suggestion.studyPlan}/>:null}{suggestion?.directions.length?<View style={styles.suggestion}><Text style={styles.suggestionTitle}>Направления и первые шаги</Text>{suggestion.directions.map((item,index)=><View key={`${item.title}-${index}`} style={styles.suggestionGroup}><Text style={styles.suggestionLine}>{item.title}</Text>{item.actions.map((action,actionIndex)=>{const detail=item.actionDetails?.find(candidate=>candidate.title===action);return <View key={`${action}-${actionIndex}`}><Text style={styles.suggestionAction}>• {action}</Text>{detail?.description?<Text style={styles.help}>{detail.shortTitle}: {detail.description}</Text>:null}</View>})}</View>)}<Pressable accessibilityRole="button" onPress={applySuggestions} style={styles.applyButton}><Text style={styles.applyText}>Добавить предложения в черновик</Text></Pressable></View>:suggestion?.studyPlan?<Pressable accessibilityRole="button" onPress={applySuggestions} style={styles.applyButton}><Text style={styles.applyText}>Принять план обучения</Text></Pressable>:null}</View>
+            <GoalDiscussion key={storageKey} userId={userId} title={goalTitle||wish} desiredResult={desiredResult} planningContext={JSON.stringify({studyPlan:studyPlanContext(studyPlan),deadline,directions:directions.map(({title,actions})=>({title,actions}))})} value={discussion} onChange={recipe=>{invalidateAI();const next=recipe(normalizeGoalDiscussion(latestDraft.current?.value.assistantDiscussion??discussion));setDiscussion(next);persistDraft({assistantDiscussion:next});}} onSuggest={()=>void getSuggestions()} hideSuggest disabled={aiBusy}/>
+            <View style={styles.aiCard}><View style={styles.aiHeader}><Sparkles color={accent} size={17}/><Text style={styles.aiTitle}>План по цели, беседе и материалам</Text></View><Pressable accessibilityRole="button" disabled={!goalTitle.trim()||aiBusy} onPress={()=>getSuggestions()} style={[styles.aiButton,(!goalTitle.trim()||aiBusy)&&styles.disabled]}><Text style={styles.aiButtonText}>{aiBusy?'Составляю план…':suggestion?'Пересоставить план':'Составить план'}</Text></Pressable>{aiMessage?<Text accessibilityLiveRegion="polite" style={styles.aiMessage}>{aiMessage}</Text>:null}{suggestion?.planningNote?<Text style={styles.help}>{suggestion.planningNote}</Text>:null}{suggestion?.clarificationQuestions?.length?<View style={styles.pendingQuestions}><Text style={styles.aiTitle}>Нужно уточнить перед применением:</Text>{suggestion.clarificationQuestions.map((question,index)=><Text key={`q${index}`} style={styles.help}>• {question}</Text>)}</View>:null}{suggestion?.studyPlan?<StudyPlanPreview plan={suggestion.studyPlan}/>:null}{suggestion?.directions.length?<View style={styles.suggestion}><Text style={styles.suggestionTitle}>Направления и первые шаги</Text>{suggestion.directions.map((item,index)=><View key={`${item.title}-${index}`} style={styles.suggestionGroup}><Text style={styles.suggestionLine}>{item.title}</Text>{item.actions.map((action,actionIndex)=>{const detail=item.actionDetails?.find(candidate=>candidate.title===action);return <View key={`${action}-${actionIndex}`}><Text style={styles.suggestionAction}>• {action}</Text>{detail?.description?<Text style={styles.help}>{detail.shortTitle}: {detail.description}</Text>:null}</View>})}</View>)}<Text style={styles.help}>Пока только в черновик. Цель сохранится на последнем шаге.</Text><Pressable accessibilityRole="button" onPress={applySuggestions} style={styles.applyButton}><Text style={styles.applyText}>Добавить в цель</Text></Pressable></View>:suggestion?.studyPlan?<><Text style={styles.help}>Пока только в черновик. Цель сохранится на последнем шаге.</Text><Pressable accessibilityRole="button" onPress={applySuggestions} style={styles.applyButton}><Text style={styles.applyText}>Добавить в цель</Text></Pressable></>:null}</View>
           </View>:null}
           {studyScheduleStale?<View style={styles.pendingQuestions}><Text accessibilityRole="alert" style={styles.help}>Срок изменился. Прежний график больше не актуален — запроси новый на шаге направлений или действий.</Text><Pressable accessibilityRole="button" onPress={()=>{invalidateAI();setStep(2);}} style={styles.applyButton}><Text style={styles.applyText}>Пересчитать план с KODA</Text></Pressable></View>:null}
-          {step > 0 ? <Pressable accessibilityRole="button" onPress={skipStep} style={styles.skip}><Text style={styles.skipText}>{step === 4 ? 'Продолжить позже · черновик сохранён' : 'Пропустить этот шаг'}</Text></Pressable> : null}
+          {step > 0 && step !== 2 && step !== 3 ? <Pressable accessibilityRole="button" onPress={skipStep} style={styles.skip}><Text style={styles.skipText}>{step === 4 ? 'Продолжить позже · черновик сохранён' : 'Пропустить этот шаг'}</Text></Pressable> : null}
           <Text style={styles.draftNote}>Черновик сохраняется на этом устройстве{userId ? ' для текущего аккаунта' : ''}.</Text>
         </ScrollView>
-        <View style={styles.footer}>{step>0?<Pressable accessibilityRole="button" onPress={goBack} style={styles.secondary}><Text style={styles.secondaryText}>Назад</Text></Pressable>:null}<Pressable accessibilityRole="button" onPress={()=>step===4?save():advance()} disabled={step===0&&!wish.trim()} style={[styles.primary,step===0&&!wish.trim()&&styles.disabled]}><Text style={styles.primaryText}>{step===4?'Создать цель':'Дальше'}</Text></Pressable></View>
+        <View style={styles.footer}>{step>0?<Pressable accessibilityRole="button" onPress={goBack} style={styles.secondary}><Text style={styles.secondaryText}>Назад</Text></Pressable>:null}<Pressable accessibilityRole="button" onPress={()=>step===4?save():advance()} disabled={step===0&&!wish.trim()} style={[styles.primary,step===0&&!wish.trim()&&styles.disabled]}><Text style={styles.primaryText}>{step===4?'Создать цель':suggestion&&(step===2||step===3)?'Продолжить без предложений':step===2&&!directions.some(item=>item.title.trim())?'Продолжить без направлений':step===3&&!directions.some(item=>item.actions.some(action=>action.trim()))?'Продолжить без плана':step===2?'К действиям':'Продолжить'}</Text></Pressable></View>
         </>}
       </View>
     </View>

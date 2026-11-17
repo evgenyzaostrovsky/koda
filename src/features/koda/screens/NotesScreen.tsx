@@ -167,23 +167,23 @@ export function NotesScreen({
   }
 
   const listPanel = (
-    <View style={[local.notesListPanel, isDesktop && local.desktopNotesListPanel]}>
+    <View style={[local.notesListPanel, isDesktop && local.desktopNotesListPanel, !isDesktop && local.mobileNotesListPanel]}>
       <View style={local.notesListHeader}>
-        {isDesktop ? <View style={local.desktopContextGroup}><Text style={local.desktopContextTitle}>Заметки</Text><Text style={local.desktopContextCount}>{filteredNotes.length}</Text></View> : <SectionTitle title="Заметки" subtitle="Сохрани и найди потом" />}
+        {isDesktop ? <View style={local.desktopContextGroup}><Text style={local.desktopContextTitle}>Заметки</Text><Text style={local.desktopContextCount}>{filteredNotes.length}</Text></View> : <SectionTitle title="Заметки" />}
         <View style={local.libraryActions}>
-          <Pressable accessibilityRole="button" onPress={() => setOverviewOpen(true)} style={local.overviewLink}><Text style={local.overviewLinkText}>Обзор</Text></Pressable>
-          <Pressable accessibilityLabel="Создать заметку" accessibilityRole="button" onPress={createNote} style={[local.roundAddButton, isDesktop && local.desktopAddButton]}><Plus color={text} size={isDesktop ? 17 : 19} strokeWidth={3} /></Pressable>
+          {isDesktop ? <Pressable accessibilityRole="button" onPress={() => setOverviewOpen(true)} style={local.overviewLink}><Text style={local.overviewLinkText}>Обзор</Text></Pressable> : null}
+          <Pressable accessibilityLabel="Создать заметку" accessibilityRole="button" onPress={createNote} style={[local.roundAddButton, isDesktop && local.desktopAddButton, !isDesktop && local.mobileCreateButton]}><Plus color={text} size={isDesktop ? 17 : 19} strokeWidth={3} />{!isDesktop ? <Text style={local.mobileCreateText}>Новая</Text> : null}</Pressable>
         </View>
       </View>
 
-      <View style={local.searchBox}>
+      <View style={[local.searchBox, !isDesktop && local.mobileSearchBox]}>
         <Search color={muted} size={16} />
         <TextInput
           accessibilityLabel="Поиск по заметкам"
           onChangeText={setQuery}
           placeholder="Поиск..."
           placeholderTextColor={faint}
-          style={local.searchInput}
+          style={[local.searchInput, !isDesktop && local.mobileSearchInput]}
           value={query}
         />
       </View>
@@ -191,14 +191,14 @@ export function NotesScreen({
       <ScrollView style={!isDesktop ? local.mobileNoteListScroll : undefined} contentContainerStyle={local.noteListContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {!filteredNotes.length ? (
           <View style={[local.emptyState, isDesktop && local.desktopEmptyState]}>
-            <Text style={local.emptyTitle}>Заметок пока нет</Text>
-            <Text style={local.meta}>Сохраняй здесь любую информацию, которую не хочешь потерять.</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Создать заметку" onPress={createNote} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать заметку</Text></Pressable>
+            <Text style={local.emptyTitle}>{sortedNotes.length ? 'Ничего не найдено' : 'Заметок пока нет'}</Text>
+            <Text style={local.meta}>{sortedNotes.length ? 'Попробуй изменить запрос.' : 'Сохраняй здесь любую информацию, которую не хочешь потерять.'}</Text>
+            {!sortedNotes.length ? <Pressable accessibilityRole="button" accessibilityLabel="Создать заметку" onPress={createNote} style={local.primaryButton}><Text style={local.primaryButtonText}>Создать заметку</Text></Pressable> : null}
           </View>
         ) : (
           <>
-            {pinnedNotes.length ? <NoteGroup compact={isDesktop} title="Закреплённые" notes={pinnedNotes} selectedNoteId={selectedNote?.id ?? null} onOpen={openNote} /> : null}
-            <NoteGroup compact={isDesktop} title={pinnedNotes.length ? 'Все заметки' : 'Недавние'} notes={regularNotes} selectedNoteId={selectedNote?.id ?? null} onOpen={openNote} />
+            {pinnedNotes.length ? <NoteGroup compact={isDesktop} title="Закреплённые" notes={pinnedNotes} selectedNoteId={isDesktop ? selectedNote?.id ?? null : null} onOpen={openNote} /> : null}
+            <NoteGroup compact={isDesktop} title={pinnedNotes.length ? 'Все заметки' : 'Недавние'} notes={regularNotes} selectedNoteId={isDesktop ? selectedNote?.id ?? null : null} onOpen={openNote} />
           </>
         )}
       </ScrollView>
@@ -312,7 +312,7 @@ export function NotesScreen({
   const overview = (
     <BentoPage maxWidth={840} scroll={false} style={local.screen} contentStyle={local.overviewPage}>
       <View style={local.overviewWrap}>
-        <SectionHeader title="Заметки" subtitle="Недавнее и закреплённое" action={<Pressable accessibilityRole="button" accessibilityLabel="Создать заметку" onPress={createNote} style={local.roundAddButton}><Plus color={text} size={19} strokeWidth={3} /></Pressable>} />
+        <SectionHeader title="Заметки" subtitle="Недавнее и закреплённое" action={<Pressable accessibilityRole="button" accessibilityLabel="Создать заметку" onPress={createNote} style={[local.roundAddButton,local.mobileCreateButton]}><Plus color={text} size={19} strokeWidth={3} /><Text style={local.mobileCreateText}>Новая</Text></Pressable>} />
         <BentoCard tone="light" style={local.overviewCard}>
           {overviewNotes.length ? <>
             <View style={local.overviewListHeader}><Text style={local.groupTitle}>{overviewNotes.some(note => note.pinned) ? 'Из заметок' : 'Недавние'}</Text><Text style={local.overviewCount}>{sortedNotes.length}</Text></View>
@@ -332,7 +332,7 @@ export function NotesScreen({
 
   return (
     <View style={local.screen}>
-      {overviewOpen ? overview : isDesktop ? (
+      {!isDesktop ? mobileEditorOpen && selectedNote ? editorPanel : listPanel : overviewOpen ? overview : (
         <View style={{ flex: 1, minHeight: 0 }}>
           <View style={{ display: desktopEditorOpen ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
             <View style={local.desktopEditorHeader}>
@@ -342,10 +342,6 @@ export function NotesScreen({
           </View>
           <View style={{ display: desktopEditorOpen ? 'none' : 'flex', flex: 1, minHeight: 0 }}>{desktopLibrary}</View>
         </View>
-      ) : mobileEditorOpen && selectedNote ? (
-        editorPanel
-      ) : (
-        listPanel
       )}
 
       <Modal animationType="fade" transparent visible={Boolean(blockMenu)} onRequestClose={() => setBlockMenu(null)}>
@@ -424,7 +420,7 @@ function NoteGroup({ compact, notes, onOpen, selectedNoteId, title }: { compact:
       {notes.map((note) => (
         <Pressable accessibilityRole="button" accessibilityLabel={`Открыть заметку: ${note.title.trim() || 'Без названия'}`} accessibilityState={{ selected: selectedNoteId === note.id }} key={note.id} onPress={() => onOpen(note)} style={[local.noteRow, compact && local.desktopNoteRow, selectedNoteId === note.id && local.noteRowActive, compact && selectedNoteId === note.id && local.desktopNoteRowActive]}>
           <View style={local.noteRowTop}>
-            <Text numberOfLines={1} style={local.noteTitle}>{note.title.trim() || 'Без названия'}</Text>
+            <Text numberOfLines={compact ? 1 : 2} style={local.noteTitle}>{note.title.trim() || 'Без названия'}</Text>
             {note.pinned ? <Pin color={accent} size={12} /> : null}
           </View>
           <Text numberOfLines={2} style={local.notePreview}>{notePlainText(note) || 'Пустая заметка'}</Text>
@@ -906,9 +902,13 @@ const local: Record<string, any> = {
   noteGroup: { gap: 8 },
   noteTile: { gap: 8, minHeight: 110, justifyContent: 'space-between' as const, width: '100%' as const },
   noteListContent: { gap: 12, paddingBottom: 16 },
-  mobileNoteListScroll: { flexGrow: 0, flexShrink: 1, maxHeight: 360 },
+  mobileNotesListPanel: { flex: 1, minHeight: 0, backgroundColor: 'transparent', borderWidth: 0, padding: 12, gap: 10 },
+  mobileNoteListScroll: { flex: 1, minHeight: 0 },
+  mobileSearchBox: { minHeight: 46 },
+  mobileSearchInput: { minHeight: 44 },
   notePreview: { color: muted, fontSize: 12, lineHeight: 17 },
   noteRow: {
+    backgroundColor: panel,
     borderColor: line,
     borderRadius: 12,
     borderWidth: 1,
@@ -933,6 +933,8 @@ const local: Record<string, any> = {
   libraryActions: { alignItems: 'center', flexDirection: 'row', gap: 4 },
   overviewLink: { justifyContent: 'center', minHeight: 44, paddingHorizontal: 8 },
   overviewLinkText: { color: muted, fontSize: 13, lineHeight: 18 },
+  mobileCreateButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 999, flexDirection: 'row' as const, gap: 6, height: 44, justifyContent: 'center', minWidth: 82, paddingHorizontal: 12, width: 'auto' as const },
+  mobileCreateText: { color: activeText, fontSize: 12, fontWeight: '700' as const },
   notesListPanel: {
     backgroundColor: panel,
     borderColor: line,

@@ -4,12 +4,12 @@ import { todayDateKey } from '../utils';
 
 /** Read-only display selection; does not schedule or change saved actions. */
 export function nextAvailableGoalAction(goal: Goal, date = todayDateKey()) {
-  return availableGoalActions(goal, date)[0];
+  return goal.studyPlan?nextRoadmapAction(goal,date).action:availableGoalActions(goal, date)[0];
 }
 
 function availableGoalActions(goal: Goal, date: string): GoalAction[] {
   if (goal.archivedAt || goal.status !== 'active') return [];
-  const completedIds = new Set(goal.actions.filter(action => action.status === 'completed').map(action => action.id));
+  const completedIds = new Set(goal.actions.filter(action => action.status === 'completed'||Boolean(goal.studyPlan&&action.studyModuleId&&goal.milestones.some(m=>m.id===action.milestoneId&&m.status==='completed'))).map(action => action.id));
   const linkedIds = new Set<string>(), activeLinkedIds = new Set<string>();
   for (const direction of goal.openWindow?.directions ?? []) {
     for (const id of direction.actionIds) {

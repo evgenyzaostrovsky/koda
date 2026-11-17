@@ -14,6 +14,7 @@ import type {
 import { todayDateKey, uid } from './utils';
 import { normalizeOpenWindow } from './openWindow';
 import { normalizeRoadmapClarifications } from './goalRoadmapClarifications';
+import { normalizeGoalStudyPlan } from './goalStudyPlan';
 
 type LegacyGoal = { id?: string; title?: string; progress?: number; daysLeft?: number; archived?: boolean };
 
@@ -85,6 +86,7 @@ export function createGoalAction(input: {
   estimatedMinutes?: number | null;
   importance?: 'normal' | 'key';
   milestoneId?: string | null;
+  studyModuleId?: string;
   position?: number;
 }): GoalAction {
   return {
@@ -96,6 +98,7 @@ export function createGoalAction(input: {
     estimatedMinutes: input.estimatedMinutes ?? null,
     importance: input.importance ?? 'normal',
     milestoneId: input.milestoneId ?? null,
+    ...(input.studyModuleId ? { studyModuleId: input.studyModuleId } : {}),
     status: 'pending',
     position: input.position ?? 0,
     completedAt: null,
@@ -135,6 +138,7 @@ export function normalizeGoal(value: unknown): Goal | null {
   const deletedAt = typeof raw.deletedAt === 'string' && Number.isFinite(Date.parse(raw.deletedAt)) ? raw.deletedAt : null;
   const syncMeta = normalizeEntitySync(raw.syncMeta);
   const retained = (collection: string, id: string) => !syncMeta?.removed?.[collection]?.includes(id);
+  const studyPlan = normalizeGoalStudyPlan(raw.studyPlan);
 
   return {
     ...(syncMeta ? { syncMeta } : {}),
@@ -142,6 +146,7 @@ export function normalizeGoal(value: unknown): Goal | null {
     ...(deletedAt ? { deletedAt } : {}),
     title,
     desiredResult: typeof raw.desiredResult === 'string' ? raw.desiredResult : '',
+    ...(studyPlan ? { studyPlan } : {}),
     ...(raw.assistantDiscussion ? {assistantDiscussion:normalizeGoalDiscussion(raw.assistantDiscussion)} : {}),
     ...(typeof raw.planningContext === 'string' ? { planningContext: raw.planningContext.slice(0, 2000) } : {}),
     ...(normalizeRoadmapClarifications(raw.roadmapClarifications) ? { roadmapClarifications: normalizeRoadmapClarifications(raw.roadmapClarifications) } : {}),
@@ -161,6 +166,8 @@ export function normalizeGoal(value: unknown): Goal | null {
 }
 
 export function calculateMilestoneProgress(milestone: GoalMilestone, actions: GoalAction[]) {
+  // Suggested exercises are only a sample of a curriculum, not its completion criteria.
+  if (milestone.studyModuleId) return milestone.status === 'completed' ? 100 : 0;
   const ownActions = uniqueProgressActions(actions.filter((action) => action.milestoneId === milestone.id && !action.archivedAt));
   if (!ownActions.length) return milestone.status === 'completed' ? 100 : 0;
   return Math.round((ownActions.filter((action) => action.status === 'completed').length / ownActions.length) * 100);
@@ -266,6 +273,8 @@ function normalizeMilestones(value: unknown): GoalMilestone[] {
         id: typeof raw.id === 'string' ? raw.id : uid('milestone'),
         title: raw.title.trim(),
         description: typeof raw.description === 'string' ? raw.description : '',
+        ...(typeof raw.studyModuleId === 'string' && raw.studyModuleId ? { studyModuleId: raw.studyModuleId } : {}),
+        ...(typeof raw.startDate === 'string' ? { startDate: raw.startDate } : {}),
         deadline: typeof raw.deadline === 'string' ? raw.deadline : '',
         status: isMilestoneStatus(raw.status) ? raw.status : 'not_started',
         position: typeof raw.position === 'number' ? raw.position : index,
@@ -292,6 +301,7 @@ function normalizeActions(value: unknown): GoalAction[] {
         estimatedMinutes: typeof raw.estimatedMinutes === 'number' ? raw.estimatedMinutes : null,
         importance: raw.importance === 'key' ? 'key' : 'normal',
         milestoneId: typeof raw.milestoneId === 'string' ? raw.milestoneId : null,
+        ...(typeof raw.studyModuleId === 'string' && raw.studyModuleId ? { studyModuleId: raw.studyModuleId } : {}),
         status: raw.status === 'completed' ? 'completed' : 'pending',
         position: typeof raw.position === 'number' ? raw.position : index,
         completedAt: typeof raw.completedAt === 'string' ? raw.completedAt : null,

@@ -121,6 +121,8 @@ function assigned(state: AutoPlanState, goalId: string, actionId: string) {
   return state.assignments.find(a => a.goalId === goalId && a.actionId === actionId && admission(state, a.id));
 }
 function actionComplete(state: AutoPlanState, goal: Goal, actionId: string) {
+  const action=goal.actions.find(a=>a.id===actionId);
+  if(goal.studyPlan&&action?.studyModuleId&&goal.milestones.some(m=>m.id===action.milestoneId&&m.status==='completed'))return true;
   const assignment = assigned(state, goal.id, actionId);
   return assignment ? Boolean(autoPlanCompletion(state, assignment.id)?.done) : goal.actions.some(a => a.id === actionId && a.status === 'completed');
 }
@@ -129,6 +131,8 @@ function predecessorsReady(state: AutoPlanState, goals: Goal[], assignment: Auto
   if (!goal) return false;
   const dependencies = goal.actions.find(a => a.id === assignment.actionId)?.dependsOn ?? [];
   return unique([...assignment.predecessorIds, ...dependencies]).every(id => {
+    const dependency=goal.actions.find(a=>a.id===id);
+    if(goal.studyPlan&&dependency?.studyModuleId&&goal.milestones.some(m=>m.id===dependency.milestoneId&&m.status==='completed'))return true;
     const previous = assigned(state, goal.id, id);
     if (!previous) return goal.actions.some(a => a.id === id && a.status === 'completed');
     const completion = autoPlanCompletion(state, previous.id);
@@ -185,7 +189,7 @@ export function advanceAutoPlan(state: AutoPlanState, goals: Goal[], plannerItem
   // Carry work reserves the budget before new work from any other goal.
   for (const goal of eligibleGoals) {
     const actions = visibleActions(goal);
-    const pending = actions.map(action => assigned(state, goal.id, action.id)).find(a => a && !autoPlanCompletion(state, a.id)?.done);
+    const pending = actions.map(action => assigned(state, goal.id, action.id)).find(a => a && !actionComplete(state, goal, a.actionId));
     if (pending && predecessorsReady(state, goals, pending, date) && availableDate(actions.find(a => a.id === pending.actionId), plannedDate(state, pending, date)) === date) {
       hasDueCarry = true;
       if (pending.estimatedMinutes <= remaining) {
@@ -200,6 +204,10 @@ export function advanceAutoPlan(state: AutoPlanState, goals: Goal[], plannerItem
     const actions = visibleActions(goal);
     const action = actions.find(a => !actionComplete(state, goal, a.id));
     if (!action || assigned(state, goal.id, action.id)) continue;
+    if(goal.studyPlan&&action.studyModuleId){
+      const current=[...goal.milestones].sort((a,b)=>a.position-b.position).find(m=>m.studyModuleId&&m.status!=='completed');
+      if(!current||action.milestoneId!==current.id)continue;
+    }
     const preceding = actions.slice(0, actions.indexOf(action));
     const predecessorIds = unique([...preceding.map(a => a.id), ...(action.dependsOn ?? [])]);
     if (predecessorIds.some(id => !actionComplete(state, goal, id))) continue;
@@ -232,6 +240,7 @@ export function buildAutoPlanItems(state: AutoPlanState | null | undefined, goal
     const goal = goals.find(g => g.id === assignment.goalId);
     const action = goal?.actions.find(a => a.id === assignment.actionId);
     const done = Boolean(completion?.done);
+    if(!done&&goal?.studyPlan&&action?.studyModuleId&&goal.milestones.some(m=>m.id===action.milestoneId&&m.status==='completed'))return [];
     if (!done && (!goal || !liveGoal(goal) || !visibleActions(goal).some(a => a.id === assignment.actionId) || !predecessorsReady(state, goals, assignment, date))) return [];
     return [{ id: assignment.id, date: done ? completion!.date : availableDate(action, plannedDate(state, assignment, date)), time: '',
       title: action?.title || assignment.title, description: action?.description, goalTitle: goal?.title, done, sourceType: 'goal' as const, goalId: assignment.goalId,

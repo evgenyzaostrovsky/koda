@@ -7,7 +7,7 @@ import { accent, activeBg, activeText, line, muted, panel, panelSoft, text } fro
 import { BentoCard } from './Bento';
 import { roadmapStageLabel } from '../roadmapLabels';
 
-type Patch = Partial<Pick<GoalMilestone, 'title' | 'description' | 'deadline' | 'status'>>;
+type Patch = Partial<Pick<GoalMilestone, 'title' | 'description' | 'deadline' | 'status' | 'completedAt'>>;
 export function GoalRoadmap({
   milestones, actions, currentMilestoneId, focusMilestoneId, manage, onUpdateMilestone, onToggleAction, onAddAction, renderManageActions,
 }: {
@@ -41,7 +41,7 @@ export function GoalRoadmap({
           {(compact||ordered.length<=4)&&index<ordered.length-1?<View style={[compact?s.verticalConnector:s.horizontalConnector,done&&s.connectorDone]}/>:null}
           <Pressable accessibilityRole="button" accessibilityLabel={`Этап ${index+1}: ${stage.title}, ${done?'завершён':isCurrent?'текущий':'впереди'}`} accessibilityHint={`Полное название этапа: ${stage.title}`} accessibilityState={{expanded:open,selected:isCurrent}} aria-expanded={open} onPress={()=>setExpandedId(open?null:stage.id)} style={[s.nodeHeader,!compact&&s.nodeHeaderDesktop,open&&s.nodeOpen]}>
             <View style={[s.marker,isCurrent&&s.markerCurrent,done&&s.markerDone,open&&s.markerOpen]}>{done?<Check size={17} color={activeText}/>:<Text style={[s.markerNumber,isCurrent&&s.markerNumberCurrent]}>{index+1}</Text>}</View>
-            <View style={[s.nodeCopy,!compact&&s.nodeCopyDesktop]}><Text style={[s.nodeTitle,!compact&&s.nodeTitleDesktop]}>{Platform.OS==='web'?createElement('span',{title:stage.title},roadmapStageLabel(stage.title,index+1)):roadmapStageLabel(stage.title,index+1)}</Text><Text style={[s.nodeState,isCurrent&&s.nodeStateCurrent,!compact&&s.nodeStateDesktop]}>{done?'Завершён':isCurrent?'Сейчас':'Впереди'} · {progress}%</Text></View>
+            <View style={[s.nodeCopy,!compact&&s.nodeCopyDesktop]}><Text style={[s.nodeTitle,!compact&&s.nodeTitleDesktop]}>{Platform.OS==='web'?createElement('span',{title:stage.title},roadmapStageLabel(stage.title,index+1)):roadmapStageLabel(stage.title,index+1)}</Text><Text style={[s.nodeState,isCurrent&&s.nodeStateCurrent,!compact&&s.nodeStateDesktop]}>{done?'Завершён':isCurrent?'Сейчас':'Впереди'} · {progress}%</Text>{stage.deadline?<Text style={s.deadlineText}>{stage.startDate?`${formatDateLong(stage.startDate)} — `:''}{formatDateLong(stage.deadline)}</Text>:null}</View>
           </Pressable>
         </View>;
       })}
@@ -57,8 +57,9 @@ export function GoalRoadmap({
         {expanded.deadline?<View style={s.deadlineRead}><Clock3 size={14} color={muted}/><Text style={s.deadlineText}>{formatDateLong(expanded.deadline)}</Text></View>:null}
       </>}
       {manage&&renderManageActions?<View style={s.tools}>{renderManageActions(expanded,expandedIndex,ordered)}</View>:null}
+      {expanded.studyModuleId&&expanded.status!=='completed'?<View style={s.tools}><Text style={s.noActions}>Упражнения помогают пройти модуль. Отметь его завершённым, когда выполнены требования курса.</Text><Pressable accessibilityRole="button" onPress={()=>onUpdateMilestone(expanded.id,{status:'completed',completedAt:new Date().toISOString()})} style={s.addAction}><Text style={s.addActionText}>Подтвердить завершение модуля</Text></Pressable></View>:null}
       <View style={s.actionList}>
-        {attached.length?attached.map(action=><Pressable key={action.id} accessibilityRole="checkbox" accessibilityLabel={action.title} accessibilityState={{checked:action.status==='completed'}} aria-checked={action.status==='completed'} onPress={()=>onToggleAction(action.id)} style={s.actionRow}><View style={[s.actionCheck,action.status==='completed'&&s.actionCheckDone]}>{action.status==='completed'?<Check size={12} color={activeText}/>:null}</View><Text style={[s.actionTitle,action.status==='completed'&&s.actionTitleDone]}>{action.title}</Text></Pressable>):<Text style={s.noActions}>У этого этапа пока нет связанных действий.</Text>}
+        {attached.length?attached.map(action=><Pressable key={action.id} accessibilityRole="checkbox" accessibilityLabel={action.title} accessibilityState={{checked:action.status==='completed'}} aria-checked={action.status==='completed'} onPress={()=>onToggleAction(action.id)} style={s.actionRow}><View style={[s.actionCheck,action.status==='completed'&&s.actionCheckDone]}>{action.status==='completed'?<Check size={12} color={activeText}/>:null}</View><View style={s.detailCopy}><Text style={[s.actionTitle,action.status==='completed'&&s.actionTitleDone]}>{action.title}</Text>{action.studyModuleId?<Text style={s.deadlineText}>{action.dueDate?formatDateLong(action.dueDate):''}{action.estimatedMinutes?` · около ${action.estimatedMinutes} мин`: ''}</Text>:null}</View></Pressable>):<Text style={s.noActions}>У этого этапа пока нет связанных действий.</Text>}
       </View>
       {expanded.id===currentMilestoneId&&!attached.length&&onAddAction?<Pressable accessibilityRole="button" onPress={()=>onAddAction(expanded)} style={s.addAction}><Text style={s.addActionText}>Добавить действие к текущему этапу</Text></Pressable>:null}
     </View>:null}

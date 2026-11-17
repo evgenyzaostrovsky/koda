@@ -8,8 +8,8 @@ import {assertDiscussionCapacity,goalDiscussionContext,normalizeGoalDiscussion,v
 import {uid} from '../utils';
 import {accent,activeBg,activeText,line,muted,panel,text} from '../theme';
 
-type Props={completionGoal?:Goal;onCompleteAction?:(goalId:string,actionId:string,message:CompletionMessage)=>void;userId?:string|null;goalId?:string;title:string;desiredResult?:string;planningContext?:string;value?:GoalDiscussionData;onChange:(recipe:(data:GoalDiscussionData)=>GoalDiscussionData)=>void;onSuggest:()=>void;disabled?:boolean};
-export function GoalDiscussion({completionGoal,onCompleteAction,userId,goalId,title,desiredResult,planningContext,value,onChange,onSuggest,disabled}:Props){
+type Props={completionGoal?:Goal;onCompleteAction?:(goalId:string,actionId:string,message:CompletionMessage)=>void;userId?:string|null;goalId?:string;title:string;desiredResult?:string;planningContext?:string;value?:GoalDiscussionData;onChange:(recipe:(data:GoalDiscussionData)=>GoalDiscussionData)=>void;onSuggest:()=>void;hideSuggest?:boolean;disabled?:boolean};
+export function GoalDiscussion({completionGoal,onCompleteAction,userId,goalId,title,desiredResult,planningContext,value,onChange,onSuggest,hideSuggest,disabled}:Props){
  const [expanded,setExpanded]=useState(false),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const data=normalizeGoalDiscussion(value),epoch=useRef(0),inflight=useRef(false);
  const latest=useRef({data,title,desiredResult,planningContext,userId,goalId});latest.current={data,title,desiredResult,planningContext,userId,goalId};
@@ -48,18 +48,18 @@ export function GoalDiscussion({completionGoal,onCompleteAction,userId,goalId,ti
  return <View style={styles.box}>
   <Pressable accessibilityRole="button" accessibilityState={{expanded}} onPress={()=>setExpanded(x=>!x)} style={styles.toggle}><MessageCircle size={17} color={accent}/><Text style={styles.heading}>{expanded?'Обсуждение с KODA':'Обсудить с KODA'}{data.messages.length?` · ${data.messages.length}`:''}</Text><Text style={styles.hint}>{expanded?'Свернуть':'Открыть чат'}</Text></Pressable>
   {expanded&&<View style={styles.body}>
-   <Text style={styles.hint}>Расскажи, что уже пройдено, добавь программу курса или поправь ответ. Беседа — память только этой цели; её можно очищать. Последние уточнения важнее старых.</Text>
+   <Text style={styles.hint}>Добавь важные детали о цели или задай вопрос о плане. Беседа и материалы помогут учесть контекст; их можно очистить.</Text>
    {data.materials.map(material=><View key={material.id} style={styles.row}><Paperclip size={15} color={muted}/><Text style={[styles.hint,{flex:1}]}>{material.name} · {material.content.length} символов</Text><Pressable accessibilityRole="button" accessibilityLabel={`Удалить материал ${material.name}`} disabled={busy} onPress={()=>remove(material.id)} style={styles.icon}><X size={16} color={muted}/></Pressable></View>)}
    {data.messages.length>12&&<Text style={styles.hint}>Показаны последние 12 сообщений. Для ответа используется недавняя беседа и материалы.</Text>}
    {data.messages.slice(-12).map(message=><View key={message.id} style={styles.message}><View style={styles.row}><Text style={styles.label}>{message.role==='user'?'Ты':'KODA'}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Удалить сообщение: ${message.content.slice(0,40)}`} disabled={busy} onPress={()=>remove(message.id)} style={styles.icon}><X size={14} color={muted}/></Pressable></View><Text selectable style={styles.copy}>{message.content}</Text></View>)}
    {completionGoal&&<GoalCompletionPrompt goals={[completionGoal]} message={data.messages.findLast(message=>message.role==='user')} onConfirm={onCompleteAction} disabled={busy||disabled||!userId}/>}
    {!userId&&<Text style={styles.hint}>Войди в аккаунт, чтобы общаться с помощником.</Text>}
-   <TextInput accessibilityLabel="Сообщение о текущей цели" multiline value={draft} onChangeText={setDraft} editable={!busy&&!disabled&&Boolean(userId)} maxLength={2000} placeholder="Где ты сейчас? Что уже сделал? Что нужно учесть?" placeholderTextColor={muted} style={styles.input}/>
+   <TextInput accessibilityLabel="Сообщение о текущей цели" multiline value={draft} onChangeText={setDraft} editable={!busy&&!disabled&&Boolean(userId)} maxLength={2000} placeholder="Добавь важные детали или задай вопрос о плане" placeholderTextColor={muted} style={styles.input}/>
    <View style={styles.row}><Pressable accessibilityRole="button" disabled={busy||disabled} onPress={attach} style={styles.action}><Paperclip size={16} color={accent}/><Text style={styles.hint}>Материалы</Text></Pressable><Text style={[styles.hint,{flex:1}]}>TXT, MD, CSV, JSON · до 16 тыс. знаков</Text><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" disabled={busy||disabled||!userId||!draft.trim()} onPress={()=>void send()} style={[styles.send,(!userId||busy||!draft.trim())&&{opacity:0.5}]}>{busy?<ActivityIndicator color={activeText}/>:<Send size={18} color={activeText}/>}</Pressable></View>
    {!!error&&<Text accessibilityRole="alert" style={styles.hint}>{error}</Text>}
    {!!error&&data.messages.at(-1)?.role==='user'&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void send(true)} style={styles.action}><Text style={styles.heading}>Повторить запрос</Text></Pressable>}
-   {!!data.messages.length&&<View style={styles.row}><Pressable accessibilityRole="button" disabled={busy||disabled} onPress={onSuggest} style={styles.action}><Text style={styles.heading}>Предложить структуру по беседе</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} onPress={()=>change(current=>normalizeGoalDiscussion({...current,removedIds:[...current.removedIds,...current.messages.map(m=>m.id)]}))} style={styles.action}><Text style={styles.hint}>Очистить беседу</Text></Pressable></View>}
-   <Text style={styles.hint}>Структура изменится только после подтверждения. Память помогает учитывать твой опыт; сама модель GPT здесь не переобучается.</Text>
+   {!!data.messages.length&&<View style={styles.row}>{!hideSuggest&&<Pressable accessibilityRole="button" disabled={busy||disabled} onPress={onSuggest} style={styles.action}><Text style={styles.heading}>Составить план</Text></Pressable>}<Pressable accessibilityRole="button" disabled={busy} onPress={()=>change(current=>normalizeGoalDiscussion({...current,removedIds:[...current.removedIds,...current.messages.map(m=>m.id)]}))} style={styles.action}><Text style={styles.hint}>Очистить беседу</Text></Pressable></View>}
+   <Text style={styles.hint}>План учтёт эту беседу и добавленные материалы. Перед добавлением его можно проверить.</Text>
   </View>}
  </View>;
 }

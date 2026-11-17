@@ -1,9 +1,12 @@
 import {normalizeGoalDiscussion,type GoalDiscussionData} from './goalDiscussion';
 import { restoreWizardClarifications } from './wizardDraft';
 import { normalizeGoalActionDetails, type GoalActionDetail } from '../../ai/goalPlanContract';
+import type { StudyPlan } from '../../ai/studyPlanning';
+import { normalizeGoalStudyPlan } from './goalStudyPlan';
 
 export type WizardDraftPayload = {
   assistantDiscussion?: GoalDiscussionData;
+  studyPlan?: StudyPlan;
   version: 1;
   step: number;
   wish: string;
@@ -47,8 +50,10 @@ function text(value: unknown, limit: number): string {
 /** Local payload migration/bounds. Does not trim answers or fill in any AI content. */
 export function normalizeWizardDraft(value: unknown): WizardDraftPayload | null {
   if (!record(value) || value.version !== 1 || typeof value.wish !== 'string') return null;
+  const studyPlan = normalizeGoalStudyPlan(value.studyPlan);
   return {
     version: 1,
+    ...(studyPlan ? { studyPlan } : {}),
     step: typeof value.step === 'number' && Number.isFinite(value.step) ? Math.max(0, Math.min(4, Math.floor(value.step))) : 0,
     wish: text(value.wish, 4000),
     goalTitle: text(value.goalTitle ?? value.wish, 300),

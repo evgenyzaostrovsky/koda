@@ -10,8 +10,8 @@ export type BentoTone='light'|'soft'|'lime'|'dark';
 const backgrounds:Record<BentoTone,string>={light:panel,soft:panelSoft,lime:'#e8ff55',dark:ink};
 export function BentoPage({children,maxWidth=960,scroll=true,style,contentStyle,testID}:{children:ReactNode;maxWidth?:number;scroll?:boolean;style?:StyleProp<ViewStyle>;contentStyle?:StyleProp<ViewStyle>;testID?:string}){
  const compact=useWindowDimensions().width<680;
- const inner=<View testID={testID} style={[s.page,{maxWidth},contentStyle,compact&&{paddingHorizontal:0}]}>{children}</View>;
- return scroll?<ScrollView style={[{flex:1,minWidth:0},style]} contentContainerStyle={[s.scroll,{flexGrow:1,justifyContent:'center',paddingVertical:16}]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{inner}</ScrollView>:<View style={[s.page,{flex:1,maxWidth},style,contentStyle,compact&&{paddingHorizontal:0}]} testID={testID}>{children}</View>;
+ const inner=<View testID={testID} style={[s.page,{maxWidth},contentStyle,compact&&{paddingHorizontal:0,gap:12}]}>{children}</View>;
+ return scroll?<ScrollView style={[{flex:1,minWidth:0},style]} contentContainerStyle={[s.scroll,{flexGrow:1,justifyContent:compact?'flex-start':'center',paddingVertical:compact?4:16}]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{inner}</ScrollView>:<View style={[s.page,{flex:1,maxWidth},style,contentStyle,compact&&{paddingHorizontal:0,gap:12}]} testID={testID}>{children}</View>;
 }
 export function BentoGrid({children,columns=2,style}:{children:ReactNode;columns?:number;style?:StyleProp<ViewStyle>}){
  const wide=useWindowDimensions().width>=760;
@@ -20,7 +20,7 @@ export function BentoGrid({children,columns=2,style}:{children:ReactNode;columns
 }
 export function BentoCard({children,tone='light',variant='none',action,style,testID}:{children:ReactNode;tone?:BentoTone;variant?:NotchedWidgetVariant;action?:ReactNode;style?:StyleProp<ViewStyle>;testID?:string}){
  const compact=useWindowDimensions().width<680;
- return <NotchedWidget variant={variant} backgroundColor={backgrounds[tone]} action={action} style={[{padding:compact?20:24,gap:12,minWidth:0},style]} testID={testID??'bento-card'}>{children}</NotchedWidget>;
+ return <NotchedWidget variant={variant} backgroundColor={backgrounds[tone]} action={action} style={[{padding:compact?14:24,gap:compact?8:12,minWidth:0},style]} testID={testID??'bento-card'}>{children}</NotchedWidget>;
 }
 export const CompactWidget=BentoCard;
 export const NotchedCard=BentoCard;
@@ -32,7 +32,8 @@ export function MetricCard({label,value,detail,tone='light',style,valueSize=32}:
  return <BentoCard tone={tone} style={style}><Text style={[s.label,{color:secondary}]}>{label}</Text><Text style={[s.value,{color:foreground,fontSize:valueSize,lineHeight:Math.round(valueSize*1.25)}]}>{value}</Text>{detail&&<Text style={[s.detail,{color:secondary}]}>{detail}</Text>}</BentoCard>;
 }
 export function SectionHeader({title,subtitle,action}:{title:string;subtitle?:string;action?:ReactNode}){
- return <View style={s.header}><View style={{flex:1,minWidth:0,gap:6}}><Text accessibilityRole="header" style={s.title}>{title}</Text>{subtitle&&<Text style={s.detail}>{subtitle}</Text>}</View>{action}</View>;
+ const compact=useWindowDimensions().width<680;
+ return <View style={[s.header,compact&&{gap:8}]}><View style={{flex:1,minWidth:0,gap:6}}><Text accessibilityRole="header" style={[s.title,compact&&{fontSize:23,lineHeight:28,letterSpacing:-.5}]}>{title}</Text>{subtitle&&<Text style={s.detail}>{subtitle}</Text>}</View>{action}</View>;
 }
 export function EmptyStateCard({title,description,action,children}:{title:string;description?:string;action?:ReactNode;children?:ReactNode}){
  return <BentoCard><Text style={s.emptyTitle}>{title}</Text>{description&&<Text style={s.detail}>{description}</Text>}{action}{children}</BentoCard>;

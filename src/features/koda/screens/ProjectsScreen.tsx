@@ -1,7 +1,7 @@
 import { changedDraftFields } from '../entitySync';
 import { RightPanel, useRightPanel } from '../components/RightPanel';
 import { ArrowLeft, Check, ChevronRight, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react-native';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { SectionTitle } from '../components';
 import { BentoCard, BentoGrid } from '../components/Bento';
@@ -50,6 +50,8 @@ export function ProjectsScreen({
   const previewLimit = 3;
   const previewProjects = showAllProjects ? displayedProjects : displayedProjects.slice(0, previewLimit);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(sortedProjects[0]?.id ?? null);
+  const [completedOpen, setCompletedOpen] = useState(false);
+  useEffect(() => setCompletedOpen(false), [selectedProjectId]);
   const selectedProject = sortedProjects.find((project) => project.id === selectedProjectId) ?? sortedProjects[0] ?? null;
   const [projectDraft, setProjectDraft] = useState<ProjectDraft>(emptyProjectDraft);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
@@ -203,20 +205,42 @@ export function ProjectsScreen({
     setProjectListMode('active');
   }
 
+  const mobileProjectRows = projectListMode === 'active' ? sortedProjects.map(project => {
+    const tasks = project.tasks.filter(task => !task.deletedAt);
+    const done = tasks.filter(task => task.status === 'done').length;
+    const completion = tasks.length ? Math.round(done / tasks.length * 100) : 0;
+    return <Pressable key={project.id} accessibilityRole="button" accessibilityLabel={`Открыть проект: ${project.title}, ${done} из ${tasks.length} задач`} onPress={() => { setSelectedProjectId(project.id); setDetailOpen(true); }} style={local.mobileProjectRow}>
+      <View style={local.mobileProjectRowTop}><Text style={local.projectTitle}>{project.title}</Text><ChevronRight size={18} color={muted}/></View>
+      <View style={local.mobileProjectMeta}><Text style={local.meta}>{tasks.length ? `${done} из ${tasks.length} задач · ${completion}%` : 'Задач пока нет'}</Text></View>
+      <View style={local.progressTrack}><View style={[local.progressFill, { width: `${completion}%` }]}/></View>
+    </Pressable>;
+  }) : archivedProjects.map(project => {
+    const tasks = project.tasks.filter(task => !task.deletedAt);
+    const done = tasks.filter(task => task.status === 'done').length;
+    return <View key={project.id} style={local.mobileProjectRow}>
+      <Text style={local.projectTitle}>{project.title}</Text>
+      <View style={local.mobileProjectMeta}><Text style={local.meta}>{tasks.length ? `${done} из ${tasks.length} задач` : 'Задач пока нет'}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Вернуть проект «${project.title}»`} onPress={() => restoreProject(project.id)} style={local.mobileRestore}><Text style={local.inlineAddText}>Вернуть</Text></Pressable></View>
+    </View>;
+  });
+
   return (
     <View style={local.screen}>
-      <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll, { alignSelf: 'center', flexGrow: 1, justifyContent: detailOpen?'flex-start':'center', maxWidth: 1100, width: '100%', paddingVertical:16,paddingBottom:16 }]} showsVerticalScrollIndicator={false}>
-        {onOpenWorkspace ? <Pressable accessibilityRole="button" onPress={onOpenWorkspace} style={local.workspaceBack}><ArrowLeft size={16} color={muted} /><Text style={local.workspaceBackText}>Рабочий стол</Text></Pressable> : null}
-        <View style={local.header}>
-          <SectionTitle title="Проекты" subtitle="Вещи, которые состоят из нескольких дел" />
+      <ScrollView contentContainerStyle={[local.scroll, isDesktop && local.desktopScroll, { alignSelf: 'center', flexGrow: 1, justifyContent: isDesktop&&!detailOpen?'center':'flex-start', maxWidth: 1100, width: '100%', paddingVertical:16,paddingBottom:16 }]} showsVerticalScrollIndicator={false}>
+        {onOpenWorkspace&&isDesktop ? <Pressable accessibilityRole="button" accessibilityLabel="Рабочий стол" onPress={onOpenWorkspace} style={local.workspaceBack}><ArrowLeft size={16} color={muted} /><Text style={local.workspaceBackText}>Рабочий стол</Text></Pressable> : null}
+        {(isDesktop || !detailOpen) && <View style={[local.header,!isDesktop&&local.mobileHeader]}>
+          {isDesktop ? <SectionTitle title="Проекты" subtitle="Вещи, которые состоят из нескольких дел" /> : <Text accessibilityRole="header" style={local.mobilePageTitle}>Проекты</Text>}
           <View style={local.headerActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Создать проект" onPress={openProjectModal} style={local.addButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Создать проект" onPress={openProjectModal} style={[local.addButton,!isDesktop&&local.mobileAddButton]}>
             <Plus color={activeText} size={19} strokeWidth={3} />
+            {!isDesktop ? <Text style={local.mobileAddText}>Проект</Text> : null}
           </Pressable>
           </View>
-        </View>
+        </View>}
 
-        {!detailOpen?<View style={{gap:14}}>
+        {!detailOpen ? !isDesktop ? <View style={local.mobileProjectLanding}>
+          <View style={local.mobileLandingHeader}>{projectListMode === 'archived' ? <Text style={local.mobileLandingTitle}>Архив</Text> : null}<Pressable accessibilityRole="button" accessibilityState={{selected:projectListMode==='active'}} onPress={()=>setProjectListMode(projectListMode==='active'?'archived':'active')} style={local.mobileArchiveToggle}><Text style={local.inlineAddText}>{projectListMode === 'active' ? `Архив · ${archivedProjects.length}` : 'К активным'}</Text></Pressable></View>
+          {mobileProjectRows.length ? <View style={local.mobileProjectRows}>{mobileProjectRows}</View> : <View style={local.projectEmptyTasks}><Text style={local.projectEmptyTitle}>{projectListMode === 'active' ? 'Пока нет проектов' : 'Архив пока пуст'}</Text><Text style={local.meta}>{projectListMode === 'active' ? 'Создай проект, чтобы собрать связанные дела в одном месте.' : 'Архивированные проекты появятся здесь.'}</Text>{projectListMode === 'active' ? <Pressable accessibilityRole="button" onPress={openProjectModal} style={[local.inlineAdd,local.mobilePrimaryAction]}><Plus color={activeText} size={16}/><Text style={local.mobileActionText}>Создать проект</Text></Pressable> : null}</View>}
+        </View> : <View style={{gap:14}}>
           <Text style={local.meta}>{projectListMode === 'active' ? `${sortedProjects.length} активных проектов · ${sortedProjects.reduce((n,p)=>n+p.tasks.filter(t=>!t.deletedAt&&t.status!=='done').length,0)} задач впереди` : `${archivedProjects.length} архивных проектов`}</Text>
           <View style={local.listTabs}><Pressable accessibilityRole="button" accessibilityState={{selected:projectListMode==='active'}} aria-pressed={projectListMode==='active'} onPress={()=>{setProjectListMode('active');setShowAllProjects(false)}} style={[local.listTab,projectListMode==='active'&&local.projectCardActive]}><Text style={[local.ghostText,projectListMode==='active'&&local.projectTabSelectedText]}>Активные</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{selected:projectListMode==='archived'}} aria-pressed={projectListMode==='archived'} onPress={()=>{setProjectListMode('archived');setShowAllProjects(false)}} style={[local.listTab,projectListMode==='archived'&&local.projectCardActive]}><Text style={[local.ghostText,projectListMode==='archived'&&local.projectTabSelectedText]}>Архив · {archivedProjects.length}</Text></Pressable></View>
           {projectListMode === 'active' ? <ActiveProjectsOverview
@@ -227,7 +251,7 @@ export function ProjectsScreen({
           /> : <BentoGrid columns={2} style={local.projectLibraryGrid}>{previewProjects.map((project) => {const tasks=project.tasks.filter(task=>!task.deletedAt),done=tasks.filter(task=>task.status==='done').length;return <BentoCard key={project.id} tone="light" style={local.projectLibraryCard}><Text style={local.projectTitle}>{project.title}</Text>{project.description&&<Text numberOfLines={2} style={local.meta}>{project.description}</Text>}{tasks.length?<><View style={local.progressTrack}><View style={[local.progressFill,{width:`${done/tasks.length*100}%`}]}/></View><Text style={local.meta}>{done} из {tasks.length} задач закрыто</Text></>:<Text style={local.meta}>Задачи пока не добавлены.</Text>}<Pressable accessibilityRole="button" accessibilityLabel={`Вернуть проект «${project.title}»`} onPress={()=>restoreProject(project.id)} style={local.inlineAdd}><Text style={local.inlineAddText}>Вернуть в активные</Text></Pressable></BentoCard>})}</BentoGrid>}
           {displayedProjects.length>previewLimit?<Pressable accessibilityRole="button" accessibilityState={{expanded:showAllProjects}} aria-expanded={showAllProjects} onPress={()=>setShowAllProjects(value=>!value)} style={local.showAllButton}><Text style={local.showAllText}>{showAllProjects?'Свернуть список':`Все ${projectListMode==='archived'?'архивные':'активные'} проекты · ${displayedProjects.length}`}</Text></Pressable>:null}
           {projectListMode === 'archived' && displayedProjects.length === 0 && <BentoCard><Text style={local.meta}>Архив пока пуст.</Text></BentoCard>}
-        </View>:<View><Pressable accessibilityRole="button" accessibilityLabel="К списку проектов" onPress={()=>setDetailOpen(false)} style={local.inlineAdd}><Text style={local.inlineAddText}>Все проекты</Text></Pressable>
+        </View> : <View><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}><Pressable accessibilityRole="button" accessibilityLabel="К списку проектов" onPress={()=>setDetailOpen(false)} style={local.inlineAdd}><ArrowLeft size={16} color={accent}/><Text style={local.inlineAddText}>Проекты</Text></Pressable>{!isDesktop && <Pressable accessibilityRole="button" accessibilityLabel="Добавить задачу" onPress={() => openTaskModal()} style={[local.inlineAdd, local.mobilePrimaryAction]}><Plus size={16} color={activeText}/><Text style={local.mobileActionText}>Задача</Text></Pressable>}</View>
         <View style={isDesktop ? local.desktopLayout : local.mobileLayout} testID={isDesktop ? 'desktop-page-columns' : undefined}>
           <RightPanel enabled={isDesktop}><View style={[isDesktop ? local.projectColumn : undefined, !isDesktop && { display: 'none' }]} testID={isDesktop ? 'desktop-right-column' : undefined}>
             {isDesktop ? (
@@ -314,10 +338,10 @@ export function ProjectsScreen({
                   <Text style={local.meta}>{doneTasks} из {totalTasks} задач закрыто · {Math.max(0, totalTasks - doneTasks)} впереди</Text>
                 </BentoCard>
 
-                <Pressable accessibilityRole="button" accessibilityLabel="Добавить задачу" onPress={() => openTaskModal()} style={local.inlineAdd}>
+                {isDesktop && <Pressable accessibilityRole="button" accessibilityLabel="Добавить задачу" onPress={() => openTaskModal()} style={local.inlineAdd}>
                   <Plus color={accent} size={15} />
                   <Text style={local.inlineAddText}>Добавить задачу</Text>
-                </Pressable>
+                </Pressable>}
 
                 {activeTasks.length ? (
                   <View style={local.taskGroups}>
@@ -325,8 +349,8 @@ export function ProjectsScreen({
                       const tasks = activeTasks.filter((task) => task.status === status);
                       if (!tasks.length) return null;
                       return <View key={status} style={local.taskGroup}>
-                        <View style={local.taskGroupHeader}><Text style={local.taskGroupTitle}>{status === 'todo' ? 'Впереди' : 'Готово'}</Text><Text style={local.taskGroupCount}>{tasks.length}</Text></View>
-                        <BentoCard tone="light" style={[local.taskList, { padding: 0 }]}>{tasks.map((task) => {
+                        {!isDesktop && status === 'done' ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: completedOpen }} onPress={() => setCompletedOpen(value => !value)} style={[local.taskGroupHeader, { minHeight: 44 }]}><Text style={local.taskGroupTitle}>Выполнено · {tasks.length}</Text><ChevronRight size={16} color={muted} style={completedOpen ? { transform: [{ rotate: '90deg' }] } : undefined}/></Pressable> : <View style={local.taskGroupHeader}><Text style={local.taskGroupTitle}>{status === 'todo' ? 'Впереди' : 'Готово'}</Text><Text style={local.taskGroupCount}>{tasks.length}</Text></View>}
+                        {(isDesktop || status === 'todo' || completedOpen) && <BentoCard tone="light" style={[local.taskList, { padding: 0 }]}>{tasks.map((task) => {
                           const done = task.status === 'done';
                           return (
                             <View key={task.id} style={[local.taskRow, done && local.taskRowDone]}>
@@ -343,7 +367,7 @@ export function ProjectsScreen({
                               </View>
                             </View>
                           );
-                        })}</BentoCard>
+                        })}</BentoCard>}
                       </View>;
                     })}
                   </View>
@@ -484,19 +508,24 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
   onSave: () => void;
   visible: boolean;
 }) {
+  const compact = useWindowDimensions().width < 680;
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  useEffect(() => { if (visible) setDetailsOpen(editing); }, [visible, editing]);
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
       <View style={local.modalOverlay}>
-        <View style={local.modalCard}>
+        <View style={[local.modalCard, { maxHeight: '90%', padding: 0 }]}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 12 }}>
           <ModalHeader onClose={onClose} title={editing ? 'Редактировать задачу' : 'Новая задача'} />
           <TextInput
             accessibilityLabel="Название задачи"
             onChangeText={(title) => onChange({ ...draft, title })}
-            placeholder="Поменять лобовое стекло"
+            placeholder="Что нужно сделать?"
             placeholderTextColor={faint}
             style={local.input}
             value={draft.title}
           />
+          {compact && <Pressable accessibilityRole="button" accessibilityState={{ expanded: detailsOpen }} onPress={() => setDetailsOpen(value => !value)} style={local.inlineAdd}><Text style={local.inlineAddText}>{detailsOpen ? 'Скрыть детали' : 'Дата, описание и стоимость'}</Text></Pressable>}
+          {(!compact || detailsOpen) && <>
           <TextInput
             accessibilityLabel="Описание задачи"
             multiline
@@ -532,10 +561,11 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
               value={draft.plannedTime}
             />
           </View>
+          </>}
           <Pressable accessibilityRole="button" accessibilityLabel={editing ? 'Сохранить задачу' : 'Добавить задачу'} disabled={!draft.title.trim()} onPress={onSave} style={[local.primaryButton, !draft.title.trim() && local.disabled]}>
             <Text style={local.primaryText}>{editing ? 'Сохранить' : 'Добавить'}</Text>
           </Pressable>
-        </View>
+        </ScrollView></View>
       </View>
     </Modal>
   );
@@ -580,14 +610,29 @@ const local = StyleSheet.create({
   workspaceBack: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: 6, minHeight: 36, paddingHorizontal: 4 },
   workspaceBackText: { color: muted, fontSize: 13, fontWeight: '600' },
   header: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', width: '100%' },
+  mobileHeader: { alignItems: 'center', flexWrap: 'nowrap', gap: 8 },
+  mobilePageTitle: { color: text, flex: 1, fontSize: 24, fontWeight: '700', lineHeight: 30, minWidth: 0 },
   headerActions: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   archiveButton: { alignItems: 'center', flexDirection: 'row', gap: 7, borderColor: line, borderWidth: 1, borderRadius: 12, minHeight: 44, paddingHorizontal: 12 },
   listTabs: { alignSelf: 'flex-start', flexDirection: 'row', gap: 8, marginBottom: 10 },
   listTab: { alignItems: 'center', justifyContent: 'center', borderColor: line, borderWidth: 1, borderRadius: 12, minHeight: 44, paddingHorizontal: 14 },
   archiveList: { gap: 10 },
   addButton: { alignItems: 'center', backgroundColor: activeBg, borderRadius: 999, height: 46, justifyContent: 'center', width: 46 },
+  mobileAddButton: { flexDirection: 'row', gap: 6, height: 44, paddingHorizontal: 13, width: 'auto' as const },
+  mobileAddText: { color: activeText, fontSize: 12, fontWeight: '700' as const },
   desktopLayout: { alignItems: 'flex-start', alignSelf: 'center', flexDirection: 'row-reverse', gap: 24, maxWidth: readingWidths.projects, width: '100%' },
   mobileLayout: { gap: 14 },
+  mobileProjectLanding: { gap: 6 },
+  mobileLandingHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  mobileLandingTitle: { color: text, fontSize: 17, fontWeight: '700', lineHeight: 22 },
+  mobileArchiveToggle: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: 8 },
+  mobileProjectRows: { gap: 6 },
+  mobileProjectRow: { backgroundColor: panel, borderColor: line, borderRadius: 16, borderWidth: 1, gap: 5, paddingHorizontal: 14, paddingVertical: 9 },
+  mobileProjectRowTop: { alignItems: 'center', flexDirection: 'row', gap: 8, justifyContent: 'space-between' },
+  mobileProjectMeta: { alignItems: 'center', flexDirection: 'row', gap: 8, justifyContent: 'space-between', minHeight: 28 },
+  mobileRestore: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: 6 },
+  mobilePrimaryAction: { alignSelf: 'flex-start', backgroundColor: activeBg, borderRadius: 999, paddingHorizontal: 15 },
+  mobileActionText: { color: activeText, fontSize: 13, fontWeight: '700' },
   projectLibraryGrid: { alignItems: 'flex-start' },
   activeOverview: { alignItems: 'stretch', flexDirection: 'row', gap: 14, width: '100%' },
   activeOverviewCompact: { flexDirection: 'column' },

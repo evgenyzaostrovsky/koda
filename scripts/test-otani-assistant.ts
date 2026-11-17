@@ -29,7 +29,8 @@ const queuedReplies:Record<string,unknown>[]=[];
 const requests:Array<{system:string;user:Record<string,unknown>}>=[];
 let response:Record<string,unknown>={desiredResult:'Выступление готово',directions:[{slotIndex:2,title:'Практика навыка',actions:['Записать вступление на пять предложений','Проговорить вступление и отметить время']} ]};
 globalThis.fetch=async(input,init)=>{
-  const request=JSON.parse(String(init?.body)) as {messages?:Array<{role:string;content:string}>;input?:Array<{role:string;content:string|Array<{text:string}>}>};
+  const request=JSON.parse(String(init?.body)) as {messages?:Array<{role:string;content:string}>;input?:Array<{role:string;content:string|Array<{text:string}>}>;reasoning?:{effort:string}};
+  if(String(input).includes('api.openai.com')) assert.equal(request.reasoning?.effort,'low','Goal generation and repair must leave time for a complete structured answer');
   const messages=request.messages??request.input!.map(item=>({role:item.role,content:typeof item.content==='string'?item.content:item.content.map(part=>part.text).join('')}));
   requests.push({system:messages[0].content,user:JSON.parse(messages[1].content)});
   const reply=String(input).includes('api.openai.com')&&messages[0].content.includes('Проведи независимую короткую проверку')
@@ -84,6 +85,13 @@ try{
   const initialRepair=await createGoalPlanGenerator({openAiApiKey:'test-key',preferredProvider:'openai'})({wish:'Стать аналитиком',planningMethod:'otani'});
   assert.deepEqual(initialRepair.clarificationQuestions,['Какая стартовая точка?'],'Initial repair may still clarify missing facts');
   assert.match(requests.at(-1)!.system,/можно вернуть 1–2 уточняющих вопроса/);
+  const studyFixture={dailyMinutes:120,studyDays:[1,2,3,4,5,6,0],modules:[{id:'practice',title:'Практика',status:'remaining',estimatedMinutes:120}]};
+  queuedReplies.push(
+    {desiredResult:'Курс завершён',directions:[{title:'Практика',actions:['Решить упражнение']}],studyPlan:{...studyFixture,modules:[{title:'Неоплаченный тариф',status:'excluded',estimatedMinutes:0}]}},
+    {desiredResult:'Курс завершён',directions:[{title:'Практика',actions:['Решить упражнение'],actionDetails:[{title:'Решить упражнение',shortTitle:'Решить упражнение',description:'Решить одно упражнение из текущего материала',studyModuleId:'practice',estimatedMinutes:60}]}],studyPlan:studyFixture});
+  const repairedStudy=await createGoalPlanGenerator({openAiApiKey:'test-key',preferredProvider:'openai'})({wish:'Закончить курс',planningMethod:'otani',planningDate:'2026-11-08'});
+  assert.deepEqual(repairedStudy.studyPlan?.modules.map(m=>m.title),['Практика']);
+  assert.match(requests.at(-1)!.system,/status строго completed\/current\/remaining/);
   response={desiredResult:'Оффер',directions:[],clarificationQuestions:['Опыт?']};
   const beforeFailure=requests.length;
   await assert.rejects(createGoalPlanGenerator({openAiApiKey:'test-key',preferredProvider:'openai'})(followUp),/повторять уточняющий круг/);

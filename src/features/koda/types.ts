@@ -1,5 +1,6 @@
 import type {GoalDiscussionData} from './goalDiscussion';
 import type { Database } from '../../types/database';
+import type { StudyPlan } from '../../ai/studyPlanning';
 
 export type TabKey = 'planner' | 'goals' | 'projects' | 'notes' | 'habits' | 'day' | 'routines' | 'timer' | 'profile' | 'journal' | 'progress' | 'koda';
 export type ThemeId = 'calm-light' | 'calm-dark' | 'calm-sky-light' | 'calm-sky-dark' | 'calm-lavender-light' | 'calm-lavender-dark';
@@ -19,6 +20,8 @@ export type GoalMilestone = {
   id: string;
   title: string;
   description: string;
+  studyModuleId?: string;
+  startDate?: string;
   deadline: string;
   status: GoalMilestoneStatus;
   position: number;
@@ -35,6 +38,7 @@ export type GoalAction = {
   estimatedMinutes: number | null;
   importance: GoalActionImportance;
   milestoneId: string | null;
+  studyModuleId?: string;
   status: GoalActionStatus;
   position: number;
   completedAt: string | null;
@@ -123,6 +127,7 @@ export type Goal = {
   title: string;
   desiredResult: string;
   planningContext?: string;
+  studyPlan?: StudyPlan;
   assistantDiscussion?: GoalDiscussionData;
   roadmapClarifications?: import('./goalRoadmapClarifications').RoadmapClarifications;
   deadline: string;

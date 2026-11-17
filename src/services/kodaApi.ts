@@ -24,11 +24,16 @@ async function aiRequestError(response: Response, fallback: string): Promise<Err
 
 export async function requestGoalPlan(input: GoalPlanInput): Promise<GoalPlanSuggestion> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 50000);
+  const timer = setTimeout(() => controller.abort(), 95000);
   try {
     const response = await fetch(`${API_URL}/api/goal-plan`, { method: 'POST', signal: controller.signal, headers: await authenticatedHeaders(), body: JSON.stringify(input) });
-    if (!response.ok) throw await aiRequestError(response, 'Помощник недоступен. Можно продолжить вручную.');
-    return validateGoalPlan(await response.json());
+    if (!response.ok) throw await aiRequestError(response, 'Не удалось составить план. Попробуй ещё раз — беседа и материалы сохранены.');
+    try { return validateGoalPlan(await response.json()); }
+    catch { throw new Error('Помощник прислал неполный план. Нажми «Составить план» ещё раз — беседа и материалы сохранены.'); }
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Помощник не успел составить план. Попробуй ещё раз — беседа и материалы сохранены.');
+    if (error instanceof TypeError) throw new Error('Не удалось связаться с помощником. Проверь интернет и повтори запрос — черновик сохранён.');
+    throw error;
   } finally { clearTimeout(timer); }
 }
 

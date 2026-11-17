@@ -29,7 +29,9 @@ export function ProgressScreen({
   totalTasks: number;
   kodaDays?: KodaDay[];
 }) {
-  const wide=useWindowDimensions().width>=900;
+  const viewportWidth=useWindowDimensions().width;
+  const wide=viewportWidth>=900;
+  const compact=viewportWidth<680;
   const [detail,setDetail]=useState<'score'|'goals'|'planner'|'habits'|null>(null);
   const visibleGoals = goals.filter(goal => !goal.archivedAt);
   const activeGoals = visibleGoals.filter(goal => goal.status === 'active');
@@ -37,25 +39,25 @@ export function ProgressScreen({
   const scoreSummary = weeklyScoreSummary(kodaDays, todayDateKey());
 
   return <>
-    <BentoPage maxWidth={1100} contentStyle={{gap:16}}>
-      {onOpenWorkspace&&<Pressable accessibilityRole="button" onPress={onOpenWorkspace} style={{flexDirection:'row',alignItems:'center',gap:7,minHeight:36,alignSelf:'flex-start'}}><ArrowLeft size={16} color={muted}/><Text style={local.noteText}>Рабочий стол</Text></Pressable>}
-      <SectionHeader title="Прогресс" subtitle="Твои результаты без лишних цифр" action={<View style={{borderRadius:22,padding:10,backgroundColor:panel}}><Text style={local.noteText}>Последние 7 дней</Text></View>}/>
+    <BentoPage maxWidth={1100} contentStyle={{gap:compact?8:16,paddingTop:compact?4:undefined}}>
+      {onOpenWorkspace&&!compact&&<Pressable accessibilityRole="button" accessibilityLabel="Рабочий стол" onPress={onOpenWorkspace} style={{flexDirection:'row',alignItems:'center',gap:7,minHeight:36,alignSelf:'flex-start',paddingHorizontal:4}}><ArrowLeft size={16} color={muted}/><Text style={local.noteText}>Рабочий стол</Text></Pressable>}
+      <SectionHeader title="Прогресс" subtitle={compact?undefined:"Твои результаты без лишних цифр"} action={<View style={{borderRadius:22,padding:compact?7:10,backgroundColor:panel}}><Text style={local.noteText}>Последние 7 дней</Text></View>}/>
       <View style={{flexDirection:wide?'row':'column',gap:14,alignItems:'stretch'}}>
-        <View {...({dataSet:{petSurface:'progress-score'}} as any)} style={{flex:wide?0.9:undefined,backgroundColor:ink,borderRadius:28,padding:24,gap:18,minWidth:0}}>
+        <View {...({dataSet:{petSurface:'progress-score'}} as any)} style={{flex:wide?0.9:undefined,backgroundColor:ink,borderRadius:compact?22:28,padding:compact?13:24,gap:compact?8:18,minWidth:0}}>
           <View style={{flexDirection:'row',alignItems:'center',gap:8,justifyContent:'space-between'}}><Text style={{color:inkText,fontSize:12,fontWeight:'700'}}>SCORE · СРЕДНЕЕ</Text><Text style={{color:'#c4cebb',fontSize:11}}>{scoreSummary.completedCount} завершённых дней</Text></View>
-          <Text style={{color:inkText,fontSize:42,fontWeight:'600'}}>{scoreSummary.average===null?'—':scoreSummary.average}<Text style={{fontSize:14,color:'#c4cebb'}}>{scoreSummary.average===null?'':' / 100'}</Text></Text>
-          {scoreSummary.completedCount?<ScoreTimeline days={kodaDays} count={7}/>:<Text style={{color:'#c4cebb',fontSize:14,lineHeight:21,paddingVertical:24}}>Заверши первый принятый план дня — здесь появится его результат.</Text>}
-          <Text style={{color:'#c4cebb',fontSize:12,lineHeight:18}}>SCORE отражает выполнение плана дня. Прогресс целей и привычек считается отдельно.</Text>
-          <Pressable accessibilityRole="button" onPress={()=>setDetail('score')} style={{minHeight:36,flexDirection:'row',gap:8,alignItems:'center'}}><Text style={{color:inkText,fontSize:13}}>Вся динамика</Text><ArrowUpRight size={16} color={inkText}/></Pressable>
+          <Text style={{color:inkText,fontSize:compact?36:42,fontWeight:'600'}}>{scoreSummary.average===null?'—':scoreSummary.average}<Text style={{fontSize:14,color:'#c4cebb'}}>{scoreSummary.average===null?'':' / 100'}</Text></Text>
+          {scoreSummary.completedCount?<ScoreTimeline days={kodaDays} count={7} compact={compact}/>:<Text style={{color:'#c4cebb',fontSize:14,lineHeight:21,paddingVertical:compact?4:24}}>Заверши первый принятый план дня — здесь появится его результат.</Text>}
+          <Text style={{color:'#c4cebb',fontSize:12,lineHeight:18}}>{compact?'План дня; цели и привычки отдельно.':'Выполнение плана дня. Цели и привычки считаются отдельно.'}</Text>
+          <Pressable accessibilityRole="button" onPress={()=>setDetail('score')} style={{minHeight:44,flexDirection:'row',gap:8,alignItems:'center'}}><Text style={{color:inkText,fontSize:13}}>Вся динамика</Text><ArrowUpRight size={16} color={inkText}/></Pressable>
         </View>
         <View style={{flex:wide?1.1:undefined,minWidth:0,gap:14}}>
-          <View style={{flexDirection:'row',flexWrap:'wrap',gap:14}}>
-            <Pressable accessibilityRole="button" {...({dataSet:{petSurface:"progress-goals"}} as any)} accessibilityLabel="Открыть прогресс целей" onPress={()=>setDetail('goals')} style={[local.bubble,{backgroundColor:'#e8ff55'}]}>
+          <View style={{flexDirection:'row',flexWrap:'wrap',gap:compact?8:14}}>
+            <Pressable accessibilityRole="button" {...({dataSet:{petSurface:"progress-goals"}} as any)} accessibilityLabel="Открыть прогресс целей" onPress={()=>setDetail('goals')} style={[local.bubble,{padding:compact?14:20,gap:compact?8:12,backgroundColor:'#e8ff55'}]}>
               <Text style={[local.label,{color:'#435b31'}]}>ЦЕЛИ В РАБОТЕ</Text><Text style={[local.value,{color:'#263c19'}]}>{activeGoals.length?`${goalScore}%`:'—'}</Text><Text style={[local.noteText,{color:'#435b31'}]}>{activeGoals.length?`${activeGoals.length} активных целей`:'Пока нет активных целей'}</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" {...({dataSet:{petSurface:"progress-planner"}} as any)} accessibilityLabel="Посмотреть сводку дел" onPress={()=>setDetail('planner')} style={local.bubble}><Text style={local.label}>ПЛАННЕР</Text><Text style={local.value}>{completedTasks} / {totalTasks}</Text><Text style={local.noteText}>Выполнено в текущем списке</Text></Pressable>
-            <Pressable accessibilityRole="button" {...({dataSet:{petSurface:"progress-habits"}} as any)} accessibilityLabel="Посмотреть сводку привычек" onPress={()=>setDetail('habits')} style={[local.bubble,{backgroundColor:panelSoft}]}><Text style={local.label}>ПРИВЫЧКИ · 7 ДНЕЙ</Text><Text style={local.value}>{habitScore}%</Text><Text style={local.noteText}>Запланированных отметок</Text></Pressable>
-            <View {...({dataSet:{petSurface:"progress-guide"}} as any)} style={local.bubble}><Text style={local.label}>КАК ЧИТАТЬ</Text><Text style={[local.noteText,{marginTop:8}]}>У каждого блока свой источник: план дня, действия целей, дела календаря и привычки.</Text></View>
+            <Pressable accessibilityRole="button" {...({dataSet:{petSurface:"progress-planner"}} as any)} accessibilityLabel="Посмотреть сводку дел" onPress={()=>setDetail('planner')} style={[local.bubble,{padding:compact?14:20,gap:compact?8:12}]}><Text style={local.label}>ПЛАННЕР</Text><Text style={local.value}>{completedTasks} / {totalTasks}</Text><Text style={local.noteText}>Выполнено в текущем списке</Text></Pressable>
+            <Pressable accessibilityRole="button" {...({dataSet:{petSurface:"progress-habits"}} as any)} accessibilityLabel="Посмотреть сводку привычек" onPress={()=>setDetail('habits')} style={[local.bubble,{padding:compact?14:20,gap:compact?8:12,backgroundColor:panelSoft}]}><Text style={local.label}>ПРИВЫЧКИ · 7 ДНЕЙ</Text><Text style={local.value}>{habitScore}%</Text><Text style={local.noteText}>Запланированных отметок</Text></Pressable>
+            {!compact?<View {...({dataSet:{petSurface:"progress-guide"}} as any)} style={local.bubble}><Text style={local.label}>КАК ЧИТАТЬ</Text><Text style={[local.noteText,{marginTop:8}]}>У каждого блока свой источник: план дня, действия целей, дела календаря и привычки.</Text></View>:null}
           </View>
         </View>
       </View>

@@ -69,7 +69,7 @@ export function mergeEntityFields<T extends Synced>(a: T, b: T, fallback: T, key
   return { ...output, ...(syncMeta ? { syncMeta } : {}) } as T;
 }
 
-const goalFields = ['title', 'desiredResult', 'planningContext', 'deadline', 'priority', 'status', 'completedAt', 'archivedAt'];
+const goalFields = ['title', 'desiredResult', 'planningContext', 'studyPlan', 'deadline', 'priority', 'status', 'completedAt', 'archivedAt'];
 const projectFields = ['title', 'description', 'status', 'completedAt'];
 const profileFields = ['themeId', 'version', 'daysLeft', 'level', 'streak', 'xp', 'values', 'futureSelf', 'focus', 'milestone'];
 const pomodoroFields = ['workMinutes', 'breakMinutes', 'longBreakMinutes', 'sessionsBeforeLongBreak', 'soundId'];
