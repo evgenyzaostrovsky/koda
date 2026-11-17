@@ -5,14 +5,14 @@ import { ArrowUpRight, Clock3 } from 'lucide-react-native';
 import { scoreWeek } from '../widgetDesktop';
 import { weeklyScoreSummary } from '../dashboardMetrics';
 import type { KodaDay } from '../types';
-import { activeText, ink, inkText, lime, muted, panel, text } from '../theme';
+import { ink, inkText, lime, muted, panel, text } from '../theme';
 
 export type DailyPlanOverviewProps = {
   date: string;
   status: 'proposal' | 'active' | 'completed';
   leadTitle: string;
   leadStep: string;
-  items: { key: string; title: string; minutes: number; done: boolean }[];
+  items: { key: string; title: string; minutes: number; done: boolean; canComplete?: boolean }[];
   availableMinutes: number;
   plannedMinutes: number;
   totalCount: number;
@@ -33,6 +33,7 @@ export type DailyPlanOverviewProps = {
   onOpenHistory: () => void;
   onOpenTimer: () => void;
   onDiscussDay: () => void;
+  onItemPress?: (key: string) => void;
   error?: string;
 };
 
@@ -63,43 +64,47 @@ export function DailyPlanOverview(props: DailyPlanOverviewProps) {
               <View style={[s.statusDot, props.hasConflicts && s.conflictDot]} />
               <Text numberOfLines={1} style={s.statusText}>{getStatusText(props.status, props.hasConflicts)}</Text>
             </View>
-            <Action label="Открыть полный план" title="Открыть план" onPress={props.onOpenPlan} tone="primary" />
-          </View>
-          <Text numberOfLines={1} style={[s.leadTitle, compact && s.leadTitleCompact]}>{props.leadTitle}</Text>
-          <Text numberOfLines={1} style={[s.leadStep, compact && s.leadStepCompact]}>{props.leadStep}</Text>
-          {!compact ? <View style={s.planMeta}>
             <Text numberOfLines={1} style={s.planMetaText}>
               {props.status === 'proposal'
-                ? `${props.availableMinutes} мин доступно · ${props.plannedMinutes} мин в предложении`
-                : `${props.completedCount} из ${props.totalCount} действий · ${props.availableMinutes} мин доступно`}
+                ? `${props.plannedMinutes} мин в плане`
+                : props.status === 'active'
+                  ? `${props.completedCount} из ${props.totalCount} выполнено`
+                  : 'Результат дня'}
             </Text>
-          </View> : null}
+          </View>
           <View style={s.tasks} accessibilityLabel="Ближайшие действия">
-            {props.items.slice(0, compact ? 2 : 3).map(item => (
-              <View key={item.key} style={[s.taskRow, compact && s.taskRowCompact]}>
-                <View style={[s.checkbox, item.done && s.checkboxDone]}>
+            {props.items.map(item => {
+              const locked = props.status === 'completed';
+              const actionable = !!props.onItemPress && !locked && !(item.canComplete && item.done);
+              const supportsCompletion = !!item.canComplete;
+              return <Pressable key={item.key} accessibilityRole="button"
+                accessibilityLabel={supportsCompletion ? `${item.done ? 'Выполнено' : 'Отметить выполненным'}: ${item.title}` : `Подробнее: ${item.title}`}
+                accessibilityState={{ disabled: !actionable }} disabled={!actionable}
+                onPress={() => props.onItemPress?.(item.key)}
+                style={({ pressed }) => [s.taskRow, compact && s.taskRowCompact, pressed && actionable && s.taskPressed]}>
+                {supportsCompletion ? <View style={[s.checkbox, item.done && s.checkboxDone]}>
                   {item.done ? <Text style={s.checkMark}>✓</Text> : null}
-                </View>
-                <Text numberOfLines={1} style={[s.taskTitle, item.done && s.taskDone]}>{item.title}</Text>
-                <Text style={s.taskMinutes}>{item.minutes} мин</Text>
-              </View>
-            ))}
+                </View> : null}
+                <Text style={[s.taskTitle, item.done && s.taskDone]}>{item.title}</Text>
+                {item.minutes > 0 ? <Text style={s.taskMinutes}>{item.minutes} мин</Text> : null}
+                {!supportsCompletion && actionable ? <Text style={s.taskDetails}>Подробнее</Text> : null}
+              </Pressable>;
+            })}
             {!props.items.length ? <Text numberOfLines={2} style={s.emptyPlan}>Добавьте небольшой шаг или измените доступное время.</Text> : null}
           </View>
           <View style={s.planFoot}>
-            <Text numberOfLines={1} style={s.minimum}>{props.hasConflicts ? 'Есть расхождения в плане' : props.minimumLabel || 'Можно идти в своём темпе'}</Text>
             <View style={s.planActions}>
-              {props.status !== 'completed' ? <Action label="Подстроить план" title="Изменить" onPress={props.onEdit} tone="lime" /> : null}
+              {props.status !== 'completed' ? <Action label="Изменить план" title="Изменить план" onPress={props.onEdit} tone="lime" /> : null}
               <Action label={props.primaryLabel} title={props.primaryLabel} onPress={props.onPrimary} disabled={props.primaryDisabled} tone="primary" />
             </View>
           </View>
           {props.error ? <Text accessibilityRole="alert" numberOfLines={2} style={s.error}>{props.error}</Text> : null}
         </View>
 
-        <View {...({dataSet:{petSurface:'day-score'}} as any)} style={[s.card, s.scoreCard, compact && s.scoreCardCompact, { width: scoreWidth }]}>
+        <Pressable {...({dataSet:{petSurface:'day-score'}} as any)} accessibilityRole="button" accessibilityLabel="Открыть историю SCORE за 7 дней" onPress={props.onOpenHistory} style={({ pressed }) => [s.card, s.scoreCard, compact && s.scoreCardCompact, { width: scoreWidth }, pressed && s.pressedCard]}>
           <View style={s.cardHeader}>
-            <Text style={s.darkTitle}>SCORE за 7 дней</Text>
-            <Action label="Открыть историю SCORE" title="История" onPress={props.onOpenHistory} tone="dark" />
+            <Text style={s.darkTitle}>SCORE · 7 дней</Text>
+            <ArrowUpRight size={18} color={lime} aria-hidden />
           </View>
           <View style={s.scoreValueRow}>
             <Text style={s.scoreValue}>{weekly.average === null ? '—' : weekly.average}</Text>
@@ -108,20 +113,10 @@ export function DailyPlanOverview(props: DailyPlanOverviewProps) {
           <Text numberOfLines={1} style={s.darkMeta}>
             {weekly.completedCount
               ? `Среднее · дней: ${weekly.completedCount}`
-              : 'После первого завершённого дня появится итог'}
+              : 'Нет завершённых дней'}
           </Text>
           <ScoreMiniChart days={props.days} date={props.date} compact={compact} />
           {props.status === 'completed' ? <Text numberOfLines={1} style={s.darkCaption}>{props.score === null ? 'Сегодня · без оценки' : `Сегодня · ${Math.round(props.score)} SCORE`}</Text> : null}
-        </View>
-
-        <Pressable {...({dataSet:{petSurface:'day-calendar'}} as any)} accessibilityRole="button" accessibilityLabel="Открыть календарь и дела выбранной даты" onPress={props.onOpenCalendar} style={({ pressed }) => [s.card, s.lightCard, s.calendarCard, { width: smallWidth }, pressed && s.pressedCard]}>
-          <View style={s.cardHeader}>
-            <Text style={s.cardTitle}>Календарь</Text>
-            <ArrowUpRight size={18} color="#3e501b" aria-hidden />
-          </View>
-          <Text numberOfLines={1} style={s.calendarDate}>{formatDate(props.selectedDate)}</Text>
-          <Text numberOfLines={1} style={s.cardMeta}>{props.selectedDateCount} {pluralCount(props.selectedDateCount)} в планнере</Text>
-          <Text numberOfLines={1} style={s.cardMeta}>{props.selectedDate === props.date ? 'Сегодня' : 'Выбранная дата'}</Text>
         </Pressable>
 
         <Pressable {...({dataSet:{petSurface:'day-focus'}} as any)} accessibilityRole="button" accessibilityLabel="Открыть общий таймер фокуса" onPress={props.onOpenTimer} style={({ pressed }) => [s.card, s.lightCard, s.focusCard, { width: smallWidth }, pressed && s.pressedCard]}>
@@ -133,20 +128,11 @@ export function DailyPlanOverview(props: DailyPlanOverviewProps) {
           <Text numberOfLines={1} style={s.cardMeta}>{timerStatus(props.timer.status, props.timer.mode)}</Text>
         </Pressable>
 
-        <Pressable {...({dataSet:{petSurface:'day-history'}} as any)} accessibilityRole="button" accessibilityLabel="Открыть историю завершённых дней" onPress={props.onOpenHistory} style={({ pressed }) => [s.card, s.lightCard, s.historyCard, { width: smallWidth }, pressed && s.pressedCard]}>
+        <Pressable {...({dataSet:{petSurface:'day-assistant'}} as any)} accessibilityRole="button" accessibilityLabel="Попросить помощника помочь с днём" onPress={props.onDiscussDay} style={({ pressed }) => [s.card, s.assistant, compact && s.assistantCompact, { width: compact ? width : quarter }, pressed && s.pressedCard]}>
           <View style={s.cardHeader}>
-            <Text style={s.cardTitle}>История дня</Text>
-            <ArrowUpRight size={18} color="#3e501b" aria-hidden />
-          </View>
-          <LatestDay days={props.days} />
-        </Pressable>
-
-        <Pressable {...({dataSet:{petSurface:'day-assistant'}} as any)} accessibilityRole="button" accessibilityLabel="Обсудить день с помощником" onPress={props.onDiscussDay} style={({ pressed }) => [s.card, s.assistant, compact && s.assistantCompact, { width: compact ? width : quarter }, pressed && s.pressedCard]}>
-          <View style={s.cardHeader}>
-            <Text style={s.assistantTitle}>Помощник</Text>
+            <Text style={s.assistantTitle}>Помощь с днём</Text>
             <ArrowUpRight size={18} color="#202810" aria-hidden />
           </View>
-          <Text numberOfLines={1} style={s.assistantCopy}>Подстроить план под силы? Контекст дня попадёт в черновик.</Text>
         </Pressable>
       </View>
     </View>
@@ -191,21 +177,7 @@ function ScoreMiniChart({ days, date, compact }: { days: KodaDay[]; date: string
           })}
           {points.filter(point => point.row.value !== null).map(point => <Circle key={point.row.date} cx={point.x} cy={point.y} r={point.row.date === date ? 3.5 : 2.5} fill={lime} />)}
         </Svg>
-      ) : <Text numberOfLines={2} style={s.chartEmpty}>{description}</Text>}
-    </View>
-  );
-}
-
-function LatestDay({ days }: { days: KodaDay[] }) {
-  const latest = [...days].filter(day => day.status === 'completed').sort((a, b) => b.localDate.localeCompare(a.localDate))[0];
-  if (!latest) return <Text numberOfLines={2} style={s.historyEmpty}>Завершённые дни появятся здесь.</Text>;
-  const value = latest.scoreVersion === 3 && typeof latest.totalScore === 'number' && Number.isFinite(latest.totalScore)
-    ? `${Math.round(latest.totalScore)} SCORE`
-    : latest.totalScore === null ? 'Без оценки' : 'Итог по прежней формуле';
-  return (
-    <View style={s.latestBlock}>
-      <Text numberOfLines={1} style={s.latestValue}>{value}</Text>
-      <Text numberOfLines={1} style={s.cardMeta}>{formatDate(latest.localDate)} · сохранённый итог</Text>
+      ) : <View accessibilityLabel={description} style={s.chartEmpty} />}
     </View>
   );
 }
@@ -234,19 +206,10 @@ function timerStatus(status: string, mode: string) {
   return isBreak ? 'Готов к перерыву' : 'Сессия не запущена';
 }
 
-function pluralCount(count: number, one = 'дело', few = 'дела', many = 'дел') {
-  const mod100 = count % 100;
-  if (mod100 >= 11 && mod100 <= 14) return many;
-  const mod10 = count % 10;
-  if (mod10 === 1) return one;
-  if (mod10 >= 2 && mod10 <= 4) return few;
-  return many;
-}
-
 const s = StyleSheet.create({
-  root: { width: '100%', maxWidth: 1040, alignSelf: 'center', minWidth: 0, gap: 10 },
-  header: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  pageTitle: { color: text, fontSize: 24, lineHeight: 30, letterSpacing: -0.7, fontWeight: '600' },
+  root: { width: '100%', maxWidth: 1040, alignSelf: 'center', minWidth: 0 },
+  header: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
+  pageTitle: { color: text, fontSize: 22, lineHeight: 28, letterSpacing: -0.6, fontWeight: '600' },
   date: { color: muted, fontSize: 13, lineHeight: 18, flexShrink: 1, textAlign: 'right' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP, alignItems: 'stretch' },
   card: { minWidth: 0, overflow: 'hidden', borderRadius: 24 },
@@ -258,24 +221,20 @@ const s = StyleSheet.create({
   statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#42551e' },
   conflictDot: { backgroundColor: '#7b3d23' },
   statusText: { color: '#33451d', fontSize: 12, lineHeight: 16, fontWeight: '500', flexShrink: 1 },
-  leadTitle: { color: '#202810', fontSize: 21, lineHeight: 25, letterSpacing: -0.6, fontWeight: '600', marginTop: 1 },
-  leadTitleCompact: { fontSize: 19, lineHeight: 22, marginTop: 0 },
-  leadStep: { color: '#33451d', fontSize: 14, lineHeight: 19, fontWeight: '500' },
-  leadStepCompact: { fontSize: 13, lineHeight: 16 },
-  planMeta: { minHeight: 20, justifyContent: 'center' },
-  planMetaText: { color: '#394923', fontSize: 12, lineHeight: 16 },
+  planMetaText: { color: '#394923', fontSize: 12, lineHeight: 16, flexShrink: 1, textAlign: 'right' },
   tasks: { minHeight: 0, flex: 1, justifyContent: 'center', paddingVertical: 2 },
-  taskRow: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#b6c95c' },
-  taskRowCompact: { minHeight: 25, gap: 6 },
+  taskRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#b6c95c' },
+  taskRowCompact: { minHeight: 44, gap: 6 },
+  taskPressed: { opacity: 0.72 },
   checkbox: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: '#526426', alignItems: 'center', justifyContent: 'center' },
   checkboxDone: { backgroundColor: '#526426' },
   checkMark: { color: '#f8f9f1', fontSize: 12, lineHeight: 14, fontWeight: '700' },
-  taskTitle: { color: '#202810', fontSize: 13, lineHeight: 17, flex: 1, minWidth: 0 },
+  taskTitle: { color: '#202810', fontSize: 13, lineHeight: 18, flex: 1, minWidth: 0, flexWrap: 'wrap' },
   taskDone: { color: '#465333' },
   taskMinutes: { color: '#394923', fontSize: 12, lineHeight: 16 },
+  taskDetails: { color: '#3e501b', fontSize: 12, lineHeight: 16, fontWeight: '600' },
   emptyPlan: { color: '#33451d', fontSize: 13, lineHeight: 18 },
-  planFoot: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
-  minimum: { color: '#33451d', fontSize: 12, lineHeight: 16, flex: 1, minWidth: 0 },
+  planFoot: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
   planActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   action: { minHeight: 44, minWidth: 44, paddingHorizontal: 10, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
   actionText: { color: '#3e501b', fontSize: 12, lineHeight: 16, fontWeight: '600' },
@@ -296,23 +255,16 @@ const s = StyleSheet.create({
   scoreUnit: { color: '#d3ddca', fontSize: 12, lineHeight: 16 },
   darkMeta: { color: '#d3ddca', fontSize: 12, lineHeight: 16 },
   chartBox: { minHeight: 24, justifyContent: 'center', marginVertical: 1 },
-  chartEmpty: { color: '#d3ddca', fontSize: 12, lineHeight: 16 },
+  chartEmpty: { minHeight: 24 },
   darkCaption: { color: '#d3ddca', fontSize: 12, lineHeight: 16, flex: 1, minWidth: 0 },
   lightCard: { minHeight: 150, padding: 14, backgroundColor: panel, justifyContent: 'space-between', gap: 4 },
-  calendarCard: { minHeight: 130, padding: 12 },
   focusCard: { minHeight: 112, padding: 12 },
-  historyCard: { minHeight: 112, padding: 12 },
   pressedCard: { opacity: 0.82 },
   cardTitle: { color: text, fontSize: 14, lineHeight: 19, fontWeight: '600', flexShrink: 1 },
   cardMeta: { color: muted, fontSize: 12, lineHeight: 17 },
-  calendarDate: { color: text, fontSize: 18, lineHeight: 23, letterSpacing: -0.35, fontWeight: '500' },
   timerValue: { color: text, fontSize: 27, lineHeight: 32, fontWeight: '500', letterSpacing: -0.8, fontVariant: ['tabular-nums'] },
-  latestBlock: { justifyContent: 'space-between', flex: 1, gap: 2 },
-  latestValue: { color: text, fontSize: 20, lineHeight: 26, fontWeight: '500', letterSpacing: -0.45 },
-  historyEmpty: { color: muted, fontSize: 12, lineHeight: 17, marginTop: 4 },
-  assistant: { minHeight: 150, padding: 14, backgroundColor: lime, justifyContent: 'space-between', gap: 4 },
-  assistantCompact: { minHeight: 90, padding: 12, gap: 0 },
+  assistant: { minHeight: 60, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: lime, justifyContent: 'center', gap: 4 },
+  assistantCompact: { minHeight: 60, padding: 8, gap: 0 },
   assistantTitle: { color: '#202810', fontSize: 14, lineHeight: 19, fontWeight: '600' },
-  assistantCopy: { color: '#33451d', fontSize: 13, lineHeight: 18 },
 });
 

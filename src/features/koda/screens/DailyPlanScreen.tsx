@@ -170,16 +170,24 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
     {error && !editor?<Text accessibilityRole="alert" style={s.meta}>{error}</Text>:null}
 </View>;
   return <View style={{flex:1,minHeight:0}}>
-    <ScrollView style={{flex:1,minHeight:0}} contentContainerStyle={{flexGrow:1,justifyContent:'center',alignItems:'center',paddingVertical:16}} keyboardShouldPersistTaps="handled">
+    <ScrollView style={{flex:1,minHeight:0}} contentContainerStyle={{alignItems:'center',paddingVertical:12}} keyboardShouldPersistTaps="handled">
     <DailyPlanOverview
       date={date} status={completed?'completed':plan?'active':'proposal'} leadTitle={leadTitle} leadStep={leadStep}
-      items={(completed&&!current?[]:current?.items??shown.items).map(item=>({key:item.sourceKey,title:item.title,minutes:item.estimatedMinutes,done:(activeScores?.items.find(score=>score.sourceKey===item.sourceKey)?.completionRatio??0)>=1}))}
+      items={(completed&&!current?[]:current?.items??shown.items).map(item=>({key:item.sourceKey,title:item.title,minutes:item.estimatedMinutes,canComplete:!!plan&&!completed&&!result.hasConflicts&&item.metric==='binary',done:(activeScores?.items.find(score=>score.sourceKey===item.sourceKey)?.completionRatio??0)>=1}))}
       availableMinutes={current?.availableMinutes??available} plannedMinutes={current?.plannedMinutes??maxMinutes}
       totalCount={current?.items.length??(completed?0:shown.items.length)} completedCount={activeScores?.completedCount??0}
       score={plan?result.totalScore:day?.totalScore??null} hasConflicts={result.hasConflicts&&!completed}
       minimumLabel={completed&&!current?undefined:current?.minimum?.label??shown.minimum?.label}
       days={kodaDays} selectedDate={selectedDate} selectedDateCount={selectedItems.length}
       timer={{remainingSeconds:timer.remainingSeconds,status:timer.status,mode:timer.mode}}
+      onItemPress={key=>{
+        const item=current?.items.find(entry=>entry.sourceKey===key);
+        if(completed){setHistory(day??null);return;}
+        if(!item||!plan||result.hasConflicts||item.metric!=='binary'){setPlanOpen(true);return;}
+        const done=(activeScores?.items.find(entry=>entry.sourceKey===key)?.completionRatio??0)>=1;
+        // Completion is one-way here; corrections remain in the full plan.
+        if(!done)progress(item,item.targetValue);
+      }}
       onOpenPlan={()=>setPlanOpen(true)}
       onPrimary={()=>{if(completed){setHistory(day??null);}else if(!plan){start();}else if(result.hasConflicts){setPlanOpen(true);}else if(nextItem){beginNextStep();}else{setFinish(true);}}}
       primaryLabel={completed?'Посмотреть итог':!plan?'Начать день':result.hasConflicts?'Выбрать вариант':nextItem?'Следующий шаг':'Завершить день'}
