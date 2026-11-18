@@ -4,6 +4,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { emotionGroups, type EmotionEntry } from '../emotionJournal';
 import { accent, activeBg, activeText, line, muted, panel, text } from '../theme';
 import { uid } from '../utils';
+import { VoiceTextInput } from '../components/VoiceTextInput';
 
 function localDateTime(value = new Date().toISOString()) {
   const date = new Date(value);
@@ -50,7 +51,7 @@ export function EmotionJournal({ entries, onSave, onBack, isDesktop = false }: {
       <Text style={s.label}>Дата и время события</Text>
       <TextInput accessibilityLabel="Дата и время события" value={date} onChangeText={setDate} placeholder="ГГГГ-ММ-ДД ЧЧ:ММ" placeholderTextColor={muted} style={s.input} />
       <Text style={s.label}>1. Что произошло?</Text>
-      <TextInput accessibilityLabel="Событие" multiline value={event} onChangeText={setEvent} placeholder="Опишите ситуацию" placeholderTextColor={muted} style={[s.input, s.multiline]} />
+      <VoiceTextInput accessibilityLabel="Событие" multiline value={event} onChangeText={setEvent} placeholder="Опишите ситуацию" placeholderTextColor={muted} style={[s.input, s.multiline]} />
       <Text style={s.label}>2. Что я почувствовал(а)?</Text>
       <View style={s.row}>{Object.keys(emotionGroups).map(name => button(name, () => { setGroup(name); setEmotion(''); setSearch(''); }, group === name))}</View>
       {group ? <>
@@ -62,7 +63,7 @@ export function EmotionJournal({ entries, onSave, onBack, isDesktop = false }: {
       </> : null}
       {emotion ? <Text style={{ color: accent }}>Выбрано: {group} → {emotion}</Text> : null}
       <Text style={s.label}>3. Что я сделал(а)?</Text>
-      <TextInput accessibilityLabel="Действие" multiline value={action} onChangeText={setAction} placeholder="Как вы отреагировали? Можно написать «ничего не сделал(а)»." placeholderTextColor={muted} style={[s.input, s.multiline]} />
+      <VoiceTextInput accessibilityLabel="Действие" multiline value={action} onChangeText={setAction} placeholder="Как вы отреагировали? Можно написать «ничего не сделал(а)»." placeholderTextColor={muted} style={[s.input, s.multiline]} />
       <View style={s.row}>{button('Сохранить запись', save, true)}{editingId ? button('Отменить редактирование', () => { clear(); setMessage(''); }) : null}</View>
       {message ? <Text accessibilityLiveRegion="polite" style={s.hint}>{message}</Text> : null}
     </View>

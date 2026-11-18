@@ -7,6 +7,7 @@ import { BentoCard, BentoGrid, BentoPage, SectionHeader } from '../components/Be
 import { accent, activeBg, activeText, faint, line, muted, panel, panelSoft, readingWidths, surfaceElevated, text } from '../theme';
 import type { Note, NoteBlock, NoteBlockType, NoteDocument } from '../types';
 import { uid } from '../utils';
+import { VoiceTextInput } from '../components/VoiceTextInput';
 
 type NotesChange = (updater: (notes: Note[]) => Note[]) => void;
 type SaveState = 'idle' | 'saving' | 'saved';
@@ -238,7 +239,7 @@ export function NotesScreen({
 
       <ScrollView contentContainerStyle={[local.editorScroll, isDesktop && local.desktopEditorScroll]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={local.document}>
-          <TextInput
+          <VoiceTextInput
             accessibilityLabel="Название заметки"
             autoFocus={isDesktop && desktopEditorOpen}
             multiline
@@ -494,7 +495,7 @@ function NoteBlockEditor({
         ) : (
           <Pressable accessibilityRole="button" accessibilityLabel={`Настроить блок: ${block.text || block.type}`} onPress={() => onOpenBlockMenu(null)} style={local.blockHandle}><Text style={local.blockPrefix}>{prefix}</Text></Pressable>
         )}
-        <TextInput
+        <VoiceTextInput
           accessibilityLabel={block.type === 'heading1' ? 'Заголовок первого уровня' : block.type === 'heading2' ? 'Заголовок второго уровня' : block.type === 'heading3' ? 'Заголовок третьего уровня' : `Текст блока: ${block.type}`}
           multiline
           onChangeText={(value) => onChange(block.id, { text: value })}
@@ -596,7 +597,7 @@ function ChildNoteBlockEditor({
         ) : (
           <Pressable accessibilityRole="button" accessibilityLabel={`Настроить блок: ${block.text || block.type}`} onPress={onOpenBlockMenu} style={local.blockHandle}><Text style={local.blockPrefix}>{prefix}</Text></Pressable>
         )}
-        <TextInput
+        <VoiceTextInput
           accessibilityLabel={`Текст блока: ${block.type}`}
           multiline
           onChangeText={(value) => onChange(block.id, { text: value })}

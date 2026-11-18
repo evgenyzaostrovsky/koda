@@ -72,7 +72,7 @@
     "test:widgets": "tsx scripts/test-widget-desktop.ts && tsx scripts/test-widget-habits.ts && tsx scripts/test-refinement41-data.ts && tsx scripts/test-refinement41-planner.ts && tsx scripts/test-dashboard-metrics.ts && tsx scripts/test-routine-schedule.ts && tsx scripts/test-note-formatting.ts",
     "test:pet": "tsx scripts/test-pet-state.ts && tsx src/features/koda/components/PetWandererGeometry.test.ts",
     "test:auto-plan": "tsx scripts/test-auto-plan.ts && tsx scripts/test-auto-plan-server.ts",
-    "test:planner-voice": "node scripts/test-planner-voice.cjs"
+    "test:planner-voice": "node scripts/test-planner-voice.cjs && node scripts/test-voice-text-input.cjs"
   },
   "private": true
 }

@@ -1,12 +1,12 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {ActivityIndicator,KeyboardAvoidingView,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+import {ActivityIndicator,Platform,Pressable,StyleSheet,Text,TextInput,View} from 'react-native';
 import {Check,Mic,Square,Undo2,X} from 'lucide-react-native';
 import {supabase} from '../../../lib/supabase';
 import {env} from '../../../config/env';
 import {accent,activeBg,activeText,line,muted,panel,panelSoft,text} from '../theme';
 
 type PlannerTask={title:string;date:string;time:string};
-type Props={ownerId?:string|null;onCreate:(requestId:string,tasks:PlannerTask[])=>Promise<void>;onUndo:(requestId:string)=>Promise<void>};
+type Props={onClose:()=>void;ownerId?:string|null;onCreate:(requestId:string,tasks:PlannerTask[])=>Promise<void>;onUndo:(requestId:string)=>Promise<void>};
 type Message={role:'user'|'assistant';content:string};
 type VoiceResponse={transcript:string;reply:string;tasks:PlannerTask[];needsClarification:boolean};
 const API_URL=env.kodaApiUrl.replace(/\/$/,'');
@@ -22,8 +22,8 @@ function validResponse(value:unknown):value is VoiceResponse{
 }
 function blobBase64(blob:Blob):Promise<string>{return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(new Error('Не удалось прочитать запись.'));reader.onload=()=>{const result=String(reader.result??'');const comma=result.indexOf(',');resolve(comma>=0?result.slice(comma+1):result);};reader.readAsDataURL(blob);});}
 
-export function PlannerVoiceInput({ownerId,onCreate,onUndo}:Props){
- const [open,setOpen]=useState(false),[draft,setDraft]=useState(''),[messages,setMessages]=useState<Message[]>([]);
+export function PlannerVoiceInput({ownerId,onCreate,onUndo,onClose}:Props){
+ const [open,setOpen]=useState(true),[draft,setDraft]=useState(''),[messages,setMessages]=useState<Message[]>([]);
  const [busy,setBusy]=useState(false),[recording,setRecording]=useState(false),[starting,setStarting]=useState(false),[seconds,setSeconds]=useState(0),[error,setError]=useState('');
  const [speak,setSpeak]=useState(false),[savedRequestId,setSavedRequestId]=useState(''),[savedTasks,setSavedTasks]=useState<PlannerTask[]>([]),[pendingTasks,setPendingTasks]=useState<PlannerTask[]|null>(null);
  const epoch=useRef(0),inflight=useRef(false),startingRef=useRef(false),requestId=useRef(''),requestContext=useRef(currentPlannerContext()),recorder=useRef<MediaRecorder|null>(null),stream=useRef<MediaStream|null>(null),chunks=useRef<BlobPart[]>([]),timer=useRef<ReturnType<typeof setInterval>|null>(null),recordingStarted=useRef(0),audioError=useRef(''),aborter=useRef<AbortController|null>(null),speakRef=useRef(false);
@@ -36,7 +36,7 @@ export function PlannerVoiceInput({ownerId,onCreate,onUndo}:Props){
  useEffect(()=>()=>reset(),[reset]);
  useEffect(()=>{reset();},[ownerId,reset]);
 
- function close(){reset();setOpen(false);}
+ function close(){reset();setOpen(false);onClose();}
  async function startRecording(){
   if(startingRef.current||recording||busy||pendingTasks)return;
   if(Platform.OS!=='web'||typeof navigator==='undefined'||!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined'){setError('Запись голоса недоступна в этом браузере. Введи задачу текстом.');return;}
@@ -87,12 +87,8 @@ export function PlannerVoiceInput({ownerId,onCreate,onUndo}:Props){
  async function retrySave(){if(!pendingTasks||!requestId.current||inflight.current)return;inflight.current=true;setBusy(true);setError('');const version=epoch.current,owner=ownerId;try{await onCreate(requestId.current,pendingTasks);if(version!==epoch.current||owner!==ownerId)return;setSavedRequestId(requestId.current);setSavedTasks(pendingTasks);requestId.current='';setPendingTasks(null);setDraft('');setMessages([]);if(speakRef.current&&typeof window!=='undefined'&&'speechSynthesis'in window){window.speechSynthesis.cancel();window.speechSynthesis.speak(new SpeechSynthesisUtterance(`Добавлено в планнер: ${pendingTasks.map(task=>task.title).join('; ')}`));}}catch(e){if(version===epoch.current)setError(e instanceof Error?e.message:'Не удалось сохранить задачи. Повтори попытку.');}finally{if(version===epoch.current){inflight.current=false;setBusy(false);}}}
  async function undo(){if(savedRequestId&&inflight.current)return;const target=savedRequestId;if(!target)return;const version=epoch.current,owner=ownerId;inflight.current=true;setBusy(true);setError('');try{await onUndo(target);if(version===epoch.current&&owner===ownerId){setSavedRequestId('');setSavedTasks([]);setOpen(true);}}catch(e){if(version===epoch.current)setError(e instanceof Error?e.message:'Не удалось отменить добавление. Повтори попытку.');}finally{if(version===epoch.current){inflight.current=false;setBusy(false);}}}
 
- return <>
-  <Pressable accessibilityRole="button" accessibilityLabel="Создать задачу голосом" onPress={()=>{reset();setOpen(true);}} style={styles.toolbarButton}><Mic size={17} color={accent}/><Text style={styles.toolbarText}>Голосом</Text></Pressable>
-  <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
-   <View style={styles.backdrop}><KeyboardAvoidingView style={styles.keyboardAvoid} behavior={Platform.OS==='ios'?'padding':'height'}><View style={styles.modal}>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.modalContent}>
-     <View style={styles.header}><View style={{flex:1}}><Text style={styles.title}>Новая задача</Text><Text style={styles.hint}>Скажи или напиши, что нужно сделать</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Закрыть" onPress={close} style={styles.close}><X size={19} color={muted}/></Pressable></View>
+ return <View style={{gap:14}}>
+     <View style={styles.header}><View style={{flex:1}}><Text style={styles.title}>Продиктуй задачи</Text><Text style={styles.hint}>Скажи или напиши, что нужно сделать</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Вернуться к ручному вводу" onPress={close} style={styles.close}><X size={19} color={muted}/></Pressable></View>
      {!ownerId&&<Text style={styles.hint}>Войди в аккаунт, чтобы добавить задачу.</Text>}
      {messages.length>0&&<View style={styles.conversation}>{messages.slice(-6).map((message,index)=><View key={`${index}-${message.role}`} style={[styles.message,message.role==='user'?styles.userMessage:styles.assistantMessage]}><Text style={styles.messageLabel}>{message.role==='user'?'Ты':'KODA'}</Text><Text style={styles.messageText}>{message.content}</Text></View>)}</View>}
      {messages.length>0&&!busy&&!pendingTasks&&!savedRequestId&&<Pressable accessibilityRole="button" onPress={reset} style={styles.retry}><Text style={styles.retryText}>Начать новую команду</Text></Pressable>}
@@ -112,10 +108,7 @@ export function PlannerVoiceInput({ownerId,onCreate,onUndo}:Props){
       {!!error&&<Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
       {!!pendingTasks&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void retrySave()} style={styles.retry}><Text style={styles.retryText}>Повторить сохранение задач</Text></Pressable>}
      </>}
-    </ScrollView>
-   </View></KeyboardAvoidingView></View>
-  </Modal>
- </>;
+ </View>;
 }
 
 const styles=StyleSheet.create({toolbarButton:{minHeight:44,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:7,borderWidth:1,borderColor:line,borderRadius:12,paddingHorizontal:12},toolbarText:{color:accent,fontSize:13,fontWeight:'600'},backdrop:{flex:1,alignItems:'center',justifyContent:'center',padding:16,backgroundColor:'rgba(20,28,19,0.38)'},keyboardAvoid:{flex:1,width:'100%',alignItems:'center',justifyContent:'center'},modal:{width:'100%',maxWidth:460,maxHeight:'90%',borderRadius:20,borderWidth:1,borderColor:line,backgroundColor:panel,overflow:'hidden'},modalContent:{gap:14,padding:20},header:{flexDirection:'row',alignItems:'center',gap:10},title:{color:text,fontSize:19,fontWeight:'700'},hint:{color:muted,fontSize:13,lineHeight:19},audioNotice:{color:muted,fontSize:12,lineHeight:17},close:{width:44,height:44,alignItems:'center',justifyContent:'center',borderRadius:12,backgroundColor:panelSoft},input:{width:'100%',minHeight:92,maxHeight:180,borderWidth:1,borderColor:line,borderRadius:13,backgroundColor:panelSoft,color:text,padding:12,fontSize:15,textAlignVertical:'top'},controls:{flexDirection:'row',gap:10},recordButton:{minHeight:48,flex:1,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,borderRadius:12,backgroundColor:activeBg,paddingHorizontal:12},sendButton:{minHeight:48,minWidth:104,alignItems:'center',justifyContent:'center',borderRadius:12,backgroundColor:activeBg,paddingHorizontal:14},primaryText:{color:activeText,fontSize:13,fontWeight:'700'},disabled:{opacity:0.5},speakOption:{minHeight:44,flexDirection:'row',alignItems:'center',gap:9,alignSelf:'flex-start'},checkbox:{width:22,height:22,alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:line,borderRadius:6},checkboxOn:{backgroundColor:activeBg,borderColor:accent},error:{color:'#a0352a',fontSize:13,lineHeight:19},conversation:{gap:8},message:{gap:3,padding:10,borderRadius:12},userMessage:{backgroundColor:panelSoft},assistantMessage:{backgroundColor:'#eef2e5'},messageLabel:{color:accent,fontSize:11,fontWeight:'700'},messageText:{color:text,fontSize:13,lineHeight:18},success:{minHeight:48,flexDirection:'row',alignItems:'center',gap:8},successText:{color:text,fontSize:14,fontWeight:'600',flex:1},savedTasks:{gap:8},savedTask:{gap:3,padding:10,borderWidth:1,borderColor:line,borderRadius:11,backgroundColor:panelSoft},savedTaskTitle:{color:text,fontSize:14,fontWeight:'600'},savedTaskMeta:{color:muted,fontSize:12},undo:{minHeight:44,flexDirection:'row',alignItems:'center',gap:6,paddingHorizontal:10,borderRadius:11,borderWidth:1,borderColor:line},undoText:{color:accent,fontSize:13,fontWeight:'600'},retry:{minHeight:44,alignItems:'center',justifyContent:'center',borderRadius:12,borderWidth:1,borderColor:line},retryText:{color:accent,fontSize:13,fontWeight:'600'}});

@@ -9,6 +9,7 @@ import { SectionTitle } from '../components';
 import { BentoPage, bentoWidths } from '../components/Bento';
 import { accent, faint, ink, line, muted, panel, panelSoft, text as textColor } from '../theme';
 import { styles } from '../styles';
+import { VoiceTextInput } from '../components/VoiceTextInput';
 
 type KodaProvider = 'gemini' | 'openrouter' | 'yandex' | 'openai' | null;
 
@@ -169,7 +170,7 @@ export function KodaScreen({
       {!!syncError && <View style={{paddingHorizontal:24,paddingVertical:8}}><Text accessibilityLiveRegion="polite" style={{color:muted,fontSize:12}}>{syncError}</Text>{onSyncRetry&&<Pressable accessibilityRole="button" accessibilityLabel="Повторить синхронизацию истории" onPress={onSyncRetry} style={{minHeight:36,justifyContent:'center'}}><Text style={{color:accent,fontSize:12}}>Повторить синхронизацию</Text></Pressable>}</View>}
       {!!historyStatus && <Text accessibilityLiveRegion="polite" style={{color:muted,fontSize:12,paddingHorizontal:showWelcome?0:24,paddingBottom:8}}>{historyStatus}</Text>}
       <View style={[styles.chatInputRow,showWelcome&&{marginHorizontal:0,marginBottom:0}]}>
-        <TextInput
+        <VoiceTextInput
           ref={composer}
           accessibilityLabel="Сообщение помощнику"
           editable={!inputDisabled}

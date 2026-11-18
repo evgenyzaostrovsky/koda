@@ -8,6 +8,7 @@ import { BentoCard, BentoGrid } from '../components/Bento';
 import { accent, accentBorder, activeBg, activeText, faint, line, muted, panel, panelSoft, readingWidths, text } from '../theme';
 import type { Project, ProjectTask } from '../types';
 import { uid } from '../utils';
+import { VoiceTextInput } from '../components/VoiceTextInput';
 
 type ProjectsChange = (updater: (projects: Project[]) => Project[]) => void;
 
@@ -474,7 +475,7 @@ function ProjectModal({ draft, onChange, onClose, onSave, visible }: {
       <View style={local.modalOverlay}>
         <View style={local.modalCard}>
           <ModalHeader onClose={onClose} title="Новый проект" />
-          <TextInput
+          <VoiceTextInput
             accessibilityLabel="Название проекта"
             onChangeText={(title) => onChange({ ...draft, title })}
             placeholder="Например, мой авто"
@@ -482,7 +483,7 @@ function ProjectModal({ draft, onChange, onClose, onSave, visible }: {
             style={local.input}
             value={draft.title}
           />
-          <TextInput
+          <VoiceTextInput
             accessibilityLabel="Описание проекта"
             multiline
             onChangeText={(description) => onChange({ ...draft, description })}
@@ -516,7 +517,7 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
       <View style={local.modalOverlay}>
         <View style={[local.modalCard, { maxHeight: '90%', padding: 0 }]}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 12 }}>
           <ModalHeader onClose={onClose} title={editing ? 'Редактировать задачу' : 'Новая задача'} />
-          <TextInput
+          <VoiceTextInput
             accessibilityLabel="Название задачи"
             onChangeText={(title) => onChange({ ...draft, title })}
             placeholder="Что нужно сделать?"
@@ -526,7 +527,7 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
           />
           {compact && <Pressable accessibilityRole="button" accessibilityState={{ expanded: detailsOpen }} onPress={() => setDetailsOpen(value => !value)} style={local.inlineAdd}><Text style={local.inlineAddText}>{detailsOpen ? 'Скрыть детали' : 'Дата, описание и стоимость'}</Text></Pressable>}
           {(!compact || detailsOpen) && <>
-          <TextInput
+          <VoiceTextInput
             accessibilityLabel="Описание задачи"
             multiline
             onChangeText={(description) => onChange({ ...draft, description })}

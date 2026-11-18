@@ -7,6 +7,7 @@ import { todayDateKey } from '../utils';
 import { activeBg, activeText, accent, accentFaint, accentSoft, faint, line, muted, panel, panelSoft, text } from '../theme';
 import { HabitIcon, habitIconChoices, habitIconGroups } from '../components/HabitIcon';
 import { BentoCard, EmptyStateCard } from '../components/Bento';
+import { VoiceTextInput } from '../components/VoiceTextInput';
 
 type HabitIconName = typeof habitIconChoices[number]['name'];
 type HabitWithArchive = Habit & { archivedAt?: string | null; color?: string };
@@ -132,7 +133,7 @@ export function HabitsScreen({ habits, onHabitsChange, onToggleToday, onOpenWork
         {historyOpen[habit.id]?<View style={s.historyGrid} accessibilityLabel={`История отметок ${habit.title}, 30 дней`}>{historyDates.map(date=>{const isDue=habitIsDue({...habit,archivedAt:null,isActive:true},date),isDone=habitDoneOn(habit,date);return <View key={date} style={[s.historyDay,isDone&&s.historyDone,!isDue&&s.historyUnscheduled]}><Text style={[s.historyDayText,isDone&&s.historyDayTextDone]}>{Number(date.slice(-2))}</Text></View>})}</View>:null}</BentoCard>})}</View>}
     {editingId ? <View onLayout={(event)=>{editorY.current=event.nativeEvent.layout.y;}}><BentoCard tone="light" style={s.editor}>
       <View style={s.editorHeading}><Text style={s.sectionTitle}>{editingId === 'new' ? 'Новая привычка' : 'Настроить привычку'}</Text><Pressable accessibilityRole="button" onPress={clearEditor} style={s.cancel}><Text style={s.cancelText}>Закрыть</Text></Pressable></View>
-      <Text style={s.label}>Название</Text><TextInput ref={nameInputRef} accessibilityLabel="Название привычки" value={name} onChangeText={setName} placeholder="Например, читать 5 минут" placeholderTextColor={faint} maxLength={80} style={s.input}/>
+      <Text style={s.label}>Название</Text><VoiceTextInput ref={nameInputRef} accessibilityLabel="Название привычки" value={name} onChangeText={setName} placeholder="Например, читать 5 минут" placeholderTextColor={faint} maxLength={80} style={s.input}/>
       <Text style={s.label}>Значок</Text>
       <View style={s.iconPicker}>
         <View style={s.selectedIconRow}>

@@ -1,0 +1,35 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');const vm=require('node:vm');const ts=require('typescript');
+const source=ts.transpileModule(fs.readFileSync('src/features/koda/components/VoiceTextInput.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+const flush=async()=>{for(let i=0;i<12;i++)await new Promise(r=>setImmediate(r));};
+function harness(){
+ let slots=[],cursor=0,effects=[],authCallback,session={user:{id:'a'},access_token:'test'},resolveFetch,fetches=0,changes=[],props={value:'Начало',onChangeText:v=>changes.push(v)},tree;
+ const streams=[],recorders=[];const equal=(a,b)=>a&&b&&a.length===b.length&&a.every((v,i)=>Object.is(v,b[i]));
+ const react={forwardRef:fn=>fn,useRef:v=>{let i=cursor++;return slots[i]??(slots[i]={current:v});},useState:v=>{let i=cursor++;if(!slots[i])slots[i]={value:v};return[slots[i].value,next=>slots[i].value=typeof next==='function'?next(slots[i].value):next];},useCallback:(fn,deps)=>{let i=cursor++;if(!slots[i]||!equal(slots[i].deps,deps))slots[i]={deps,value:fn};return slots[i].value;},useEffect:(fn,deps)=>{let i=cursor++;if(!slots[i]||!equal(slots[i].deps,deps)){const old=slots[i];slots[i]={deps};effects.push(()=>{old?.cleanup?.();slots[i].cleanup=fn();});}}};
+ class Recorder{static isTypeSupported(){return true}constructor(){this.state='inactive';this.mimeType='audio/mp4';recorders.push(this)}start(){this.state='recording'}requestData(){this.ondataavailable?.({data:new Blob(['test'])})}stop(){this.state='inactive';this.onstop?.()}}
+ class Reader{readAsDataURL(){this.result='data:audio/mp4;base64,dGVzdA==';queueMicrotask(()=>this.onload?.())}}
+ const jsx=(type,props)=>({type,props});const module={exports:{}};
+ const mockRequire=name=>{
+  if(name==='react')return react;
+  if(name==='react/jsx-runtime')return {jsx,jsxs:jsx};
+  if(name==='react-native')return {Platform:{OS:'web'},StyleSheet:{create:s=>s,flatten:s=>Array.isArray(s)?Object.assign({},...s):s},TextInput:'TextInput',View:'View',Text:'Text',Pressable:'Pressable',ActivityIndicator:'ActivityIndicator'};
+  if(name==='lucide-react-native')return {Mic:'Mic',Square:'Square',X:'X'};
+  if(name.endsWith('/env'))return {env:{kodaApiUrl:''}};
+  if(name.endsWith('/supabase'))return {supabase:{auth:{getSession:async()=>({data:{session}}),onAuthStateChange:fn=>{authCallback=fn;return {data:{subscription:{unsubscribe(){}}}};}}}};
+  return {};
+ };
+ vm.runInNewContext(source,{module,exports:module.exports,require:mockRequire,Blob,FileReader:Reader,MediaRecorder:Recorder,navigator:{mediaDevices:{getUserMedia:async()=>{let track={stops:0,stop(){this.stops++}};streams.push(track);return{getTracks:()=>[track]}}}},fetch:async()=>{fetches++;return new Promise(resolve=>{resolveFetch=()=>resolve({ok:true,json:async()=>({transcript:'продолжение'})})})},AbortController,Intl,Date,Promise,setTimeout,clearTimeout,setInterval:()=>1,clearInterval:()=>{},queueMicrotask});
+ function render(next={}){props={...props,...next};cursor=0;tree=module.exports.VoiceTextInput(props,null);const pending=effects;effects=[];pending.forEach(fn=>fn());return tree;}
+ function nodes(node=tree){return !node||typeof node!=='object'?[]:[node,...[node.props?.children].flat(2).filter(Boolean).flatMap(n=>nodes(n))]}
+ function button(label){const node=nodes().find(n=>n.type==='Pressable'&&n.props.accessibilityLabel===label);assert.ok(node,label);return node.props.onPress;}
+ render();return{render,button,nodes,changes,streams,recorders,get fetches(){return fetches},resolve:()=>resolveFetch(),switch:()=>{session={user:{id:'b'},access_token:'other'};authCallback('SIGNED_IN',session)},unmount:()=>slots.forEach(s=>s?.cleanup?.())};
+}
+(async()=>{
+ const h=harness();h.button('Надиктовать текст')();await flush();h.render();assert.equal(h.recorders.length,1);h.button('Остановить запись')();await flush();h.render({value:'Изменено вручную',maxLength:30});h.resolve();await flush();assert.equal(h.changes[0],'Изменено вручную продолжение');assert.equal(h.fetches,1);assert.equal(h.streams[0].stops,1);h.unmount();
+ const c=harness();c.button('Надиктовать текст')();await flush();c.render();c.button('Остановить запись')();await flush();c.render();c.button('Отменить запись и распознавание')();c.resolve();await flush();assert.equal(c.changes.length,0);c.unmount();
+ const a=harness();a.button('Надиктовать текст')();await flush();a.render();a.button('Остановить запись')();await flush();a.switch();a.resolve();await flush();assert.equal(a.changes.length,0);a.unmount();
+ const d=harness();const start=d.button('Надиктовать текст');start();start();await flush();assert.equal(d.recorders.length,1);const lateStop=d.recorders[0].onstop;d.unmount();lateStop();await flush();assert.equal(d.fetches,0);assert.equal(d.streams[0].stops,1);
+ const limit=harness();limit.render({value:'1234',maxLength:7});limit.button('Надиктовать текст')();await flush();limit.render();limit.button('Остановить запись')();await flush();limit.resolve();await flush();assert.equal(limit.changes[0],'1234 пр');limit.unmount();
+ const n=harness();n.render({inputMode:'numeric'});assert.equal(n.nodes().filter(x=>x.type==='Pressable').length,0);n.unmount();
+ console.log('Voice text input: actual handlers, latest typed text, limits, cancel, account switch, rapid start and stale stop PASS');
+})().catch(e=>{console.error(e);process.exitCode=1});

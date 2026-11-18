@@ -1,9 +1,10 @@
+import { VoiceTextInput } from '../components/VoiceTextInput';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { parseQuickTaskInput } from '../quickTaskInput';
 export { parseQuickTaskInput } from '../quickTaskInput';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { Calendar, Check, ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react-native';
+import { Calendar, Check, ChevronLeft, ChevronRight, Mic, Plus, Trash2, X } from 'lucide-react-native';
 import type { Goal, PlannerItem, TabKey, ThemeId } from '../types';
 import { isProjectedPlannerItem } from '../plannerProjections';
 import { isGoalRoutinePlannerItem, plannerCalendarItems } from '../plannerCalendarModel';
@@ -38,7 +39,7 @@ type Props = {
   onOpenWorkspace?: () => void;
   syncText?: string;
   autoPlanControl?: ReactNode;
-  voiceControl?: ReactNode;
+  voiceControl?: (onClose: () => void) => ReactNode;
 };
 
 export function PlannerScreen({ initialFocus, isDesktop = false, items, projectItems = [], goals = [], ownerId, onAddItem, onDeleteItem, onDeleteItems, onMoveProjectedItemDate, onToggleProjectedItem, onToggleItem, onSetItemFailed, onToggleSubtask, onUpdateItem, onOpenSection, onOpenWorkspace, syncText, autoPlanControl, voiceControl }: Props) {
@@ -49,6 +50,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
     if (focusDate) { setSelectedDate(focusDate); setMode('day'); }
   }, [initialFocus?.id, initialFocus?.date]);
   const [editor, setEditor] = useState<{ item: PlannerItem | null } | null>(null);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(todayDateKey());
   const [time, setTime] = useState('');
@@ -62,6 +64,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
   const [deleteCandidate, setDeleteCandidate] = useState<PlannerItem | null>(null);
   const displayItems = useMemo(() => plannerCalendarItems([...items, ...projectItems], goals, selectedDate, mode, ownerId), [items, projectItems, goals, selectedDate, mode, ownerId]);
   const pickerItems = useMemo(() => plannerCalendarItems([...items, ...projectItems], goals, toDateKey(pickerMonth), 'month', ownerId), [items, projectItems, goals, pickerMonth, ownerId]);
+  const TitleInput = editor?.item ? VoiceTextInput : TextInput;
   const projected = Boolean(editor?.item && isProjectedPlannerItem(editor.item));
   const goalProjected = Boolean(projected && editor?.item?.sourceType === 'goal');
   const routineProjected = Boolean(editor?.item && isGoalRoutinePlannerItem(editor.item));
@@ -69,6 +72,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
   const valid = projected ? Boolean(normalizeDateKey(date)) : editor?.item ? canSubmitPlannerItem(date, time, title) : Boolean(parsedNewItem);
 
   function openEditor(item: PlannerItem | null, nextDate = selectedDate, nextTime = '') {
+    setVoiceOpen(false);
     setTitle(item?.title ?? '');
     setDate(item?.date ?? nextDate);
     setTime(item?.time ?? nextTime);
@@ -118,7 +122,6 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
   return (
     <View style={{ flex: 1, minHeight: 0, width: '100%' }}>
       <PlannerCalendar
-        voiceControl={voiceControl}
         mode={mode}
         onModeChange={setMode}
         selectedDate={selectedDate}
@@ -147,7 +150,11 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
                 <Text style={{ color: text, fontSize: 18, fontWeight: '700' }}>{routineProjected ? 'Ритуал цели' : goalProjected ? 'Шаг цели' : projected ? 'Задача проекта' : editor?.item ? 'Задача' : 'Новая задача'}</Text>
                 <Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактор" onPress={() => setEditor(null)} style={[styles.iconButton, !isDesktop && { width: 44, height: 44 }]}><X color={muted} size={19} /></Pressable>
               </View>
-              <TextInput autoFocus={!projected} editable={!projected} accessibilityLabel="Название задачи" placeholder="Название задачи" placeholderTextColor={faint} value={title} onChangeText={setTitle} onSubmitEditing={() => saveEditor()} style={[styles.modalInput, { fontSize: 18 }]} />
+              {editor && voiceOpen && voiceControl ? voiceControl(() => setVoiceOpen(false)) : <>
+              <View style={{position:'relative'}}>
+                <TitleInput autoFocus={!projected} editable={!projected} accessibilityLabel="Название задачи" placeholder="Что нужно сделать?" placeholderTextColor={faint} value={title} onChangeText={setTitle} onSubmitEditing={() => saveEditor()} style={[styles.modalInput, { fontSize: 16, paddingRight: 48 }]} />
+                {!editor?.item && voiceControl ? <Pressable accessibilityRole="button" accessibilityLabel="Продиктовать задачи" onPress={()=>setVoiceOpen(true)} style={{position:'absolute',right:4,top:2,width:44,height:44,alignItems:'center',justifyContent:'center'}}><Mic size={20} color={accent}/></Pressable> : null}
+              </View>
               {editor?.item?.sourceType === 'goal' && <View style={{ gap: 6 }}>
                 {editor.item.goalTitle ? <Text style={{ color: accent, fontWeight: '600' }}>{editor.item.goalTitle}</Text> : null}
                 {editor.item.description ? <Text style={{ color: text, fontSize: 14, lineHeight: 21 }}>{editor.item.description}</Text> : null}
@@ -172,7 +179,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
                   <Pressable accessibilityRole="button" accessibilityLabel={`Удалить подзадачу ${subtask.title}`} onPress={() => setSubtasks(previous => previous.filter(entry => entry.id !== subtask.id))} style={[styles.iconButton, !isDesktop && { width: 44, height: 44 }]}><X color={muted} size={16} /></Pressable>
                 </View>)}
                 <View style={styles.plannerTaskInputRow}>
-                  <TextInput accessibilityLabel="Новая подзадача" placeholder="Добавить подзадачу" placeholderTextColor={faint} value={subtaskDraft} onChangeText={setSubtaskDraft} onSubmitEditing={addSubtask} style={styles.plannerTaskInput} />
+                  <VoiceTextInput accessibilityLabel="Новая подзадача" placeholder="Добавить подзадачу" placeholderTextColor={faint} value={subtaskDraft} onChangeText={setSubtaskDraft} onSubmitEditing={addSubtask} style={styles.plannerTaskInput} />
                   <Pressable accessibilityRole="button" accessibilityLabel="Добавить подзадачу" disabled={!subtaskDraft.trim()} onPress={addSubtask} style={[styles.iconButton, !isDesktop && { width: 44, height: 44 }]}><Plus color={subtaskDraft.trim() ? accent : faint} size={18} /></Pressable>
                 </View>
                 </>}
@@ -185,6 +192,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
                   <Pressable accessibilityRole="button" onPress={() => { setDeleteCandidate(editor.item); setEditor(null); }} style={styles.taskContextAction}><Trash2 color="#b64242" size={17} /><Text style={{ color: '#b64242' }}>Удалить задачу</Text></Pressable>
                 </> : null}
               </View> : null}
+              </>}
             </ScrollView>
           </View>
         </KeyboardAvoidingView>

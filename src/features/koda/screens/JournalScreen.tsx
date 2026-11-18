@@ -13,6 +13,7 @@ import { SectionTitle } from '../components';
 import { BentoCard, bentoWidths, SectionHeader } from '../components/Bento';
 import { accent, activeText, faint, muted, text as textColor } from '../theme';
 import { styles } from '../styles';
+import { VoiceTextInput } from '../components/VoiceTextInput';
 
 const hours = Array.from({ length: 24 }, (_, index) => index);
 const compactJournalCard = { padding: 16, gap: 12 } as const;
@@ -338,7 +339,7 @@ export function JournalScreen({
       {isCurrentEntry ? (
         <BentoCard tone="light">
           <Text style={styles.cardLabel}>МЫСЛИ ДНЯ</Text>
-          <TextInput
+          <VoiceTextInput
             accessibilityLabel="Мысли дня"
             multiline
             onChangeText={(value) => onUpdate({ text: value })}

@@ -6,6 +6,7 @@ import { Menu, Plus, X } from 'lucide-react-native';
 import type { TabKey } from '../types';
 import { accent, accentSoft, faint, muted, panel } from '../theme';
 import { styles } from '../styles';
+import { VoiceTextInput } from './VoiceTextInput';
 
 type BottomNavTab = { key: TabKey; label: string; icon: (active: boolean) => ReactNode };
 
@@ -66,7 +67,7 @@ export function InlineAdd({ placeholder, buttonLabel, onSubmit }: { placeholder:
 
   return (
     <View style={styles.addBox}>
-      <TextInput
+      <VoiceTextInput
         accessibilityLabel={placeholder}
         onChangeText={setValue}
         onSubmitEditing={submit}

@@ -30,6 +30,8 @@ function boundedText(value, max = MAX_TEXT_LENGTH) {
 
 function normalizePlannerVoiceInput(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new PlannerVoiceInputError('Некорректный запрос.');
+  if (body.mode !== undefined && body.mode !== 'transcribe' && body.mode !== 'planner') throw new PlannerVoiceInputError('Неизвестный режим записи.');
+  if (body.mode === 'transcribe' && body.text !== undefined) throw new PlannerVoiceInputError('Для диктовки отправьте аудиозапись.');
   if (!validDate(body.today)) throw new PlannerVoiceInputError('Укажите текущую дату в формате YYYY-MM-DD.');
   if (!boundedText(body.timezone, 100)) throw new PlannerVoiceInputError('Укажите часовой пояс.');
   try { new Intl.DateTimeFormat('en-US', { timeZone: body.timezone }); }
@@ -44,7 +46,7 @@ function normalizePlannerVoiceInput(body) {
   });
   if (historyLength > MAX_HISTORY_LENGTH) throw new PlannerVoiceInputError('Слишком длинный диалог. Начните новую запись.');
   if (body.requestId !== undefined && (typeof body.requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(body.requestId))) throw new PlannerVoiceInputError('Некорректный идентификатор запроса.');
-  const base = { today: body.today, timezone: body.timezone, messages: history, ...(body.requestId === undefined ? {} : { requestId: body.requestId }) };
+  const base = { mode: body.mode || 'planner', today: body.today, timezone: body.timezone, messages: history, ...(body.requestId === undefined ? {} : { requestId: body.requestId }) };
   const hasAudio = body.audioBase64 !== undefined;
   const hasText = body.text !== undefined;
   if (hasAudio === hasText) throw new PlannerVoiceInputError('Отправьте либо запись, либо текст.');
@@ -140,6 +142,7 @@ function createPlannerVoiceGenerator(env = process.env, dependencies = {}) {
         });
         if (typeof data?.text !== 'string' || data.text.length > MAX_TEXT_LENGTH) throw new Error('Invalid transcription');
         transcript = data.text.trim();
+        if (input.mode === 'transcribe') return { transcript };
         if (!transcript) return clarification('', 'Не удалось разобрать речь. Повторите запись или напишите текст.');
       }
       const model = env.OPENAI_MODEL?.trim() || 'gpt-6-luna';

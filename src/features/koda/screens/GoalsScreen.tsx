@@ -32,6 +32,7 @@ import { GoalWizard, removeGoalWizardDraft } from '../components/GoalWizard';
 import { accent, accentBorder, accentFaint, activeBg, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
 import { getActiveRoadmapClarifications, updateRoadmapAnswer } from '../goalRoadmapClarifications';
 import { roadmapStageLabel } from '../roadmapLabels';
+import { VoiceTextInput } from '../components/VoiceTextInput';
 
 type GoalsChange = (updater: (goals: Goal[]) => Goal[]) => void;
 type AddKind = 'milestone' | 'action' | 'routine';
@@ -407,7 +408,7 @@ function GoalDetails({ goal, initialDetailTab='matrix', userId, isDesktop = fals
                   <View style={local.flexText}><Text style={local.blockTitle}>Этапы пути</Text><Text style={local.goalMeta}>Продвигайся по одному понятному этапу за раз.</Text></View>
                   <View style={local.roadmapActions}>{goal.milestones.length>0&&<Pressable accessibilityRole="button" aria-expanded={manageStages} onPress={()=>setManageStages(value=>!value)} style={local.roadmapOutlineButton}><Text style={local.roadmapOutlineText}>{manageStages?'Готово':'Настроить этапы'}</Text></Pressable>}<Pressable accessibilityRole="button" onPress={() => setStageDraftOpen((value) => !value)} style={local.roadmapButton}><Text style={local.roadmapButtonText}>{stageDraftOpen ? 'Скрыть форму' : 'Добавить этап'}</Text></Pressable><Pressable accessibilityRole="button" onPress={() => setStructureOpen(true)} style={local.roadmapOutlineButton}><Text style={local.roadmapOutlineText}>Собрать с помощником</Text></Pressable></View>
                 </View>
-                {stageDraftOpen ? <View style={local.stageEditor}><TextInput accessibilityLabel="Название нового этапа" value={stageDraft} onChangeText={setStageDraft} placeholder="Например, подготовить портфолио" placeholderTextColor={faint} style={local.stageInput} onSubmitEditing={addRoadmapStage}/><Pressable accessibilityRole="button" disabled={!stageDraft.trim()} onPress={addRoadmapStage} style={[local.stageSave, !stageDraft.trim() && local.stageDisabled]}><Text style={local.stageSaveText}>Добавить</Text></Pressable></View> : null}
+                {stageDraftOpen ? <View style={local.stageEditor}><VoiceTextInput accessibilityLabel="Название нового этапа" value={stageDraft} onChangeText={setStageDraft} placeholder="Например, подготовить портфолио" placeholderTextColor={faint} style={local.stageInput} onSubmitEditing={addRoadmapStage}/><Pressable accessibilityRole="button" disabled={!stageDraft.trim()} onPress={addRoadmapStage} style={[local.stageSave, !stageDraft.trim() && local.stageDisabled]}><Text style={local.stageSaveText}>Добавить</Text></Pressable></View> : null}
                 {roadmapDirections.length>0&&<BentoCard tone="soft"><View style={local.blockHeadingRow}><View style={local.flexText}><Text style={local.blockTitle}>ОТАНИ · направления цели</Text><Text style={local.goalMeta}>{roadmapDirections.length} направлений · отдельное представление вариантов и действий</Text></View><Pressable accessibilityRole="button" onPress={()=>setDetailTab('matrix')} style={local.roadmapOutlineButton}><Text style={local.roadmapOutlineText}>Открыть ОТАНИ</Text></Pressable></View></BentoCard>}
                 {goal.milestones.length ? <>
                   <GoalRoadmap milestones={goal.milestones} actions={goal.actions} currentMilestoneId={currentMilestone?.id} focusMilestoneId={focusRoadmapStageId} manage={manageStages}
@@ -417,7 +418,7 @@ function GoalDetails({ goal, initialDetailTab='matrix', userId, isDesktop = fals
                     renderManageActions={(milestone,index,ordered)=>{
                       const attachedCount=goal.actions.filter(action=>action.milestoneId===milestone.id).length;
                       return <>
-                        {editingStageId===milestone.id?<View style={local.stageEditor}><TextInput accessibilityLabel="Название этапа" value={editingStageTitle} onChangeText={setEditingStageTitle} style={local.stageInput} autoFocus/><Pressable accessibilityRole="button" disabled={!editingStageTitle.trim()} onPress={saveRoadmapStageTitle} style={[local.stageSave,!editingStageTitle.trim()&&local.stageDisabled]}><Text style={local.stageSaveText}>Сохранить</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>setEditingStageId(null)} style={local.stageCancel}><Text style={local.stageCancelText}>Отмена</Text></Pressable></View>:null}
+                        {editingStageId===milestone.id?<View style={local.stageEditor}><VoiceTextInput accessibilityLabel="Название этапа" value={editingStageTitle} onChangeText={setEditingStageTitle} style={local.stageInput} autoFocus/><Pressable accessibilityRole="button" disabled={!editingStageTitle.trim()} onPress={saveRoadmapStageTitle} style={[local.stageSave,!editingStageTitle.trim()&&local.stageDisabled]}><Text style={local.stageSaveText}>Сохранить</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>setEditingStageId(null)} style={local.stageCancel}><Text style={local.stageCancelText}>Отмена</Text></Pressable></View>:null}
                         <View style={local.stageTools}><Text style={local.stageToolsLabel}>Порядок и статус</Text><View style={local.stageToolButtons}>
                           <Pressable accessibilityRole="button" accessibilityLabel={`Переместить этап ${index+1} вверх`} disabled={index===0} onPress={()=>moveRoadmapStage(milestone.id,-1)} style={[local.stageToolButton,index===0&&local.stageDisabled]}><Text style={local.stageToolText}>↑</Text></Pressable>
                           <Pressable accessibilityRole="button" accessibilityLabel={`Переместить этап ${index+1} вниз`} disabled={index===ordered.length-1} onPress={()=>moveRoadmapStage(milestone.id,1)} style={[local.stageToolButton,index===ordered.length-1&&local.stageDisabled]}><Text style={local.stageToolText}>↓</Text></Pressable>
@@ -459,9 +460,9 @@ function GoalDetails({ goal, initialDetailTab='matrix', userId, isDesktop = fals
 
             {detailTab === 'context' ? (
               <View style={local.tabContent}>
-                <View style={local.block}><Text style={local.blockTitle}>Точка старта</Text><Text style={local.goalMeta}>Сохрани то, что уже известно о ситуации. Это можно обновлять по мере продвижения.</Text><TextInput accessibilityLabel="Текущая ситуация и отправная точка" multiline value={goal.planningContext ?? ''} onChangeText={(value) => updateGoal((item) => ({ ...item, planningContext: value.slice(0, 2000) }))} placeholder="Что уже сделано? Что у тебя есть сейчас?" placeholderTextColor={faint} style={local.contextInput} /></View>
+                <View style={local.block}><Text style={local.blockTitle}>Точка старта</Text><Text style={local.goalMeta}>Сохрани то, что уже известно о ситуации. Это можно обновлять по мере продвижения.</Text><VoiceTextInput accessibilityLabel="Текущая ситуация и отправная точка" multiline value={goal.planningContext ?? ''} onChangeText={(value) => updateGoal((item) => ({ ...item, planningContext: value.slice(0, 2000) }))} placeholder="Что уже сделано? Что у тебя есть сейчас?" placeholderTextColor={faint} style={local.contextInput} /></View>
                 <View style={local.block}><View style={local.blockHeadingRow}><View style={local.flexText}><Text style={local.blockTitle}>Уточнения к плану</Text><Text style={local.goalMeta}>Ответы сохраняются вместе с целью и доступны для редактирования.</Text></View><Pressable accessibilityRole="button" onPress={() => setStructureOpen(true)} style={local.roadmapButton}><Text style={local.roadmapButtonText}>Открыть помощник</Text></Pressable></View>
-                  {getActiveRoadmapClarifications(goal).map((item, index) => <View key={item.id} style={local.contextAnswer}><Text style={local.contextQuestion}>{index + 1}. {item.question}</Text><TextInput accessibilityLabel={`Ответ ${index + 1} к плану`} multiline value={item.answer} onChangeText={(value) => updateGoal((current) => updateRoadmapAnswer(current, item.id, value, new Date().toISOString()))} placeholder="Добавь ответ или оставь пустым" placeholderTextColor={faint} style={local.contextAnswerInput} /></View>)}
+                  {getActiveRoadmapClarifications(goal).map((item, index) => <View key={item.id} style={local.contextAnswer}><Text style={local.contextQuestion}>{index + 1}. {item.question}</Text><VoiceTextInput accessibilityLabel={`Ответ ${index + 1} к плану`} multiline value={item.answer} onChangeText={(value) => updateGoal((current) => updateRoadmapAnswer(current, item.id, value, new Date().toISOString()))} placeholder="Добавь ответ или оставь пустым" placeholderTextColor={faint} style={local.contextAnswerInput} /></View>)}
                   {!getActiveRoadmapClarifications(goal).length ? <EmptyLine text="Сохранённых вопросов пока нет. Помощник уточнит детали при сборке пути." /> : null}
                 </View>
               </View>
@@ -606,7 +607,7 @@ function MilestoneItem({ milestone, actions, onUpdateGoal }: { milestone: GoalMi
             <Text style={local.emptyLine}>В этом этапе пока нет действий.</Text>
           )}
           <View style={local.inlineInputRow}>
-            <TextInput
+            <VoiceTextInput
               onChangeText={setNewActionTitle}
               onSubmitEditing={addActionToMilestone}
               placeholder="Добавить действие в этап"
@@ -879,7 +880,7 @@ function AddGoalItemSheet({ goal, kind, defaultMilestoneId, onClose, onUpdateGoa
             <Text style={local.sheetTitle}>{kind === 'milestone' ? 'Новый этап' : kind === 'routine' ? 'Регулярное действие' : 'Разовое действие'}</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Закрыть добавление элемента" onPress={reset} style={local.iconButton}><X color={text} size={18} /></Pressable>
           </View>
-          <TextInput autoFocus onChangeText={setTitle} onSubmitEditing={save} placeholder="Название" placeholderTextColor={faint} style={local.input} value={title} />
+          <VoiceTextInput autoFocus onChangeText={setTitle} onSubmitEditing={save} placeholder="Название" placeholderTextColor={faint} style={local.input} value={title} />
           <TextInput onChangeText={setDate} placeholder={kind === 'routine' ? 'Дата старта: 2026-07-30' : 'Срок: 2026-07-30'} placeholderTextColor={faint} style={local.input} value={date} />
           {kind === 'action' && milestoneOptions.length ? (
             <View style={[local.segmentRow,{flexWrap:'wrap'}]}>
@@ -981,7 +982,7 @@ function EditRoutineSheet({
             <Text style={local.sheetTitle}>Редактировать</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактирование" onPress={onClose} style={local.iconButton}><X color={text} size={18} /></Pressable>
           </View>
-          <TextInput autoFocus onChangeText={setTitle} onSubmitEditing={save} placeholder="Название" placeholderTextColor={faint} style={local.input} value={title} />
+          <VoiceTextInput autoFocus onChangeText={setTitle} onSubmitEditing={save} placeholder="Название" placeholderTextColor={faint} style={local.input} value={title} />
           <View style={local.segmentRow}>
             {(['boolean', 'minutes', 'count'] as GoalRoutineMetricType[]).map((type) => (
               <Pressable key={type} onPress={() => setMetricType(type)} style={[local.segment, metricType === type && local.segmentActive]}>

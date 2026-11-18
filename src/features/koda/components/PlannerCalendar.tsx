@@ -20,7 +20,6 @@ type Props = {
   onOpenWorkspace?: () => void;
   syncText?: string;
   toolbarActions?: ReactNode;
-  voiceControl?: ReactNode;
 };
 
 const HOUR = 60;
@@ -43,7 +42,7 @@ const timeMinutes = (value: string) => {
 };
 const dayTitle = (d: Date) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 
-export function PlannerCalendar({ mode, onModeChange, selectedDate, onSelectDate, items, onNewItem, onOpenItem, onToggleItem, onMoveItem, onOpenWorkspace, syncText, toolbarActions, voiceControl }: Props) {
+export function PlannerCalendar({ mode, onModeChange, selectedDate, onSelectDate, items, onNewItem, onOpenItem, onToggleItem, onMoveItem, onOpenWorkspace, syncText, toolbarActions }: Props) {
   const { width, height } = useWindowDimensions();
   const compact = width < 700;
   const phone = width < 680;
@@ -280,7 +279,6 @@ export function PlannerCalendar({ mode, onModeChange, selectedDate, onSelectDate
     {phone ? <View style={styles.phoneToolbar}>
       <View style={styles.phoneTopRow}>
         <View style={styles.phoneHeading}><Text accessibilityRole="header" style={styles.phoneTitle}>Планнер</Text></View>
-        {voiceControl}
         <Pressable accessibilityRole="button" accessibilityLabel="Добавить задачу" onPress={createAtNextSlot} style={styles.phoneAddButton}><Plus size={18} color="#fff" /><Text style={styles.phoneEmptyAddText}>Задача</Text></Pressable>
       </View>
       <View style={styles.phoneControlRow}>
@@ -302,7 +300,6 @@ export function PlannerCalendar({ mode, onModeChange, selectedDate, onSelectDate
       <View style={styles.navGroup}><Pressable accessibilityRole="button" accessibilityLabel="Предыдущий период" onPress={() => navigate(-1)} style={styles.navButton}><ChevronLeft size={18} color={text} /></Pressable><Pressable accessibilityRole="button" onPress={() => onSelectDate(today)} style={styles.todayButton}><Text style={styles.todayButtonText}>Сегодня</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Следующий период" onPress={() => navigate(1)} style={styles.navButton}><ChevronRight size={18} color={text} /></Pressable></View>
       <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>{title}</Text>
       <View style={styles.modeGroup}>{(['day', 'week', 'month', 'year'] as CalendarMode[]).map((value, i) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: mode === value }} onPress={() => onModeChange(value)} style={[styles.modeButton, mode === value && styles.modeSelected, i === 0 && styles.modeLeft, i === 3 && styles.modeRight]}><Text style={[styles.modeText, mode === value && styles.modeTextSelected]}>{({ day: 'День', week: 'Неделя', month: 'Месяц', year: 'Год' })[value]}</Text></Pressable>)}</View>
-      {voiceControl}
       {toolbarActions ? <View style={styles.toolbarActions}>{toolbarActions}</View> : null}
       <Pressable accessibilityRole="button" accessibilityLabel="Новая задача" onPress={createAtNextSlot} style={styles.addButton}><Plus size={17} color="#fff" /></Pressable>
     </View>}

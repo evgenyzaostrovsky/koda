@@ -26,6 +26,18 @@ async function invoke(handler, body, headers = { authorization: 'Bearer valid' }
 }
 
 async function run() {
+  assert.throws(() => normalizePlannerVoiceInput({ ...base, mode: 'unknown', text: 'test' }));
+  assert.throws(() => normalizePlannerVoiceInput({ ...base, mode: 'transcribe', text: 'test' }));
+  let dictationCalls = 0;
+  const transcribe = createPlannerVoiceGenerator(env, { fetch: async url => {
+    dictationCalls++;
+    assert.equal(url, 'https://api.openai.com/v1/audio/transcriptions');
+    return ok({text:'Заметка без даты и времени.'});
+  }});
+  const dictationInput = normalizePlannerVoiceInput({ ...base, mode:'transcribe', audioBase64:'YQ==', mimeType:'audio/mp4' });
+  assert.deepEqual(await transcribe(dictationInput), {transcript:'Заметка без даты и времени.'});
+  assert.equal(dictationCalls, 1, 'plain dictation never calls task planning or writes records');
+
   // Exact calendar checks, audio caps, untrusted history, and mutually exclusive inputs.
   for (const patch of [
     { today: '2026-02-29' }, { today: '2026-04-31' }, { today: '2026-2-02' }, { today: '0000-01-01' },
