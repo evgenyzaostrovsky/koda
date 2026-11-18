@@ -38,9 +38,10 @@ type Props = {
   onOpenWorkspace?: () => void;
   syncText?: string;
   autoPlanControl?: ReactNode;
+  voiceControl?: ReactNode;
 };
 
-export function PlannerScreen({ initialFocus, isDesktop = false, items, projectItems = [], goals = [], ownerId, onAddItem, onDeleteItem, onDeleteItems, onMoveProjectedItemDate, onToggleProjectedItem, onToggleItem, onSetItemFailed, onToggleSubtask, onUpdateItem, onOpenSection, onOpenWorkspace, syncText, autoPlanControl }: Props) {
+export function PlannerScreen({ initialFocus, isDesktop = false, items, projectItems = [], goals = [], ownerId, onAddItem, onDeleteItem, onDeleteItems, onMoveProjectedItemDate, onToggleProjectedItem, onToggleItem, onSetItemFailed, onToggleSubtask, onUpdateItem, onOpenSection, onOpenWorkspace, syncText, autoPlanControl, voiceControl }: Props) {
   const [selectedDate, setSelectedDate] = useState(normalizeDateKey(initialFocus?.date ?? '') ?? todayDateKey());
   const [mode, setMode] = useState<CalendarMode>(initialFocus ? 'day' : isDesktop ? 'week' : 'day');
   useEffect(() => {
@@ -117,6 +118,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
   return (
     <View style={{ flex: 1, minHeight: 0, width: '100%' }}>
       <PlannerCalendar
+        voiceControl={voiceControl}
         mode={mode}
         onModeChange={setMode}
         selectedDate={selectedDate}

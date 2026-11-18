@@ -56,6 +56,12 @@ export function useSyncedRecords<T extends Item>(options: Options) {
     void persist().catch(() => { if (isCurrent()) setError('Не удалось сохранить изменения на устройстве.'); });
     setGeneration(value => value + 1);
   }
+  async function updateAndPersist(updater: (current: T[]) => T[]) {
+    if (!isCurrent() || !ready || !state.current || legacyRecovery.current) throw new Error('Данные ещё загружаются. Попробуйте снова.');
+    update(updater);
+    await persist();
+    if (!isCurrent()) throw new Error('Аккаунт изменился.');
+  }
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -185,5 +191,5 @@ export function useSyncedRecords<T extends Item>(options: Options) {
     setGeneration(value => value + 1);
   }
   const belongs = state.current?.ownerId === identity && state.current?.domain === domain;
-  return { items: belongs ? items : [], update, ready: belongs && ready, pending: belongs && pending, error, recovery: belongs ? recovery : null, cloudReady: belongs && cloudReady, recover };
+  return { items: belongs ? items : [], update, updateAndPersist, ready: belongs && ready, pending: belongs && pending, error, recovery: belongs ? recovery : null, cloudReady: belongs && cloudReady, recover };
 }

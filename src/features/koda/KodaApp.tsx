@@ -1,3 +1,4 @@
+import { PlannerVoiceInput } from './components/PlannerVoiceInput';
 import {findAccountCompletionCandidates} from './goalCompletion';
 import { recordGoalEdits, recordProjectEdits, recordProfileEdits, recordPomodoroEdits } from './entitySync';
 import { useSyncedRecords } from './useSyncedRecords';
@@ -772,6 +773,20 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
     return created;
   }
 
+  async function addVoicePlannerItems(requestId: string, tasks: Array<{title:string;date:string;time:string}>) {
+    if (!userId || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId) || !tasks.length || tasks.length > 10 || tasks.some(task => !task.title.trim() || task.title.length > 300 || !/^\d{4}-\d{2}-\d{2}$/.test(task.date) || !Number.isFinite(Date.parse(task.date)) || new Date(task.date).toISOString().slice(0,10) !== task.date || (task.time !== '' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(task.time)))) throw new Error('Не удалось добавить задачи.');
+    const now = new Date().toISOString();
+    await plannerRecords.updateAndPersist(current => {
+      const ids = new Set(current.map(item => item.id));
+      const additions: PlannerItem[] = tasks.map((task,index) => ({id:`voice-${requestId}-${index}`,title:task.title.trim(),date:task.date,time:task.time,done:false,sourceType:'planner',sourceId:null,ownerId:null,updatedAt:now,deletedAt:null}));
+      return [...additions.filter(item => !ids.has(item.id)), ...current];
+    });
+  }
+  async function undoVoicePlannerItems(requestId: string) {
+    const ids = new Set(Array.from({length:10},(_,index)=>`voice-${requestId}-${index}`));
+    await plannerRecords.updateAndPersist(current => current.filter(item => !ids.has(item.id)));
+  }
+
   function setPlannerItemFailed(id: string, failed: boolean) {
     updatePlannerSources((items) => items.map((item) => item.id === id
       ? { ...item, failed, done: false, updatedAt: new Date().toISOString() }
@@ -1181,7 +1196,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
     if (activeTab === 'routines') return <HabitsScreen onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} habits={habits} onHabitsChange={updateHabitSources} onToggleToday={toggleHabitToday} />;
 
     if (activeTab === 'planner') {
-      return <PlannerScreen goals={effectiveGoals} ownerId={userId} autoPlanControl={<AutoPlanControl {...autoPlan.control} />} onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} initialFocus={focusedPlannerItem} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onDeleteItems={ids => { const selected = new Set(ids); setPlannerItems(current => current.filter(item => !selected.has(item.id))); }} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} />;
+      return <PlannerScreen voiceControl={<PlannerVoiceInput key={userId??'guest'} ownerId={userId} onCreate={addVoicePlannerItems} onUndo={undoVoicePlannerItems}/>} goals={effectiveGoals} ownerId={userId} autoPlanControl={<AutoPlanControl {...autoPlan.control} />} onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} initialFocus={focusedPlannerItem} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onDeleteItems={ids => { const selected = new Set(ids); setPlannerItems(current => current.filter(item => !selected.has(item.id))); }} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} />;
     }
     if (activeTab === 'goals') {
       return <GoalsScreen onOpenWorkspace={()=>setActiveTab('habits')} goals={effectiveGoals} hasCloudSync={Boolean(userId) && isSupabaseConfigured()} isDesktop={isDesktopLayout} isOnline={isOnline} onGoalsChange={updateGoals} userId={userId} initialGoalId={focusedGoalId} initialDetailTab={focusedGoalView} />;

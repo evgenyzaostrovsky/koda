@@ -17,6 +17,7 @@ const aiConfig = readAiConfig(process.env);
 const aiProvider = createAiProvider(aiConfig);
 
 app.use(cors());
+app.post('/api/planner-voice', express.json({ limit: '4.4mb' }), require('./api/planner-voice'));
 app.use(express.json({ limit: '1mb' }));
 
 const generateChat = createChatGenerator(aiConfig);

@@ -83,10 +83,16 @@ function mount(db: Backend, options: { data?: Map<string, string>; owner?: strin
   let props = { owner: session.owner, domain: 'planner', legacyKey, legacyDeletedKey: 'koda:plannerDeleted:v1', online: options.online ?? true, pullToken: 0, retryToken: 0 };
   const slots: any[] = [], cleanups = new Map<number, () => void>();
   let cursor = 0, disposed = false, scheduled = false, effects: Array<() => void> = [], result: any, renders = 0;
+  let storageGate: { start: ReturnType<typeof deferred>; stop: ReturnType<typeof deferred> } | undefined;
   const storage = { failures: 0, failAcknowledgement: false, writes: 0,
+    pauseWrite() {
+      const gate = { start: deferred(), stop: deferred() }; storageGate = gate;
+      return { started: gate.start.promise, release: gate.stop.release };
+    },
     async getItem(key: string) { return data.get(key) ?? null; },
     async setItem(key: string, value: string) {
       storage.writes++;
+      if (storageGate) { const gate = storageGate; storageGate = undefined; gate.start.release(); await gate.stop.promise; }
       if (storage.failures > 0) { storage.failures--; throw new Error('disk full'); }
       if (storage.failAcknowledgement && JSON.parse(value).patches.length === 0) { storage.failAcknowledgement = false; throw new Error('ack write failed'); }
       data.set(key, value);
@@ -204,12 +210,85 @@ async function main() {
   const recoveryData = new Map([[`${legacyKey}:a`, JSON.stringify([item('one', 'Old pending cache'), item('new', 'Offline create')])], ['koda:syncQueue:v1:a', '["planner"]']]);
   const recovery = mount(recoveryDb, { data: recoveryData }); await flush();
   assert.equal(recovery.value.recovery.length, 2); assert.equal(recoveryDb.values()[0].title, 'Cloud');
+  await assert.rejects(recovery.value.updateAndPersist((rows: Item[]) => [...rows, item('voice-recovery-0')]), /загружаются/);
+  assert.ok(!recovery.value.items.some((row: Item) => row.id === 'voice-recovery-0'), 'durable update must not bypass unresolved legacy recovery');
   recovery.edit('Must wait for choice'); await flush(); assert.equal(recoveryDb.values()[0].title, 'Cloud');
   recovery.value.recover(true); await flush();
   assert.deepEqual(recoveryDb.values().map(row => row.title), ['Old pending cache', 'Offline create']);
   assert.equal(recovery.value.recovery, null); recovery.dispose();
   const discarded = mount(recoveryDb, { data: new Map(recoveryData).set(localKey(), JSON.stringify({ ...JSON.parse(recoveryData.get(localKey())!), recovery: [item('one', 'Ignore local')] })) });
   await flush(); discarded.value.recover(false); await flush(); assert.equal(discarded.value.recovery, null); assert.equal(recoveryDb.values()[0].title, 'Old pending cache'); discarded.dispose();
+
+  // Voice batches await local durability, retain stable IDs across retry, and stay account scoped.
+  const voiceDb = new Backend();
+  const voice = mount(voiceDb, { online: false });
+  await assert.rejects(voice.value.updateAndPersist((rows: Item[]) => [...rows, item('too-early')]), /загружаются/);
+  await flush();
+  const voiceBatch = [item('voice-request-1234-0', 'Call'), item('voice-request-1234-1', 'Walk')];
+  const addVoiceBatch = (rows: Item[]) => {
+    const ids = new Set(rows.map(row => row.id));
+    return [...voiceBatch.filter(row => !ids.has(row.id)), ...rows];
+  };
+  const writeGate = voice.storage.pauseWrite();
+  let durable = false;
+  const saving = voice.value.updateAndPersist(addVoiceBatch).then(() => { durable = true; });
+  await writeGate.started; await flush();
+  assert.equal(voice.value.items.length, 2, 'optimistic items appear while disk write is pending');
+  assert.equal(durable, false, 'promise must not acknowledge an optimistic-only write');
+  assert.equal(JSON.parse(voice.data.get(localKey())!).patches.length, 0);
+  writeGate.release(); await saving; await flush();
+  assert.equal(durable, true);
+  const durableBatch = JSON.parse(voice.data.get(localKey())!);
+  assert.equal(durableBatch.patches.length, 2);
+  assert.deepEqual(accountRecordValues<Item>(durableBatch.snapshot).map(row => row.id).sort(), voiceBatch.map(row => row.id).sort());
+  assert.equal(voice.value.pending, true, 'offline local durability does not claim cloud acknowledgement');
+  assert.equal(voiceDb.writes.length, 0);
+  await voice.value.updateAndPersist(addVoiceBatch); await flush();
+  assert.equal(JSON.parse(voice.data.get(localKey())!).patches.length, 2, 'same stable batch IDs produce no duplicate patches');
+  voice.dispose();
+  const voiceReload = mount(voiceDb, { online: false, data: voice.data }); await flush();
+  assert.equal(voiceReload.value.items.length, 2, 'acknowledged offline batch survives reload');
+
+  const failedBatch = item('voice-retry-1234-0', 'Retry me');
+  const addRetryBatch = (rows: Item[]) => rows.some(row => row.id === failedBatch.id) ? rows : [...rows, failedBatch];
+  voiceReload.storage.failures = 10;
+  await assert.rejects(voiceReload.value.updateAndPersist(addRetryBatch), /disk full/); await flush();
+  assert.ok(voiceReload.value.items.some((row: Item) => row.id === failedBatch.id), 'failed disk write retains pending in-memory edit for retry');
+  assert.equal(accountRecordValues<Item>(JSON.parse(voiceReload.data.get(localKey())!).snapshot).length, 2, 'failure must not be mistaken for durability');
+  voiceReload.storage.failures = 0;
+  await voiceReload.value.updateAndPersist(addRetryBatch); await flush();
+  assert.equal(JSON.parse(voiceReload.data.get(localKey())!).patches.length, 3, 'retry persists the original edit without duplicate creation');
+  assert.equal(voiceReload.value.items.filter((row: Item) => row.id === failedBatch.id).length, 1);
+
+  const voiceIds = new Set(voiceBatch.map(row => row.id));
+  await voiceReload.value.updateAndPersist((rows: Item[]) => rows.filter(row => !voiceIds.has(row.id)));
+  await flush();
+  const undone = JSON.parse(voiceReload.data.get(localKey())!);
+  assert.equal(undone.patches.filter((patch: any) => patch.deleted).length, 2, 'durable undo queues deletion tombstones');
+  assert.deepEqual(accountRecordValues<Item>(undone.snapshot).map(row => row.id), [failedBatch.id]);
+  voiceReload.dispose();
+  const undoReload = mount(voiceDb, { online: false, data: voiceReload.data }); await flush();
+  assert.deepEqual(Array.from(undoReload.value.items, (row: Item) => row.id), [failedBatch.id]);
+  undoReload.online(true); await flush();
+  assert.deepEqual(voiceDb.values().map(row => row.id), [failedBatch.id], 'reconnect syncs the surviving task and batch deletions');
+  assert.equal(undoReload.value.pending, false); undoReload.dispose();
+
+  const scopeDb = new Backend();
+  const scopedVoice = mount(scopeDb, { online: false }); await flush();
+  const staleUpdate = scopedVoice.value.updateAndPersist;
+  const scopeGate = scopedVoice.storage.pauseWrite();
+  const scopeSave = staleUpdate(addVoiceBatch);
+  // Attach the rejection handler before advancing the deferred write.
+  const scopeRejected = assert.rejects(scopeSave, /Аккаунт изменился/);
+  await scopeGate.started; scopedVoice.switchOwner('b'); await flush();
+  assert.equal(scopedVoice.value.items.length, 0, 'new account never displays old optimistic voice tasks');
+  scopeGate.release(); await scopeRejected; await flush();
+  await assert.rejects(staleUpdate(addVoiceBatch), /загружаются/);
+  assert.equal(accountRecordValues<Item>(JSON.parse(scopedVoice.data.get(localKey('a'))!).snapshot).length, 2, 'in-flight write remains in its original account storage');
+  assert.equal(accountRecordValues<Item>(JSON.parse(scopedVoice.data.get(localKey('b'))!).snapshot).length, 0, 'old callback cannot write into the new account');
+  const disposedUpdate = scopedVoice.value.updateAndPersist;
+  scopedVoice.dispose();
+  await assert.rejects(disposedUpdate(addVoiceBatch), /загружаются/);
 
   const notesDb = new Backend();
   const note = (id: string, title: string, updatedAt: string, deletedAt: string | null = null) => ({ id, userId: 'a', title, content: { type: 'doc', content: [] }, pinned: false, createdAt: '2026-01-01', updatedAt, deletedAt });
@@ -237,6 +316,6 @@ async function main() {
   const oldPlanner = { from: () => ({ upsert: async (rows: any[]) => { mirrorRows.push(rows); return { error: mirrorRows.length === 1 ? { code: 'PGRST204', message: 'subtasks column missing' } : null }; } }) };
   await mirrorAccountRecords(oldPlanner, 'a', 'planner', [item('one') as any], []);
   assert.equal(mirrorRows.length, 2); assert.ok(!('subtasks' in mirrorRows[1][0])); assert.ok(!('failed' in mirrorRows[1][0]));
-  console.log('record hook: real effects, offline reload, two devices, newer edits, disk retries, ack failure, logout/switch, recovery and legacy adapters PASS');
+  console.log('record hook: real effects, offline reload, two devices, newer edits, disk retries, ack failure, logout/switch, recovery, durable voice batches/retry/undo and legacy adapters PASS');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -28,7 +28,7 @@
       ]
     }
   ],
-  "functions": { "api/goal-plan.js": { "maxDuration": 120 } },
+  "functions": { "api/goal-plan.js": { "maxDuration": 120 }, "api/planner-voice.js": { "maxDuration": 120 } },
   "routes": [
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }
