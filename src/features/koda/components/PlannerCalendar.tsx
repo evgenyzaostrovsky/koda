@@ -135,6 +135,17 @@ export function PlannerCalendar({ mode, onModeChange, selectedDate, onSelectDate
     }
     return Number.isFinite(native?.locationY) ? native.locationY : 0;
   };
+  const contextCreate = (date: Date, hour?: number) => Platform.OS === 'web' ? {
+    onContextMenu: (event: any) => {
+      // Existing tasks keep their own interaction; only empty calendar space creates a draft.
+      if (hour === undefined && event.target?.closest?.('[role="button"]')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setUntimedPopup(null);
+      if (hour === undefined) onNewItem(dateKey(date), '');
+      else createAt(date, hour * HOUR + (relativeSlotY(event) >= HOUR / 2 ? 30 : 0));
+    },
+  } : {};
   const onSlotPress = (date: Date, hour: number, event: NativeSyntheticEvent<NativeTouchEvent>) => {
     createAt(date, hour * HOUR + (relativeSlotY(event) >= 30 ? 30 : 0));
   };
@@ -177,6 +188,7 @@ export function PlannerCalendar({ mode, onModeChange, selectedDate, onSelectDate
       if (Platform.OS !== 'web') return <View key={h} style={{ position: 'absolute', left: 0, right: 0, top: h * HOUR, height: HOUR }}>{pressable}</View>;
       return createElement('div' as any, {
         key: h,
+        ...contextCreate(date, h),
         onDragOver: (event: any) => event.preventDefault(),
         onDrop: (event: any) => {
           event.preventDefault();
@@ -266,7 +278,7 @@ export function PlannerCalendar({ mode, onModeChange, selectedDate, onSelectDate
       <ScrollView style={styles.untimedWeekScroll} nestedScrollEnabled><View style={styles.allDayRow}><View style={styles.weekTimeCorner}><Text style={styles.allDayLabel}>Без времени</Text></View><ScrollView ref={weekAllDayRef} onScroll={e => syncWeekHorizontal('allDay', e)} scrollEventThrottle={16} horizontal showsHorizontalScrollIndicator={false} style={styles.weekHeaderScroll} contentContainerStyle={{ minWidth: colWidth * 7 }}><View style={{ flexDirection: 'row' }}>{weekDates.map(date => {
         const dayKey = dateKey(date);
         const untimed = all.filter(item => item.date === dayKey);
-        return <View key={dayKey} style={[styles.allDayCell, { width: colWidth }]}>
+        return <View key={dayKey} {...contextCreate(date)} style={[styles.allDayCell, { width: colWidth }]}>
           {untimed.slice(0, 3).map(item => renderUntimedItem(item, true))}
           {untimed.length > 3 ? <Pressable accessibilityRole="button" accessibilityLabel={`Все дела без времени на ${date.getDate()} ${MONTHS[date.getMonth()]}`} accessibilityState={{ expanded: untimedPopup?.date === dayKey }} ref={node => { untimedAnchors.current[dayKey] = node; }} onPress={() => openUntimedPopup(dayKey)} style={styles.untimedAdd}><Text style={{ color: muted, fontSize: 11, fontWeight: '500' }}>Ещё {untimed.length - 3}</Text></Pressable> : null}
         </View>;
@@ -304,7 +316,7 @@ export function PlannerCalendar({ mode, onModeChange, selectedDate, onSelectDate
       <Pressable accessibilityRole="button" accessibilityLabel="Новая задача" onPress={createAtNextSlot} style={styles.addButton}><Plus size={17} color="#fff" /></Pressable>
     </View>}
     <View style={styles.calendarBody}>
-      {mode === 'day' ? phone ? <><View style={styles.dateStrip}>{Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).map(date => <Pressable key={dateKey(date)} accessibilityRole="button" accessibilityLabel={`${date.getDate()} ${MONTHS[date.getMonth()]}`} onPress={() => onSelectDate(dateKey(date))} style={styles.phoneStripDate}><Text style={styles.stripWeekday}>{WEEKDAYS[(date.getDay() + 6) % 7]}</Text><Text style={[styles.stripNumber, dateKey(date) === selectedDate && styles.stripSelected]}>{date.getDate()}</Text></Pressable>)}</View>{phoneDayList()}</> : <><View style={styles.dateStrip}>{Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).map(date => <Pressable key={dateKey(date)} accessibilityRole="button" accessibilityLabel={`${date.getDate()} ${MONTHS[date.getMonth()]}`} onPress={() => onSelectDate(dateKey(date))} style={styles.stripDate}><Text style={styles.stripWeekday}>{WEEKDAYS[(date.getDay() + 6) % 7]}</Text><Text style={[styles.stripNumber, dateKey(date) === selectedDate && styles.stripSelected]}>{date.getDate()}</Text></Pressable>)}</View><View style={styles.untimedDaySection}><View style={styles.dayAllDayGutter}><Text style={styles.allDayLabel}>Без времени</Text></View><ScrollView style={styles.untimedDayScroll} contentContainerStyle={styles.allDayRowDay}>{allDayItems(selected).map(item => <View key={item.id} style={styles.untimedDaySlot}>{renderUntimedItem(item)}</View>)}</ScrollView></View>{dayTimeline()}</> : mode === 'week' ? weekTimeline() : mode === 'month' ? monthView() : yearView()}
+      {mode === 'day' ? phone ? <><View style={styles.dateStrip}>{Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).map(date => <Pressable key={dateKey(date)} accessibilityRole="button" accessibilityLabel={`${date.getDate()} ${MONTHS[date.getMonth()]}`} onPress={() => onSelectDate(dateKey(date))} style={styles.phoneStripDate}><Text style={styles.stripWeekday}>{WEEKDAYS[(date.getDay() + 6) % 7]}</Text><Text style={[styles.stripNumber, dateKey(date) === selectedDate && styles.stripSelected]}>{date.getDate()}</Text></Pressable>)}</View>{phoneDayList()}</> : <><View style={styles.dateStrip}>{Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).map(date => <Pressable key={dateKey(date)} accessibilityRole="button" accessibilityLabel={`${date.getDate()} ${MONTHS[date.getMonth()]}`} onPress={() => onSelectDate(dateKey(date))} style={styles.stripDate}><Text style={styles.stripWeekday}>{WEEKDAYS[(date.getDay() + 6) % 7]}</Text><Text style={[styles.stripNumber, dateKey(date) === selectedDate && styles.stripSelected]}>{date.getDate()}</Text></Pressable>)}</View><View {...contextCreate(selected)} style={styles.untimedDaySection}><View style={styles.dayAllDayGutter}><Text style={styles.allDayLabel}>Без времени</Text></View><ScrollView style={styles.untimedDayScroll} contentContainerStyle={styles.allDayRowDay}>{allDayItems(selected).map(item => <View key={item.id} style={styles.untimedDaySlot}>{renderUntimedItem(item)}</View>)}</ScrollView></View>{dayTimeline()}</> : mode === 'week' ? weekTimeline() : mode === 'month' ? monthView() : yearView()}
     </View>
     <Modal transparent animationType="fade" visible={Boolean(untimedPopup)} onRequestClose={() => setUntimedPopup(null)}>
       <View style={{ flex: 1 }}>
