@@ -14,7 +14,7 @@ import { usePomodoroController } from '../usePomodoroTimer';
 import {Clock3,Target} from 'lucide-react-native';
 import {AssistantTile,DateRibbon,ScoreHistoryChart} from '../components/RoadmapUI';
 import {activeBg,ink,lime} from '../theme';
-import { VoiceTextInput } from '../components/VoiceTextInput';
+import { VoiceTextInput, useDictationBusy } from '../components/VoiceTextInput';
 
 type Props = {
   goals: Goal[]; plannerItems: PlannerItem[]; kodaDays: KodaDay[]; isDesktop?: boolean; userId?: string | null;
@@ -28,6 +28,7 @@ type Props = {
 };
 
 export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, userId, onGoalsChange, onKodaDaysChange, onTogglePlannerItem, onOpenSection, onOpenGoal, onAddItem,onDiscussDay }: Props) {
+  const dictation = useDictationBusy();
   const date = todayDateKey();
   const timer = usePomodoroController();
   const day = kodaDays.find(item => item.localDate === date);
@@ -87,6 +88,7 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
     setEditor(mode);
   }
   function saveDraft() {
+    if (dictation.busy) return;
     if (!draft.items.length) { setError('Оставьте хотя бы один шаг. Для отдыха можно не начинать оцениваемый день.'); return; }
     const minimum = draft.items.find(item => item.sourceKey === draft.minimum?.sourceKey) ? draft.minimum : draft.items[0] ? { sourceKey: draft.items[0].sourceKey, label: draft.items[0].title, targetValue: draft.items[0].metric === 'minutes' ? Math.min(10, draft.items[0].targetValue) : 1 } : null;
     const normalized = { ...draft, minimum };
@@ -110,6 +112,7 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
     }
   }
   function finishDay() {
+    if (dictation.busy) return;
     onKodaDaysChange(days => days.map(d => d.id === day?.id && d.status === 'active' ? { ...finalizeKodaDay(d, goals, plannerItems), ...(note.trim() ? { summary: note.trim() } : {}) } : d));
     setFinish(false);
   }
@@ -120,6 +123,7 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
     else onOpenSection('planner');
   }
   function addOwnTask() {
+    if (dictation.busy) return;
     const item=onAddItem(newTask.trim());
     if (!item) return;
     const key=`planner:${item.id}`;
@@ -230,12 +234,12 @@ export function DailyPlanScreen({ goals, plannerItems, kodaDays, isDesktop, user
       <Text style={s.meta}>{editor==='revision'?'Исходный план и его SCORE сохранятся. Для нового плана будет отдельный процент выполнения.':'Уберите лишнее, выберите другое действие или уточните объём.'}</Text>
       {draft.items.map(item=><View style={s.row} key={item.sourceKey}><View style={s.grow}><Text style={s.body}>{item.title}</Text>{item.metric!=='binary'?<TextInput accessibilityLabel={`Плановый объём: ${item.title}`} keyboardType="decimal-pad" value={String(item.targetValue)} onChangeText={v=>setDraft(d=>({...d,items:d.items.map(i=>i.sourceKey===item.sourceKey?{...i,targetValue:Math.max(1,Number(v.replace(',','.'))||1),estimatedMinutes:i.metric==='minutes'?Math.max(1,Number(v)||1):i.estimatedMinutes}:i)}))} style={s.input}/>:null}<Action title="Сделать минимумом" onPress={()=>setDraft(d=>({...d,minimum:{sourceKey:item.sourceKey,label:item.title,targetValue:item.metric==='minutes'?Math.min(10,item.targetValue):1}}))}/></View><Action title="Убрать" label={`Убрать из плана ${item.title}`} onPress={()=>setDraft(d=>({...d,items:d.items.filter(i=>i.sourceKey!==item.sourceKey)}))}/></View>)}
       <Text style={s.label}>Другие действия</Text>{otherItems.map(item=><Action key={item.sourceKey} title={`Добавить: ${item.title}`} onPress={()=>setDraft(d=>({...d,items:[...d.items,item]}))}/>)}{!otherItems.length?<Text style={s.meta}>Других доступных действий сейчас нет. Можно добавить своё дело ниже.</Text>:null}
-      <Text style={s.label}>Своё дело</Text><VoiceTextInput accessibilityLabel="Новое дело для плана" value={newTask} onChangeText={setNewTask} onSubmitEditing={addOwnTask} placeholder="Например, записаться к врачу" placeholderTextColor={faint} style={s.input}/><Action title="Добавить своё дело" disabled={!newTask.trim()} onPress={addOwnTask}/><Text style={s.meta}>Дело сохранится в планнере. В оцениваемый план оно войдёт после подтверждения изменений.</Text>
-      {editor==='revision'?<><Text style={s.label}>Причина пересмотра</Text><VoiceTextInput accessibilityLabel="Причина пересмотра" value={reason} onChangeText={setReason} style={s.input}/></>:null}
+      <Text style={s.label}>Своё дело</Text><VoiceTextInput onDictationBusyChange={dictation.bind("Новое дело для плана")} accessibilityLabel="Новое дело для плана" value={newTask} onChangeText={setNewTask} onSubmitEditing={addOwnTask} placeholder="Например, записаться к врачу" placeholderTextColor={faint} style={s.input}/><Action title="Добавить своё дело" disabled={dictation.busy || !newTask.trim()} onPress={addOwnTask}/><Text style={s.meta}>Дело сохранится в планнере. В оцениваемый план оно войдёт после подтверждения изменений.</Text>
+      {editor==='revision'?<><Text style={s.label}>Причина пересмотра</Text><VoiceTextInput onDictationBusyChange={dictation.bind("Причина пересмотра")} accessibilityLabel="Причина пересмотра" value={reason} onChangeText={setReason} style={s.input}/></>:null}
       {draft.items.reduce((sum,i)=>sum+i.estimatedMinutes,0)>draft.availableMinutes*(1-draft.reserveRatio)?<Text style={s.minimum}>План выходит за доступное время с резервом. Можно убрать действие или уменьшить объём.</Text>:null}
-      {error?<Text accessibilityRole="alert" style={s.meta}>{error}</Text>:null}<Action title={editor==='revision'?'Сохранить пересмотр':'Готово'} onPress={saveDraft} primary/><Action title="Отмена" onPress={()=>{setEditor(null);setError('');}}/>
+      {error?<Text accessibilityRole="alert" style={s.meta}>{error}</Text>:null}<Action title={editor==='revision'?'Сохранить пересмотр':'Готово'} onPress={saveDraft} disabled={dictation.busy} primary/><Action title="Отмена" onPress={()=>{setEditor(null);setError('');}}/>
     </ScrollView></View></View></Modal>
-    <Modal transparent visible={finish} animationType="none" onRequestClose={()=>setFinish(false)}><View style={s.overlay}><View style={s.sheet}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.section}><Text style={s.heading}>Завершим день?</Text><Text style={s.score}>{Math.round(result.totalScore??0)}<Text style={s.meta}> / 100</Text></Text><Text style={s.meta}>Исходный план: {result.completedCount} из {result.totalCount} действий · {result.plannedMinutes} мин запланировано.</Text><Text style={s.meta}>{result.minimumCompleted?'Минимум выполнен':'Минимум пока не выполнен'} · пересмотров: {result.revisionCount}</Text><Text style={s.label}>Что получилось · необязательно</Text><VoiceTextInput accessibilityLabel="Итог дня" multiline value={note} onChangeText={setNote} style={s.input}/><Action title="Завершить день" onPress={finishDay} primary/><Action title="Вернуться" onPress={()=>setFinish(false)}/></ScrollView></View></View></Modal>
+    <Modal transparent visible={finish} animationType="none" onRequestClose={()=>setFinish(false)}><View style={s.overlay}><View style={s.sheet}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.section}><Text style={s.heading}>Завершим день?</Text><Text style={s.score}>{Math.round(result.totalScore??0)}<Text style={s.meta}> / 100</Text></Text><Text style={s.meta}>Исходный план: {result.completedCount} из {result.totalCount} действий · {result.plannedMinutes} мин запланировано.</Text><Text style={s.meta}>{result.minimumCompleted?'Минимум выполнен':'Минимум пока не выполнен'} · пересмотров: {result.revisionCount}</Text><Text style={s.label}>Что получилось · необязательно</Text><VoiceTextInput onDictationBusyChange={dictation.bind("Итог дня")} accessibilityLabel="Итог дня" multiline value={note} onChangeText={setNote} style={s.input}/><Action title="Завершить день" onPress={finishDay} disabled={dictation.busy} primary/><Action title="Вернуться" onPress={()=>setFinish(false)}/></ScrollView></View></View></Modal>
     <Modal transparent visible={!!history} animationType="none" onRequestClose={()=>setHistory(null)}><View style={s.overlay}><View style={s.sheet}><ScrollView contentContainerStyle={s.section}><Text style={s.heading}>{history?.localDate}</Text><Text style={s.body}>{history?.summary}</Text><Text style={s.meta}>Зафиксированный SCORE: {history?.totalScore===null?'без оценки':Math.round(history?.totalScore??0)}</Text>{history?.plan?.versions.map(v=><View key={v.id} style={s.section}><Text style={s.body}>{v.parentVersionId?'Пересмотр':'Исходный план'} · {v.reason}</Text>{v.items.map(i=><Text key={i.sourceKey} style={s.meta}>{i.title} · объём {i.targetValue}</Text>)}</View>)}<Action title="Закрыть историю" onPress={()=>setHistory(null)} /></ScrollView></View></View></Modal>
   </View>;
 }

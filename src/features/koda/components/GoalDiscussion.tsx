@@ -7,11 +7,13 @@ import {requestChat} from '../../../services/kodaApi';
 import {assertDiscussionCapacity,goalDiscussionContext,normalizeGoalDiscussion,validateDiscussionMaterial,type GoalDiscussionData} from '../goalDiscussion';
 import {uid} from '../utils';
 import {accent,activeBg,activeText,line,muted,panel,text} from '../theme';
-import { VoiceTextInput } from './VoiceTextInput';
+import { useDictationBusy, VoiceTextInput } from './VoiceTextInput';
 
-type Props={completionGoal?:Goal;onCompleteAction?:(goalId:string,actionId:string,message:CompletionMessage)=>void;userId?:string|null;goalId?:string;title:string;desiredResult?:string;planningContext?:string;value?:GoalDiscussionData;onChange:(recipe:(data:GoalDiscussionData)=>GoalDiscussionData)=>void;onSuggest:()=>void;hideSuggest?:boolean;disabled?:boolean};
-export function GoalDiscussion({completionGoal,onCompleteAction,userId,goalId,title,desiredResult,planningContext,value,onChange,onSuggest,hideSuggest,disabled}:Props){
+type Props={completionGoal?:Goal;onCompleteAction?:(goalId:string,actionId:string,message:CompletionMessage)=>void;userId?:string|null;goalId?:string;title:string;desiredResult?:string;planningContext?:string;value?:GoalDiscussionData;onChange:(recipe:(data:GoalDiscussionData)=>GoalDiscussionData)=>void;onSuggest:()=>void;hideSuggest?:boolean;disabled?:boolean;onDictationBusyChange?:(busy:boolean)=>void};
+export function GoalDiscussion({completionGoal,onCompleteAction,userId,goalId,title,desiredResult,planningContext,value,onChange,onSuggest,hideSuggest,disabled,onDictationBusyChange}:Props){
  const [expanded,setExpanded]=useState(false),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const dictation=useDictationBusy();
+ useEffect(()=>{onDictationBusyChange?.(dictation.busy);return()=>onDictationBusyChange?.(false);},[dictation.busy,onDictationBusyChange]);
  const data=normalizeGoalDiscussion(value),epoch=useRef(0),inflight=useRef(false);
  const latest=useRef({data,title,desiredResult,planningContext,userId,goalId});latest.current={data,title,desiredResult,planningContext,userId,goalId};
  useEffect(()=>{epoch.current++;inflight.current=false;setBusy(false);setError('');setDraft('');return()=>{epoch.current++;};},[userId,goalId]);
@@ -19,7 +21,7 @@ export function GoalDiscussion({completionGoal,onCompleteAction,userId,goalId,ti
  function remove(id:string){change(current=>normalizeGoalDiscussion({...current,removedIds:[...current.removedIds,id]}));}
  async function send(retry=false){
   const content=retry?data.messages.at(-1)?.content:draft.trim();
-  if(!userId||!content||inflight.current||disabled)return;
+  if(!userId||!content||inflight.current||disabled||dictation.busy)return;
   const owner=userId,requestEpoch=epoch.current,sourceTitle=title,sourceResult=desiredResult,sourcePlanningContext=planningContext,sourceMaterials=JSON.stringify(data.materials);
   const message={id:uid('goal-chat'),role:'user' as const,content:content.slice(0,2000),at:new Date().toISOString()};
   const messages=retry?data.messages:[...data.messages,message];
@@ -55,8 +57,8 @@ export function GoalDiscussion({completionGoal,onCompleteAction,userId,goalId,ti
    {data.messages.slice(-12).map(message=><View key={message.id} style={styles.message}><View style={styles.row}><Text style={styles.label}>{message.role==='user'?'Ты':'KODA'}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Удалить сообщение: ${message.content.slice(0,40)}`} disabled={busy} onPress={()=>remove(message.id)} style={styles.icon}><X size={14} color={muted}/></Pressable></View><Text selectable style={styles.copy}>{message.content}</Text></View>)}
    {completionGoal&&<GoalCompletionPrompt goals={[completionGoal]} message={data.messages.findLast(message=>message.role==='user')} onConfirm={onCompleteAction} disabled={busy||disabled||!userId}/>}
    {!userId&&<Text style={styles.hint}>Войди в аккаунт, чтобы общаться с помощником.</Text>}
-   <VoiceTextInput accessibilityLabel="Сообщение о текущей цели" multiline value={draft} onChangeText={setDraft} editable={!busy&&!disabled&&Boolean(userId)} maxLength={2000} placeholder="Добавь важные детали или задай вопрос о плане" placeholderTextColor={muted} style={styles.input}/>
-   <View style={styles.row}><Pressable accessibilityRole="button" disabled={busy||disabled} onPress={attach} style={styles.action}><Paperclip size={16} color={accent}/><Text style={styles.hint}>Материалы</Text></Pressable><Text style={[styles.hint,{flex:1}]}>TXT, MD, CSV, JSON · до 16 тыс. знаков</Text><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" disabled={busy||disabled||!userId||!draft.trim()} onPress={()=>void send()} style={[styles.send,(!userId||busy||!draft.trim())&&{opacity:0.5}]}>{busy?<ActivityIndicator color={activeText}/>:<Send size={18} color={activeText}/>}</Pressable></View>
+   <VoiceTextInput accessibilityLabel="Сообщение о текущей цели" scopeKey={`${userId ?? ''}:${goalId ?? 'general'}`} onDictationBusyChange={dictation.bind('draft')} multiline value={draft} onChangeText={setDraft} editable={!busy&&!disabled&&Boolean(userId)} maxLength={2000} placeholder="Добавь важные детали или задай вопрос о плане" placeholderTextColor={muted} style={styles.input}/>
+   <View style={styles.row}><Pressable accessibilityRole="button" disabled={busy||disabled} onPress={attach} style={styles.action}><Paperclip size={16} color={accent}/><Text style={styles.hint}>Материалы</Text></Pressable><Text style={[styles.hint,{flex:1}]}>TXT, MD, CSV, JSON · до 16 тыс. знаков</Text><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" disabled={busy||disabled||dictation.busy||!userId||!draft.trim()} onPress={()=>void send()} style={[styles.send,(!userId||busy||dictation.busy||!draft.trim())&&{opacity:0.5}]}>{busy?<ActivityIndicator color={activeText}/>:<Send size={18} color={activeText}/>}</Pressable></View>
    {!!error&&<Text accessibilityRole="alert" style={styles.hint}>{error}</Text>}
    {!!error&&data.messages.at(-1)?.role==='user'&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void send(true)} style={styles.action}><Text style={styles.heading}>Повторить запрос</Text></Pressable>}
    {!!data.messages.length&&<View style={styles.row}>{!hideSuggest&&<Pressable accessibilityRole="button" disabled={busy||disabled} onPress={onSuggest} style={styles.action}><Text style={styles.heading}>Составить план</Text></Pressable>}<Pressable accessibilityRole="button" disabled={busy} onPress={()=>change(current=>normalizeGoalDiscussion({...current,removedIds:[...current.removedIds,...current.messages.map(m=>m.id)]}))} style={styles.action}><Text style={styles.hint}>Очистить беседу</Text></Pressable></View>}

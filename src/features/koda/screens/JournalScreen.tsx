@@ -341,6 +341,7 @@ export function JournalScreen({
           <Text style={styles.cardLabel}>МЫСЛИ ДНЯ</Text>
           <VoiceTextInput
             accessibilityLabel="Мысли дня"
+            scopeKey={entry.id}
             multiline
             onChangeText={(value) => onUpdate({ text: value })}
             placeholder="Запиши свои мысли..."

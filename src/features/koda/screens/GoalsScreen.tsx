@@ -32,7 +32,7 @@ import { GoalWizard, removeGoalWizardDraft } from '../components/GoalWizard';
 import { accent, accentBorder, accentFaint, activeBg, activeText, faint, line, muted, panel, panelSoft, text } from '../theme';
 import { getActiveRoadmapClarifications, updateRoadmapAnswer } from '../goalRoadmapClarifications';
 import { roadmapStageLabel } from '../roadmapLabels';
-import { VoiceTextInput } from '../components/VoiceTextInput';
+import { VoiceTextInput, useDictationBusy } from '../components/VoiceTextInput';
 
 type GoalsChange = (updater: (goals: Goal[]) => Goal[]) => void;
 type AddKind = 'milestone' | 'action' | 'routine';
@@ -274,6 +274,7 @@ function GoalListRow({ goal, onPress }: { goal: Goal; onPress: () => void }) {
 }
 
 function GoalDetails({ goal, initialDetailTab='matrix', userId, isDesktop = false, hasCloudSync = true, onBack, onGoalsChange }: { goal: Goal; initialDetailTab?: 'matrix'|'roadmap'; userId?:string|null; isDesktop?: boolean; hasCloudSync?: boolean; isOnline: boolean; onBack: () => void; onGoalsChange: GoalsChange }) {
+  const dictation=useDictationBusy();
   const [structureOpen,setStructureOpen]=useState(false);
   const [detailTab, setDetailTab] = useState<'roadmap' | 'actions' | 'matrix' | 'context'>(initialDetailTab);
   const [matrixFullGrid, setMatrixFullGrid] = useState(false);
@@ -316,6 +317,7 @@ function GoalDetails({ goal, initialDetailTab='matrix', userId, isDesktop = fals
   }
 
   function addRoadmapStage() {
+    if(dictation.busy)return;
     const title = stageDraft.trim();
     if (!title) return;
     updateGoal((item) => ({ ...item, milestones: [...item.milestones, createMilestone(title, '', '', item.milestones.length)] }));
@@ -324,6 +326,7 @@ function GoalDetails({ goal, initialDetailTab='matrix', userId, isDesktop = fals
   }
 
   function saveRoadmapStageTitle() {
+    if(dictation.busy)return;
     const title = editingStageTitle.trim();
     if (!editingStageId || !title) return;
     updateGoal((item) => ({ ...item, milestones: item.milestones.map((stage) => stage.id === editingStageId ? { ...stage, title } : stage) }));
@@ -408,7 +411,7 @@ function GoalDetails({ goal, initialDetailTab='matrix', userId, isDesktop = fals
                   <View style={local.flexText}><Text style={local.blockTitle}>Этапы пути</Text><Text style={local.goalMeta}>Продвигайся по одному понятному этапу за раз.</Text></View>
                   <View style={local.roadmapActions}>{goal.milestones.length>0&&<Pressable accessibilityRole="button" aria-expanded={manageStages} onPress={()=>setManageStages(value=>!value)} style={local.roadmapOutlineButton}><Text style={local.roadmapOutlineText}>{manageStages?'Готово':'Настроить этапы'}</Text></Pressable>}<Pressable accessibilityRole="button" onPress={() => setStageDraftOpen((value) => !value)} style={local.roadmapButton}><Text style={local.roadmapButtonText}>{stageDraftOpen ? 'Скрыть форму' : 'Добавить этап'}</Text></Pressable><Pressable accessibilityRole="button" onPress={() => setStructureOpen(true)} style={local.roadmapOutlineButton}><Text style={local.roadmapOutlineText}>Собрать с помощником</Text></Pressable></View>
                 </View>
-                {stageDraftOpen ? <View style={local.stageEditor}><VoiceTextInput accessibilityLabel="Название нового этапа" value={stageDraft} onChangeText={setStageDraft} placeholder="Например, подготовить портфолио" placeholderTextColor={faint} style={local.stageInput} onSubmitEditing={addRoadmapStage}/><Pressable accessibilityRole="button" disabled={!stageDraft.trim()} onPress={addRoadmapStage} style={[local.stageSave, !stageDraft.trim() && local.stageDisabled]}><Text style={local.stageSaveText}>Добавить</Text></Pressable></View> : null}
+                {stageDraftOpen ? <View style={local.stageEditor}><VoiceTextInput onDictationBusyChange={dictation.bind(`new-stage-${goal.id}`)} accessibilityLabel="Название нового этапа" value={stageDraft} onChangeText={setStageDraft} placeholder="Например, подготовить портфолио" placeholderTextColor={faint} style={local.stageInput} onSubmitEditing={addRoadmapStage}/><Pressable accessibilityRole="button" disabled={dictation.busy||!stageDraft.trim()} onPress={addRoadmapStage} style={[local.stageSave, !stageDraft.trim() && local.stageDisabled]}><Text style={local.stageSaveText}>Добавить</Text></Pressable></View> : null}
                 {roadmapDirections.length>0&&<BentoCard tone="soft"><View style={local.blockHeadingRow}><View style={local.flexText}><Text style={local.blockTitle}>ОТАНИ · направления цели</Text><Text style={local.goalMeta}>{roadmapDirections.length} направлений · отдельное представление вариантов и действий</Text></View><Pressable accessibilityRole="button" onPress={()=>setDetailTab('matrix')} style={local.roadmapOutlineButton}><Text style={local.roadmapOutlineText}>Открыть ОТАНИ</Text></Pressable></View></BentoCard>}
                 {goal.milestones.length ? <>
                   <GoalRoadmap milestones={goal.milestones} actions={goal.actions} currentMilestoneId={currentMilestone?.id} focusMilestoneId={focusRoadmapStageId} manage={manageStages}
@@ -418,7 +421,7 @@ function GoalDetails({ goal, initialDetailTab='matrix', userId, isDesktop = fals
                     renderManageActions={(milestone,index,ordered)=>{
                       const attachedCount=goal.actions.filter(action=>action.milestoneId===milestone.id).length;
                       return <>
-                        {editingStageId===milestone.id?<View style={local.stageEditor}><VoiceTextInput accessibilityLabel="Название этапа" value={editingStageTitle} onChangeText={setEditingStageTitle} style={local.stageInput} autoFocus/><Pressable accessibilityRole="button" disabled={!editingStageTitle.trim()} onPress={saveRoadmapStageTitle} style={[local.stageSave,!editingStageTitle.trim()&&local.stageDisabled]}><Text style={local.stageSaveText}>Сохранить</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>setEditingStageId(null)} style={local.stageCancel}><Text style={local.stageCancelText}>Отмена</Text></Pressable></View>:null}
+                        {editingStageId===milestone.id?<View style={local.stageEditor}><VoiceTextInput onDictationBusyChange={dictation.bind(`edit-stage-${milestone.id}`)} accessibilityLabel="Название этапа" value={editingStageTitle} onChangeText={setEditingStageTitle} style={local.stageInput} autoFocus/><Pressable accessibilityRole="button" disabled={dictation.busy||!editingStageTitle.trim()} onPress={saveRoadmapStageTitle} style={[local.stageSave,!editingStageTitle.trim()&&local.stageDisabled]}><Text style={local.stageSaveText}>Сохранить</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>setEditingStageId(null)} style={local.stageCancel}><Text style={local.stageCancelText}>Отмена</Text></Pressable></View>:null}
                         <View style={local.stageTools}><Text style={local.stageToolsLabel}>Порядок и статус</Text><View style={local.stageToolButtons}>
                           <Pressable accessibilityRole="button" accessibilityLabel={`Переместить этап ${index+1} вверх`} disabled={index===0} onPress={()=>moveRoadmapStage(milestone.id,-1)} style={[local.stageToolButton,index===0&&local.stageDisabled]}><Text style={local.stageToolText}>↑</Text></Pressable>
                           <Pressable accessibilityRole="button" accessibilityLabel={`Переместить этап ${index+1} вниз`} disabled={index===ordered.length-1} onPress={()=>moveRoadmapStage(milestone.id,1)} style={[local.stageToolButton,index===ordered.length-1&&local.stageDisabled]}><Text style={local.stageToolText}>↓</Text></Pressable>
@@ -538,6 +541,7 @@ function RoutineTodayRow({ goal, routine, onUpdateGoal }: { goal: Goal; routine:
 }
 
 function MilestoneItem({ milestone, actions, onUpdateGoal }: { milestone: GoalMilestone; actions: GoalAction[]; onUpdateGoal: (recipe: (goal: Goal) => Goal) => void }) {
+  const dictation=useDictationBusy();
   const [open, setOpen] = useState(false);
   const [newActionTitle, setNewActionTitle] = useState('');
   const progress = calculateMilestoneProgress(milestone, actions);
@@ -562,6 +566,7 @@ function MilestoneItem({ milestone, actions, onUpdateGoal }: { milestone: GoalMi
   }
 
   function addActionToMilestone() {
+    if(dictation.busy)return;
     const title = newActionTitle.trim();
     if (!title) return;
 
@@ -608,6 +613,7 @@ function MilestoneItem({ milestone, actions, onUpdateGoal }: { milestone: GoalMi
           )}
           <View style={local.inlineInputRow}>
             <VoiceTextInput
+              onDictationBusyChange={dictation.bind(`milestone-action-${milestone.id}`)}
               onChangeText={setNewActionTitle}
               onSubmitEditing={addActionToMilestone}
               placeholder="Добавить действие в этап"
@@ -615,7 +621,7 @@ function MilestoneItem({ milestone, actions, onUpdateGoal }: { milestone: GoalMi
               style={local.inlineInput}
               value={newActionTitle}
             />
-            <Pressable disabled={!newActionTitle.trim()} onPress={addActionToMilestone} style={[local.inlinePlusButton, !newActionTitle.trim() && local.disabledButton]}>
+            <Pressable disabled={dictation.busy||!newActionTitle.trim()} onPress={addActionToMilestone} style={[local.inlinePlusButton, (dictation.busy||!newActionTitle.trim()) && local.disabledButton]}>
               <Plus color={activeText} size={15} strokeWidth={3} />
             </Pressable>
           </View>
@@ -723,6 +729,7 @@ function ActionRow({ action, onToggle }: { action: GoalAction; onToggle: () => v
 }
 
 function CreateGoalFlow({ open, onClose, onSave }: { open: boolean; onClose: () => void; onSave: (draft: GoalDraft) => void }) {
+  const dictation=useDictationBusy();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<GoalDraft>({ title: '', desiredResult: '', deadline: '', priority: 'important' });
   const steps = [
@@ -739,6 +746,7 @@ function CreateGoalFlow({ open, onClose, onSave }: { open: boolean; onClose: () 
   }
 
   function next() {
+    if(dictation.busy)return;
     if (step === 0 && !draft.title.trim()) return;
     if (step < 3) {
       setStep((value) => value + 1);
@@ -763,7 +771,8 @@ function CreateGoalFlow({ open, onClose, onSave }: { open: boolean; onClose: () 
           {step < 3 && current ? (
             <>
               <Text style={local.prompt}>{current.title}</Text>
-              <TextInput
+              <VoiceTextInput
+                onDictationBusyChange={dictation.bind(`create-goal-${current.key}`)}
                 accessibilityLabel={current.title}
                 autoFocus
                 inputMode={current.key === 'deadline' ? 'numeric' : 'text'}
@@ -794,7 +803,7 @@ function CreateGoalFlow({ open, onClose, onSave }: { open: boolean; onClose: () 
                 <Text style={local.secondaryButtonText}>Назад</Text>
               </Pressable>
             ) : null}
-            <Pressable accessibilityRole="button" accessibilityState={{disabled:step===0&&!draft.title.trim()}} disabled={step === 0 && !draft.title.trim()} onPress={next} style={[local.primaryButton, local.formPrimaryButton, step === 0 && !draft.title.trim() && local.disabledButton]}>
+            <Pressable accessibilityRole="button" accessibilityState={{disabled:dictation.busy||step===0&&!draft.title.trim()}} disabled={dictation.busy||step === 0 && !draft.title.trim()} onPress={next} style={[local.primaryButton, local.formPrimaryButton, (dictation.busy||step === 0 && !draft.title.trim()) && local.disabledButton]}>
               <Text style={local.primaryButtonText}>{step < 3 ? 'Дальше' : 'Создать цель'}</Text>
             </Pressable>
           </View>
@@ -805,6 +814,7 @@ function CreateGoalFlow({ open, onClose, onSave }: { open: boolean; onClose: () 
 }
 
 function AddGoalItemSheet({ goal, kind, defaultMilestoneId, onClose, onUpdateGoal }: { goal: Goal; kind: AddKind | null; defaultMilestoneId?: string; onClose: () => void; onUpdateGoal: (recipe: (goal: Goal) => Goal) => void }) {
+  const dictation=useDictationBusy();
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [metricType, setMetricType] = useState<GoalRoutineMetricType>('minutes');
@@ -845,6 +855,7 @@ function AddGoalItemSheet({ goal, kind, defaultMilestoneId, onClose, onUpdateGoa
   }
 
   function save() {
+    if(dictation.busy)return;
     const trimmed = title.trim();
     if (!trimmed || !kind) return;
     onUpdateGoal((item) => {
@@ -880,7 +891,7 @@ function AddGoalItemSheet({ goal, kind, defaultMilestoneId, onClose, onUpdateGoa
             <Text style={local.sheetTitle}>{kind === 'milestone' ? 'Новый этап' : kind === 'routine' ? 'Регулярное действие' : 'Разовое действие'}</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Закрыть добавление элемента" onPress={reset} style={local.iconButton}><X color={text} size={18} /></Pressable>
           </View>
-          <VoiceTextInput autoFocus onChangeText={setTitle} onSubmitEditing={save} placeholder="Название" placeholderTextColor={faint} style={local.input} value={title} />
+          <VoiceTextInput onDictationBusyChange={dictation.bind(`add-goal-item-${goal.id}`)} autoFocus onChangeText={setTitle} onSubmitEditing={save} placeholder="Название" placeholderTextColor={faint} style={local.input} value={title} />
           <TextInput onChangeText={setDate} placeholder={kind === 'routine' ? 'Дата старта: 2026-07-30' : 'Срок: 2026-07-30'} placeholderTextColor={faint} style={local.input} value={date} />
           {kind === 'action' && milestoneOptions.length ? (
             <View style={[local.segmentRow,{flexWrap:'wrap'}]}>
@@ -913,7 +924,7 @@ function AddGoalItemSheet({ goal, kind, defaultMilestoneId, onClose, onUpdateGoa
               {frequencyType === 'selected_weekdays' ? <WeekdayPicker selected={weekdays} onToggle={toggleWeekday} /> : null}
             </>
           ) : null}
-          <Pressable disabled={!title.trim()} onPress={save} style={[local.primaryButton, !title.trim() && local.disabledButton]}>
+          <Pressable disabled={dictation.busy||!title.trim()} onPress={save} style={[local.primaryButton, (dictation.busy||!title.trim()) && local.disabledButton]}>
             <Text style={local.primaryButtonText}>Добавить</Text>
           </Pressable>
         </View>
@@ -935,6 +946,7 @@ function EditRoutineSheet({
   routine: GoalRoutine;
   visible: boolean;
 }) {
+  const dictation=useDictationBusy();
   const [title, setTitle] = useState(routine.title);
   const [metricType, setMetricType] = useState<GoalRoutineMetricType>(routine.metricType);
   const [frequencyType, setFrequencyType] = useState<GoalRoutineFrequencyType>(routine.frequencyType);
@@ -960,6 +972,7 @@ function EditRoutineSheet({
   }
 
   function save() {
+    if(dictation.busy)return;
     const trimmed = title.trim();
     const parsedTarget = Number(targetValue);
     if (!trimmed || !Number.isFinite(parsedTarget) || parsedTarget <= 0) return;
@@ -982,7 +995,7 @@ function EditRoutineSheet({
             <Text style={local.sheetTitle}>Редактировать</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Закрыть редактирование" onPress={onClose} style={local.iconButton}><X color={text} size={18} /></Pressable>
           </View>
-          <VoiceTextInput autoFocus onChangeText={setTitle} onSubmitEditing={save} placeholder="Название" placeholderTextColor={faint} style={local.input} value={title} />
+          <VoiceTextInput onDictationBusyChange={dictation.bind(`edit-routine-${routine.id}`)} autoFocus onChangeText={setTitle} onSubmitEditing={save} placeholder="Название" placeholderTextColor={faint} style={local.input} value={title} />
           <View style={local.segmentRow}>
             {(['boolean', 'minutes', 'count'] as GoalRoutineMetricType[]).map((type) => (
               <Pressable key={type} onPress={() => setMetricType(type)} style={[local.segment, metricType === type && local.segmentActive]}>
@@ -1003,7 +1016,7 @@ function EditRoutineSheet({
           <View style={local.confirmActions}>
             <Pressable onPress={onDelete} style={[local.secondaryButton, local.deleteOutlineButton]}><Text style={local.deleteOutlineText}>Удалить</Text></Pressable>
             <Pressable onPress={onClose} style={local.secondaryButton}><Text style={local.secondaryButtonText}>Отмена</Text></Pressable>
-            <Pressable disabled={!title.trim() || !(Number(targetValue) > 0)} onPress={save} style={[local.primaryButton, (!title.trim() || !(Number(targetValue) > 0)) && local.disabledButton]}>
+            <Pressable disabled={dictation.busy||!title.trim() || !(Number(targetValue) > 0)} onPress={save} style={[local.primaryButton, (dictation.busy||!title.trim() || !(Number(targetValue) > 0)) && local.disabledButton]}>
               <Text style={local.primaryButtonText}>Сохранить</Text>
             </Pressable>
           </View>

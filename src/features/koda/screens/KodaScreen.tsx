@@ -9,7 +9,7 @@ import { SectionTitle } from '../components';
 import { BentoPage, bentoWidths } from '../components/Bento';
 import { accent, faint, ink, line, muted, panel, panelSoft, text as textColor } from '../theme';
 import { styles } from '../styles';
-import { VoiceTextInput } from '../components/VoiceTextInput';
+import { VoiceTextInput, useDictationBusy } from '../components/VoiceTextInput';
 
 type KodaProvider = 'gemini' | 'openrouter' | 'yandex' | 'openai' | null;
 
@@ -66,6 +66,7 @@ export function KodaScreen({
   composerValue,
   onComposerChange,
 }: KodaScreenProps) {
+  const dictation = useDictationBusy();
   const [localValue, setLocalValue] = useState('');
   const value = composerValue ?? localValue;
   function setValue(next: string | ((current: string) => string)) {
@@ -97,7 +98,7 @@ export function KodaScreen({
 
   function submit() {
     const message = value.trim();
-    if (!message || inputDisabled || isSending || requestStarted.current) return;
+    if (dictation.busy || !message || inputDisabled || isSending || requestStarted.current) return;
 
     requestStarted.current = true;
     if (onSend(message) === false) {
@@ -170,7 +171,7 @@ export function KodaScreen({
       {!!syncError && <View style={{paddingHorizontal:24,paddingVertical:8}}><Text accessibilityLiveRegion="polite" style={{color:muted,fontSize:12}}>{syncError}</Text>{onSyncRetry&&<Pressable accessibilityRole="button" accessibilityLabel="Повторить синхронизацию истории" onPress={onSyncRetry} style={{minHeight:36,justifyContent:'center'}}><Text style={{color:accent,fontSize:12}}>Повторить синхронизацию</Text></Pressable>}</View>}
       {!!historyStatus && <Text accessibilityLiveRegion="polite" style={{color:muted,fontSize:12,paddingHorizontal:showWelcome?0:24,paddingBottom:8}}>{historyStatus}</Text>}
       <View style={[styles.chatInputRow,showWelcome&&{marginHorizontal:0,marginBottom:0}]}>
-        <VoiceTextInput
+        <VoiceTextInput scopeKey={userId ?? 'anonymous'} onDictationBusyChange={dictation.bind('message')}
           ref={composer}
           accessibilityLabel="Сообщение помощнику"
           editable={!inputDisabled}
@@ -186,10 +187,10 @@ export function KodaScreen({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={isSending ? 'Ответ помощника готовится' : 'Отправить сообщение помощнику'}
-          accessibilityState={{ disabled: inputDisabled || isSending || !value.trim() }}
-          disabled={inputDisabled || isSending || !value.trim()}
+          accessibilityState={{ disabled: dictation.busy || inputDisabled || isSending || !value.trim() }}
+          disabled={dictation.busy || inputDisabled || isSending || !value.trim()}
           onPress={submit}
-          style={[styles.sendButton, { minHeight: 44, minWidth: 44, opacity: inputDisabled || isSending || !value.trim() ? 0.55 : 1 }]}
+          style={[styles.sendButton, { minHeight: 44, minWidth: 44, opacity: dictation.busy || inputDisabled || isSending || !value.trim() ? 0.55 : 1 }]}
         >
           <Send color={accent} size={17} />
         </Pressable>

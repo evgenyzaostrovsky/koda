@@ -8,7 +8,7 @@ import { BentoCard, BentoGrid } from '../components/Bento';
 import { accent, accentBorder, activeBg, activeText, faint, line, muted, panel, panelSoft, readingWidths, text } from '../theme';
 import type { Project, ProjectTask } from '../types';
 import { uid } from '../utils';
-import { VoiceTextInput } from '../components/VoiceTextInput';
+import { useDictationBusy, VoiceTextInput } from '../components/VoiceTextInput';
 
 type ProjectsChange = (updater: (projects: Project[]) => Project[]) => void;
 
@@ -56,8 +56,11 @@ export function ProjectsScreen({
   const selectedProject = sortedProjects.find((project) => project.id === selectedProjectId) ?? sortedProjects[0] ?? null;
   const [projectDraft, setProjectDraft] = useState<ProjectDraft>(emptyProjectDraft);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [projectModalSession, setProjectModalSession] = useState(0);
   const [taskDraft, setTaskDraft] = useState<TaskDraft>(emptyTaskDraft);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [taskModalSession, setTaskModalSession] = useState(0);
+  const dictation = useDictationBusy();
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null);
   const visibleSelectedTasks = useMemo(
@@ -77,8 +80,11 @@ export function ProjectsScreen({
 
   function openProjectModal() {
     setProjectDraft(emptyProjectDraft);
+    setProjectModalSession(session => session + 1);
     setProjectModalOpen(true);
   }
+  function closeProjectModal() { setProjectModalSession(session => session + 1); setProjectModalOpen(false); }
+  function closeTaskModal() { setTaskModalSession(session => session + 1); setTaskModalOpen(false); }
 
   function addProject() {
     const title = projectDraft.title.trim();
@@ -99,13 +105,14 @@ export function ProjectsScreen({
     onProjectsChange((items) => [nextProject, ...items]);
     setSelectedProjectId(nextProject.id);
     setDetailOpen(true);
-    setProjectModalOpen(false);
+    closeProjectModal();
     setProjectDraft(emptyProjectDraft);
   }
 
   function openTaskModal(task?: ProjectTask) {
     if (!selectedProject) return;
     setEditingTask(task ?? null);
+    setTaskModalSession(session => session + 1);
     setTaskDraft(task ? { title: task.title, description: task.description, cost: task.cost, plannedDate: task.plannedDate, plannedTime: task.plannedTime } : emptyTaskDraft);
     setTaskModalOpen(true);
   }
@@ -140,7 +147,7 @@ export function ProjectsScreen({
         return { ...project, tasks, updatedAt: now };
       }),
     );
-    setTaskModalOpen(false);
+    closeTaskModal();
     setEditingTask(null);
     setTaskDraft(emptyTaskDraft);
   }
@@ -389,17 +396,23 @@ export function ProjectsScreen({
 
       <ProjectModal
         draft={projectDraft}
+        scopeKey={`project:${projectModalSession}`}
         onChange={setProjectDraft}
-        onClose={() => setProjectModalOpen(false)}
-        onSave={addProject}
+        onClose={closeProjectModal}
+        onSave={() => { if (!dictation.busy) addProject(); }}
+        savingBlocked={dictation.busy}
+        onDictationBusyChange={dictation.bind}
         visible={projectModalOpen}
       />
       <TaskModal
         draft={taskDraft}
         editing={Boolean(editingTask)}
+        scopeKey={`${selectedProject?.id ?? ''}:${editingTask?.id ?? 'new'}:${taskModalSession}`}
         onChange={setTaskDraft}
-        onClose={() => setTaskModalOpen(false)}
-        onSave={saveTask}
+        onClose={closeTaskModal}
+        onSave={() => { if (!dictation.busy) saveTask(); }}
+        savingBlocked={dictation.busy}
+        onDictationBusyChange={dictation.bind}
         visible={taskModalOpen}
       />
       <ConfirmModal
@@ -463,8 +476,11 @@ function ActiveProjectsOverview({ projects, totalCount, onCreate, onOpen }: { pr
   </View>;
 }
 
-function ProjectModal({ draft, onChange, onClose, onSave, visible }: {
+function ProjectModal({ draft, onChange, onClose, onSave, visible, scopeKey, onDictationBusyChange, savingBlocked }: {
   draft: ProjectDraft;
+  scopeKey: string;
+  onDictationBusyChange: (key: string) => (active: boolean) => void;
+  savingBlocked: boolean;
   onChange: (draft: ProjectDraft) => void;
   onClose: () => void;
   onSave: () => void;
@@ -477,6 +493,8 @@ function ProjectModal({ draft, onChange, onClose, onSave, visible }: {
           <ModalHeader onClose={onClose} title="Новый проект" />
           <VoiceTextInput
             accessibilityLabel="Название проекта"
+            scopeKey={scopeKey}
+            onDictationBusyChange={onDictationBusyChange('project-title')}
             onChangeText={(title) => onChange({ ...draft, title })}
             placeholder="Например, мой авто"
             placeholderTextColor={faint}
@@ -485,6 +503,8 @@ function ProjectModal({ draft, onChange, onClose, onSave, visible }: {
           />
           <VoiceTextInput
             accessibilityLabel="Описание проекта"
+            scopeKey={scopeKey}
+            onDictationBusyChange={onDictationBusyChange('project-description')}
             multiline
             onChangeText={(description) => onChange({ ...draft, description })}
             placeholder="Короткое описание"
@@ -492,7 +512,7 @@ function ProjectModal({ draft, onChange, onClose, onSave, visible }: {
             style={[local.input, local.textArea]}
             value={draft.description}
           />
-          <Pressable accessibilityRole="button" accessibilityLabel="Создать проект" disabled={!draft.title.trim()} onPress={onSave} style={[local.primaryButton, !draft.title.trim() && local.disabled]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Создать проект" accessibilityState={{ disabled: savingBlocked || !draft.title.trim() }} disabled={savingBlocked || !draft.title.trim()} onPress={onSave} style={[local.primaryButton, (savingBlocked || !draft.title.trim()) && local.disabled]}>
             <Text style={local.primaryText}>Создать</Text>
           </Pressable>
         </View>
@@ -501,9 +521,12 @@ function ProjectModal({ draft, onChange, onClose, onSave, visible }: {
   );
 }
 
-function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
+function TaskModal({ draft, editing, onChange, onClose, onSave, visible, scopeKey, onDictationBusyChange, savingBlocked }: {
   draft: TaskDraft;
   editing: boolean;
+  scopeKey: string;
+  onDictationBusyChange: (key: string) => (active: boolean) => void;
+  savingBlocked: boolean;
   onChange: (draft: TaskDraft) => void;
   onClose: () => void;
   onSave: () => void;
@@ -519,6 +542,8 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
           <ModalHeader onClose={onClose} title={editing ? 'Редактировать задачу' : 'Новая задача'} />
           <VoiceTextInput
             accessibilityLabel="Название задачи"
+            scopeKey={scopeKey}
+            onDictationBusyChange={onDictationBusyChange('task-title')}
             onChangeText={(title) => onChange({ ...draft, title })}
             placeholder="Что нужно сделать?"
             placeholderTextColor={faint}
@@ -529,6 +554,8 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
           {(!compact || detailsOpen) && <>
           <VoiceTextInput
             accessibilityLabel="Описание задачи"
+            scopeKey={scopeKey}
+            onDictationBusyChange={onDictationBusyChange('task-description')}
             multiline
             onChangeText={(description) => onChange({ ...draft, description })}
             placeholder="Описание, детали, контакты"
@@ -563,7 +590,7 @@ function TaskModal({ draft, editing, onChange, onClose, onSave, visible }: {
             />
           </View>
           </>}
-          <Pressable accessibilityRole="button" accessibilityLabel={editing ? 'Сохранить задачу' : 'Добавить задачу'} disabled={!draft.title.trim()} onPress={onSave} style={[local.primaryButton, !draft.title.trim() && local.disabled]}>
+          <Pressable accessibilityRole="button" accessibilityLabel={editing ? 'Сохранить задачу' : 'Добавить задачу'} accessibilityState={{ disabled: savingBlocked || !draft.title.trim() }} disabled={savingBlocked || !draft.title.trim()} onPress={onSave} style={[local.primaryButton, (savingBlocked || !draft.title.trim()) && local.disabled]}>
             <Text style={local.primaryText}>{editing ? 'Сохранить' : 'Добавить'}</Text>
           </Pressable>
         </ScrollView></View>

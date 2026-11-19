@@ -241,6 +241,7 @@ export function NotesScreen({
         <View style={local.document}>
           <VoiceTextInput
             accessibilityLabel="Название заметки"
+            scopeKey={selectedNote.id}
             autoFocus={isDesktop && desktopEditorOpen}
             multiline
             onChangeText={updateTitle}
@@ -259,6 +260,7 @@ export function NotesScreen({
               <NoteBlockEditor
                 block={block}
                 index={index}
+                noteId={selectedNote.id}
                 key={block.id}
                 onAddChild={() => addBlock(undefined, 'paragraph', block.id)}
                 onAddNext={() => addBlock(block.id)}
@@ -435,6 +437,7 @@ function NoteGroup({ compact, notes, onOpen, selectedNoteId, title }: { compact:
 function NoteBlockEditor({
   block,
   index,
+  noteId,
   onAddChild,
   onAddNext,
   onApplyInlineMark,
@@ -444,6 +447,7 @@ function NoteBlockEditor({
 }: {
   block: NoteBlock;
   index: number;
+  noteId: string;
   onAddChild: () => void;
   onAddNext: () => void;
   onApplyInlineMark: (block: NoteBlock, mark: InlineMark, selection?: TextSelection) => void;
@@ -497,6 +501,7 @@ function NoteBlockEditor({
         )}
         <VoiceTextInput
           accessibilityLabel={block.type === 'heading1' ? 'Заголовок первого уровня' : block.type === 'heading2' ? 'Заголовок второго уровня' : block.type === 'heading3' ? 'Заголовок третьего уровня' : `Текст блока: ${block.type}`}
+          scopeKey={`${noteId}:${block.id}`}
           multiline
           onChangeText={(value) => onChange(block.id, { text: value })}
           onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
@@ -527,6 +532,7 @@ function NoteBlockEditor({
             <ChildNoteBlockEditor
               block={child}
               index={childIndex}
+              noteId={noteId}
               key={child.id}
               onAddNext={onAddChild}
               onApplyInlineMark={onApplyInlineMark}
@@ -548,6 +554,7 @@ function NoteBlockEditor({
 function ChildNoteBlockEditor({
   block,
   index,
+  noteId,
   onAddNext,
   onApplyInlineMark,
   onChange,
@@ -556,6 +563,7 @@ function ChildNoteBlockEditor({
 }: {
   block: NoteBlock;
   index: number;
+  noteId: string;
   onAddNext: () => void;
   onApplyInlineMark: (block: NoteBlock, mark: InlineMark, selection?: TextSelection) => void;
   onChange: (blockId: string, patch: Partial<NoteBlock>) => void;
@@ -599,6 +607,7 @@ function ChildNoteBlockEditor({
         )}
         <VoiceTextInput
           accessibilityLabel={`Текст блока: ${block.type}`}
+          scopeKey={`${noteId}:${block.id}`}
           multiline
           onChangeText={(value) => onChange(block.id, { text: value })}
           onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}

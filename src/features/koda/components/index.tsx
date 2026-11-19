@@ -6,7 +6,7 @@ import { Menu, Plus, X } from 'lucide-react-native';
 import type { TabKey } from '../types';
 import { accent, accentSoft, faint, muted, panel } from '../theme';
 import { styles } from '../styles';
-import { VoiceTextInput } from './VoiceTextInput';
+import { VoiceTextInput, useDictationBusy } from './VoiceTextInput';
 
 type BottomNavTab = { key: TabKey; label: string; icon: (active: boolean) => ReactNode };
 
@@ -58,16 +58,18 @@ export function BottomNav({
 export function SectionTitle({title,subtitle}:{title:string;subtitle?:string}) { return <SectionHeader title={title} subtitle={subtitle}/>; }
 
 export function InlineAdd({ placeholder, buttonLabel, onSubmit }: { placeholder: string; buttonLabel: string; onSubmit: (value: string) => void }) {
+  const dictation = useDictationBusy();
   const [value, setValue] = useState('');
 
   function submit() {
+    if (dictation.busy) return;
     onSubmit(value);
     setValue('');
   }
 
   return (
     <View style={styles.addBox}>
-      <VoiceTextInput
+      <VoiceTextInput onDictationBusyChange={dictation.bind('value')}
         accessibilityLabel={placeholder}
         onChangeText={setValue}
         onSubmitEditing={submit}
@@ -77,7 +79,7 @@ export function InlineAdd({ placeholder, buttonLabel, onSubmit }: { placeholder:
         testID={`input-${buttonLabel}`}
         value={value}
       />
-      <Pressable accessibilityRole="button" accessibilityLabel={buttonLabel} onPress={submit} style={styles.addButton} testID={`add-${buttonLabel}`}>
+      <Pressable accessibilityRole="button" accessibilityLabel={buttonLabel} disabled={dictation.busy} onPress={submit} style={styles.addButton} testID={`add-${buttonLabel}`}>
         <Plus color={accent} size={15} />
         <Text style={styles.addButtonText}>{buttonLabel}</Text>
       </Pressable>

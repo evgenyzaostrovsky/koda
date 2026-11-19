@@ -1,4 +1,4 @@
-import { VoiceTextInput } from '../components/VoiceTextInput';
+import { VoiceTextInput, useDictationBusy } from '../components/VoiceTextInput';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { parseQuickTaskInput } from '../quickTaskInput';
@@ -43,6 +43,7 @@ type Props = {
 };
 
 export function PlannerScreen({ initialFocus, isDesktop = false, items, projectItems = [], goals = [], ownerId, onAddItem, onDeleteItem, onDeleteItems, onMoveProjectedItemDate, onToggleProjectedItem, onToggleItem, onSetItemFailed, onToggleSubtask, onUpdateItem, onOpenSection, onOpenWorkspace, syncText, autoPlanControl, voiceControl }: Props) {
+  const dictation = useDictationBusy();
   const [selectedDate, setSelectedDate] = useState(normalizeDateKey(initialFocus?.date ?? '') ?? todayDateKey());
   const [mode, setMode] = useState<CalendarMode>(initialFocus ? 'day' : isDesktop ? 'week' : 'day');
   useEffect(() => {
@@ -85,7 +86,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
   }
 
   function saveEditor(syncSubtaskStatus = true) {
-    if (!editor || !valid) return false;
+    if (dictation.busy || !editor || !valid) return false;
     const item = editor.item;
     if (item && isProjectedPlannerItem(item)) {
       if (item.date !== date) onMoveProjectedItemDate?.(item, date);
@@ -114,6 +115,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
   }
 
   function addSubtask() {
+    if (dictation.busy) return;
     if (!subtaskDraft.trim()) return;
     setSubtasks(previous => [...previous, { id: uid('subtask'), title: subtaskDraft.trim(), done: false }]);
     setSubtaskDraft('');
@@ -152,7 +154,7 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
               </View>
               {editor && voiceOpen && voiceControl ? voiceControl(() => setVoiceOpen(false)) : <>
               <View style={{position:'relative'}}>
-                <TitleInput autoFocus={!projected} editable={!projected} accessibilityLabel="Название задачи" placeholder="Что нужно сделать?" placeholderTextColor={faint} value={title} onChangeText={setTitle} onSubmitEditing={() => saveEditor()} style={[styles.modalInput, { fontSize: 16, paddingRight: 48 }]} />
+                <TitleInput {...(editor?.item ? {scopeKey: editor.item.id, onDictationBusyChange: dictation.bind("title")} : {})} autoFocus={!projected} editable={!projected} accessibilityLabel="Название задачи" placeholder="Что нужно сделать?" placeholderTextColor={faint} value={title} onChangeText={setTitle} onSubmitEditing={() => saveEditor()} style={[styles.modalInput, { fontSize: 16, paddingRight: 48 }]} />
                 {!editor?.item && voiceControl ? <Pressable accessibilityRole="button" accessibilityLabel="Продиктовать задачи" onPress={()=>setVoiceOpen(true)} style={{position:'absolute',right:4,top:2,width:44,height:44,alignItems:'center',justifyContent:'center'}}><Mic size={20} color={accent}/></Pressable> : null}
               </View>
               {editor?.item?.sourceType === 'goal' && <View style={{ gap: 6 }}>
@@ -179,14 +181,14 @@ export function PlannerScreen({ initialFocus, isDesktop = false, items, projectI
                   <Pressable accessibilityRole="button" accessibilityLabel={`Удалить подзадачу ${subtask.title}`} onPress={() => setSubtasks(previous => previous.filter(entry => entry.id !== subtask.id))} style={[styles.iconButton, !isDesktop && { width: 44, height: 44 }]}><X color={muted} size={16} /></Pressable>
                 </View>)}
                 <View style={styles.plannerTaskInputRow}>
-                  <VoiceTextInput accessibilityLabel="Новая подзадача" placeholder="Добавить подзадачу" placeholderTextColor={faint} value={subtaskDraft} onChangeText={setSubtaskDraft} onSubmitEditing={addSubtask} style={styles.plannerTaskInput} />
-                  <Pressable accessibilityRole="button" accessibilityLabel="Добавить подзадачу" disabled={!subtaskDraft.trim()} onPress={addSubtask} style={[styles.iconButton, !isDesktop && { width: 44, height: 44 }]}><Plus color={subtaskDraft.trim() ? accent : faint} size={18} /></Pressable>
+                  <VoiceTextInput scopeKey={editor?.item?.id ?? "new"} onDictationBusyChange={dictation.bind("subtask")} accessibilityLabel="Новая подзадача" placeholder="Добавить подзадачу" placeholderTextColor={faint} value={subtaskDraft} onChangeText={setSubtaskDraft} onSubmitEditing={addSubtask} style={styles.plannerTaskInput} />
+                  <Pressable accessibilityRole="button" accessibilityLabel="Добавить подзадачу" disabled={dictation.busy || !subtaskDraft.trim()} onPress={addSubtask} style={[styles.iconButton, !isDesktop && { width: 44, height: 44 }]}><Plus color={subtaskDraft.trim() ? accent : faint} size={18} /></Pressable>
                 </View>
                 </>}
               </> : goalProjected ? <View style={{ gap: 4, padding: 12, borderRadius: 12, backgroundColor: 'var(--koda-surface-2, #f8f9f6)' }}><Text style={{ color: accent, fontSize: 12, fontWeight: '700' }}>{routineProjected ? 'Ритуал цели' : 'Шаг цели'}</Text><Text style={styles.cardText}>{routineProjected ? 'Повторения следуют расписанию цели. Отметка выполнения относится к выбранной дате.' : 'Изменения сохраняются в исходной цели.'}</Text></View> : <Pressable accessibilityRole="button" onPress={() => { setEditor(null); onOpenSection?.('projects'); }}><Text style={{ color: accent }}>Открыть проект</Text></Pressable>}
-              <Pressable accessibilityRole="button" disabled={!valid} onPress={() => saveEditor()} style={[styles.notificationButton, !valid && styles.notificationButtonDisabled]}><Text style={styles.notificationButtonText}>{editor?.item ? 'Сохранить' : 'Добавить'}</Text></Pressable>
+              <Pressable accessibilityRole="button" disabled={dictation.busy || !valid} onPress={() => saveEditor()} style={[styles.notificationButton, (dictation.busy || !valid) && styles.notificationButtonDisabled]}><Text style={styles.notificationButtonText}>{editor?.item ? 'Сохранить' : 'Добавить'}</Text></Pressable>
               {editor?.item ? <View style={{ borderTopWidth: 1, borderColor: line, paddingTop: 8, gap: 4 }}>
-                <Pressable accessibilityRole="button" disabled={!valid} onPress={toggleCompletion} style={styles.taskContextAction}><Check color={accent} size={18} /><Text style={styles.plannerTitle}>{editor.item.done ? 'Вернуть в работу' : 'Отметить выполненной'}</Text></Pressable>
+                <Pressable accessibilityRole="button" disabled={dictation.busy || !valid} onPress={toggleCompletion} style={styles.taskContextAction}><Check color={accent} size={18} /><Text style={styles.plannerTitle}>{editor.item.done ? 'Вернуть в работу' : 'Отметить выполненной'}</Text></Pressable>
                 {!projected ? <>
                   <Pressable accessibilityRole="button" onPress={() => { const item = editor.item!; if (saveEditor()) onSetItemFailed(item.id, !item.failed); }} style={styles.taskContextAction}><X color={muted} size={18} /><Text style={styles.plannerTitle}>{editor.item.failed ? 'Снять отметку невыполнения' : 'Отметить невыполненной'}</Text></Pressable>
                   <Pressable accessibilityRole="button" onPress={() => { setDeleteCandidate(editor.item); setEditor(null); }} style={styles.taskContextAction}><Trash2 color="#b64242" size={17} /><Text style={{ color: '#b64242' }}>Удалить задачу</Text></Pressable>

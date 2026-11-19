@@ -7,7 +7,7 @@ import { todayDateKey } from '../utils';
 import { activeBg, activeText, accent, accentFaint, accentSoft, faint, line, muted, panel, panelSoft, text } from '../theme';
 import { HabitIcon, habitIconChoices, habitIconGroups } from '../components/HabitIcon';
 import { BentoCard, EmptyStateCard } from '../components/Bento';
-import { VoiceTextInput } from '../components/VoiceTextInput';
+import { useDictationBusy, VoiceTextInput } from '../components/VoiceTextInput';
 
 type HabitIconName = typeof habitIconChoices[number]['name'];
 type HabitWithArchive = Habit & { archivedAt?: string | null; color?: string };
@@ -38,6 +38,8 @@ export function HabitsScreen({ habits, onHabitsChange, onToggleToday, onOpenWork
 }) {
   const [today, setToday] = useState(todayDateKey);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editorSession, setEditorSession] = useState(0);
+  const dictation = useDictationBusy();
   const [view, setView] = useState<'current' | 'archived'>('current');
   const [scope, setScope] = useState<'today' | 'all'>('today');
   const [historyOpen, setHistoryOpen] = useState<Record<string, boolean>>({});
@@ -84,6 +86,7 @@ export function HabitsScreen({ habits, onHabitsChange, onToggleToday, onOpenWork
   const formattedToday = new Date(`${today}T12:00:00`).toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
 
   function startEdit(habit: Habit) {
+    setEditorSession(session => session + 1);
     setEditingId(habit.id);
     setName(habit.title);
     setIcon((habitIconChoices.some(choice => choice.name === habit.icon) ? habit.icon : HABIT_ICONS.find(choice => choice.emoji === habit.icon)?.key ?? null) as HabitIconName | null);
@@ -94,8 +97,9 @@ export function HabitsScreen({ habits, onHabitsChange, onToggleToday, onOpenWork
     setIconSearch('');
     setIconPaletteOpen(false);
   }
-  function clearEditor() { setEditingId(null); setName(''); setColor(''); setIconSearch(''); setIconPaletteOpen(false); setIconChanged(false); }
+  function clearEditor() { setEditorSession(session => session + 1); setEditingId(null); setName(''); setColor(''); setIconSearch(''); setIconPaletteOpen(false); setIconChanged(false); }
   function saveHabit() {
+    if (dictation.busy) return;
     const title = name.trim();
     if (!title) return;
     if (editingId && editingId !== 'new') {
@@ -133,7 +137,7 @@ export function HabitsScreen({ habits, onHabitsChange, onToggleToday, onOpenWork
         {historyOpen[habit.id]?<View style={s.historyGrid} accessibilityLabel={`История отметок ${habit.title}, 30 дней`}>{historyDates.map(date=>{const isDue=habitIsDue({...habit,archivedAt:null,isActive:true},date),isDone=habitDoneOn(habit,date);return <View key={date} style={[s.historyDay,isDone&&s.historyDone,!isDue&&s.historyUnscheduled]}><Text style={[s.historyDayText,isDone&&s.historyDayTextDone]}>{Number(date.slice(-2))}</Text></View>})}</View>:null}</BentoCard>})}</View>}
     {editingId ? <View onLayout={(event)=>{editorY.current=event.nativeEvent.layout.y;}}><BentoCard tone="light" style={s.editor}>
       <View style={s.editorHeading}><Text style={s.sectionTitle}>{editingId === 'new' ? 'Новая привычка' : 'Настроить привычку'}</Text><Pressable accessibilityRole="button" onPress={clearEditor} style={s.cancel}><Text style={s.cancelText}>Закрыть</Text></Pressable></View>
-      <Text style={s.label}>Название</Text><VoiceTextInput ref={nameInputRef} accessibilityLabel="Название привычки" value={name} onChangeText={setName} placeholder="Например, читать 5 минут" placeholderTextColor={faint} maxLength={80} style={s.input}/>
+      <Text style={s.label}>Название</Text><VoiceTextInput ref={nameInputRef} accessibilityLabel="Название привычки" scopeKey={`${editingId}:${editorSession}`} onDictationBusyChange={dictation.bind('name')} value={name} onChangeText={setName} placeholder="Например, читать 5 минут" placeholderTextColor={faint} maxLength={80} style={s.input}/>
       <Text style={s.label}>Значок</Text>
       <View style={s.iconPicker}>
         <View style={s.selectedIconRow}>
@@ -156,7 +160,7 @@ export function HabitsScreen({ habits, onHabitsChange, onToggleToday, onOpenWork
       <Text style={s.label}>Цвет значка · можно пропустить</Text><View style={s.colorChoices}><Pressable accessibilityRole="button" accessibilityLabel="Цвет по умолчанию" accessibilityState={{selected:!color}} aria-pressed={!color} onPress={()=>setColor('')} style={[s.colorChoice,!color&&s.colorChoiceActive]}><View style={[s.colorDot,{backgroundColor:accent}]}/><Text style={s.choiceLabel}>По умолчанию</Text></Pressable>{habitColors.map(option=><Pressable key={option.value} accessibilityRole="button" accessibilityLabel={`Цвет: ${option.label}`} accessibilityState={{selected:color===option.value}} aria-pressed={color===option.value} onPress={()=>setColor(option.value)} style={[s.colorChoice,color===option.value&&s.colorChoiceActive]}><View style={[s.colorDot,{backgroundColor:option.value}]}/><Text style={s.choiceLabel}>{option.label}</Text></Pressable>)}</View>
       <Text style={s.label}>Частота</Text><View style={s.frequencyChoices}><Pressable accessibilityRole="button" accessibilityState={{ selected: frequency === 'daily' }} aria-pressed={frequency === 'daily'} onPress={() => setFrequency('daily')} style={[s.frequencyChoice, frequency === 'daily' && s.frequencyActive]}><Text style={[s.frequencyText, frequency === 'daily' && s.frequencyTextActive]}>Каждый день</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ selected: frequency === 'weekdays' }} aria-pressed={frequency === 'weekdays'} onPress={() => setFrequency('weekdays')} style={[s.frequencyChoice, frequency === 'weekdays' && s.frequencyActive]}><Text style={[s.frequencyText, frequency === 'weekdays' && s.frequencyTextActive]}>Выбрать дни</Text></Pressable></View>
       {frequency === 'weekdays' ? <View style={s.dayChoices}>{week.map(({label, day}) => <Pressable key={label} accessibilityRole="button" accessibilityState={{ checked: weekdays.includes(day) }} aria-pressed={weekdays.includes(day)} onPress={() => toggleWeekday(day)} style={[s.dayChoice, weekdays.includes(day) && s.dayChoiceActive]}><Text style={[s.dayChoiceText, weekdays.includes(day) && s.dayChoiceTextActive]}>{label}</Text></Pressable>)}</View> : null}
-      <View style={s.editorActions}><Pressable accessibilityRole="button" onPress={clearEditor} style={s.cancelButton}><Text style={s.cancelText}>Отмена</Text></Pressable><Pressable accessibilityRole="button" disabled={!name.trim() || (frequency === 'weekdays' && !weekdays.length)} onPress={saveHabit} style={[s.saveButton, (!name.trim() || (frequency === 'weekdays' && !weekdays.length)) && s.disabled]}><Check color={activeText} size={16}/><Text style={s.saveText}>Сохранить</Text></Pressable></View>
+      <View style={s.editorActions}><Pressable accessibilityRole="button" onPress={clearEditor} style={s.cancelButton}><Text style={s.cancelText}>Отмена</Text></Pressable><Pressable accessibilityRole="button" disabled={dictation.busy || !name.trim() || (frequency === 'weekdays' && !weekdays.length)} onPress={saveHabit} style={[s.saveButton, (dictation.busy || !name.trim() || (frequency === 'weekdays' && !weekdays.length)) && s.disabled]}><Check color={activeText} size={16}/><Text style={s.saveText}>Сохранить</Text></Pressable></View>
     </BentoCard></View> : null}
     </ScrollView>{syncText ? <Text pointerEvents="none" style={s.syncStatus}>{syncText}</Text> : null}
   </View>;

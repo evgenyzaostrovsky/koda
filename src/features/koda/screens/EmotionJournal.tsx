@@ -4,7 +4,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { emotionGroups, type EmotionEntry } from '../emotionJournal';
 import { accent, activeBg, activeText, line, muted, panel, text } from '../theme';
 import { uid } from '../utils';
-import { VoiceTextInput } from '../components/VoiceTextInput';
+import { useDictationBusy, VoiceTextInput } from '../components/VoiceTextInput';
 
 function localDateTime(value = new Date().toISOString()) {
   const date = new Date(value);
@@ -20,6 +20,7 @@ export function parseEmotionDate(value: string) {
 export function EmotionJournal({ entries, onSave, onBack, isDesktop = false }: { isDesktop?: boolean; entries: EmotionEntry[]; onSave: (entry: EmotionEntry) => void; onBack: () => void }) {
   const scroll = useRef<ScrollView>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editorSession, setEditorSession] = useState(0);
   const [date, setDate] = useState(() => localDateTime());
   const [event, setEvent] = useState('');
   const [group, setGroup] = useState('');
@@ -29,18 +30,20 @@ export function EmotionJournal({ entries, onSave, onBack, isDesktop = false }: {
   const [message, setMessage] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const dictation = useDictationBusy();
   const preview = entries.find(entry => entry.id === previewId && !entry.deletedAt);
   function closePreview() { setPreviewId(null); setDeleteId(null); }
   const visible = entries.filter(entry => !entry.deletedAt);
-  function clear() { setEditingId(null); setDate(localDateTime()); setEvent(''); setGroup(''); setEmotion(''); setAction(''); setSearch(''); }
+  function clear() { setEditorSession(session => session + 1); setEditingId(null); setDate(localDateTime()); setEvent(''); setGroup(''); setEmotion(''); setAction(''); setSearch(''); }
   function save() {
+    if (dictation.busy) return;
     const occurredAt = parseEmotionDate(date);
     if (!occurredAt) { setMessage('Укажите дату и время в формате ГГГГ-ММ-ДД ЧЧ:ММ.'); return; }
     if (!event.trim() || !emotion || !action.trim()) { setMessage('Опишите событие, выберите чувство и укажите действие.'); return; }
     onSave({ id: editingId ?? uid('emotion'), occurredAt, event: event.trim(), group, emotion, action: action.trim(), updatedAt: new Date().toISOString() });
     clear(); setMessage('Запись сохранена в истории.');
   }
-  const button = (label: string, onPress: () => void, selected = false) => <Pressable key={label} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={[s.chip, selected && s.selected]}><Text style={{ color: selected ? activeText : text, fontWeight: selected ? '600' : '400' }}>{label}</Text></Pressable>;
+  const button = (label: string, onPress: () => void, selected = false, disabled = false) => <Pressable key={label} accessibilityRole="button" accessibilityState={{ selected, disabled }} disabled={disabled} onPress={onPress} style={[s.chip, selected && s.selected, disabled && { opacity: 0.5 }]}><Text style={{ color: selected ? activeText : text, fontWeight: selected ? '600' : '400' }}>{label}</Text></Pressable>;
   return <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={s.page}>
     <View style={[s.layout, isDesktop && s.desktopLayout]}>
     <View style={[s.main, isDesktop && s.desktopMain]}>
@@ -51,7 +54,7 @@ export function EmotionJournal({ entries, onSave, onBack, isDesktop = false }: {
       <Text style={s.label}>Дата и время события</Text>
       <TextInput accessibilityLabel="Дата и время события" value={date} onChangeText={setDate} placeholder="ГГГГ-ММ-ДД ЧЧ:ММ" placeholderTextColor={muted} style={s.input} />
       <Text style={s.label}>1. Что произошло?</Text>
-      <VoiceTextInput accessibilityLabel="Событие" multiline value={event} onChangeText={setEvent} placeholder="Опишите ситуацию" placeholderTextColor={muted} style={[s.input, s.multiline]} />
+      <VoiceTextInput accessibilityLabel="Событие" scopeKey={`${editingId ?? 'new'}:${editorSession}`} onDictationBusyChange={dictation.bind('event')} multiline value={event} onChangeText={setEvent} placeholder="Опишите ситуацию" placeholderTextColor={muted} style={[s.input, s.multiline]} />
       <Text style={s.label}>2. Что я почувствовал(а)?</Text>
       <View style={s.row}>{Object.keys(emotionGroups).map(name => button(name, () => { setGroup(name); setEmotion(''); setSearch(''); }, group === name))}</View>
       {group ? <>
@@ -63,8 +66,8 @@ export function EmotionJournal({ entries, onSave, onBack, isDesktop = false }: {
       </> : null}
       {emotion ? <Text style={{ color: accent }}>Выбрано: {group} → {emotion}</Text> : null}
       <Text style={s.label}>3. Что я сделал(а)?</Text>
-      <VoiceTextInput accessibilityLabel="Действие" multiline value={action} onChangeText={setAction} placeholder="Как вы отреагировали? Можно написать «ничего не сделал(а)»." placeholderTextColor={muted} style={[s.input, s.multiline]} />
-      <View style={s.row}>{button('Сохранить запись', save, true)}{editingId ? button('Отменить редактирование', () => { clear(); setMessage(''); }) : null}</View>
+      <VoiceTextInput accessibilityLabel="Действие" scopeKey={`${editingId ?? 'new'}:${editorSession}`} onDictationBusyChange={dictation.bind('action')} multiline value={action} onChangeText={setAction} placeholder="Как вы отреагировали? Можно написать «ничего не сделал(а)»." placeholderTextColor={muted} style={[s.input, s.multiline]} />
+      <View style={s.row}>{button('Сохранить запись', save, true, dictation.busy)}{editingId ? button('Отменить редактирование', () => { clear(); setMessage(''); }) : null}</View>
       {message ? <Text accessibilityLiveRegion="polite" style={s.hint}>{message}</Text> : null}
     </View>
     </View>
@@ -92,7 +95,7 @@ export function EmotionJournal({ entries, onSave, onBack, isDesktop = false }: {
       <Text style={s.label}>Событие</Text><Text style={s.body}>{preview.event}</Text>
       <Text style={s.label}>Чувство</Text><Text style={{ color: accent }}>{preview.group === preview.emotion ? preview.emotion : `${preview.group} → ${preview.emotion}`}</Text>
       <Text style={s.label}>Действие</Text><Text style={s.body}>{preview.action}</Text>
-      <View style={s.row}>{button('Редактировать', () => { closePreview(); scroll.current?.scrollTo({ y: 0, animated: true }); setEditingId(preview.id); setDate(localDateTime(preview.occurredAt)); setEvent(preview.event); setGroup(preview.group); setEmotion(preview.emotion); setAction(preview.action); setSearch(''); setMessage('Запись открыта в форме выше.'); })}{button('Удалить', () => setDeleteId(preview.id))}</View>
+      <View style={s.row}>{button('Редактировать', () => { closePreview(); scroll.current?.scrollTo({ y: 0, animated: true }); setEditorSession(session => session + 1); setEditingId(preview.id); setDate(localDateTime(preview.occurredAt)); setEvent(preview.event); setGroup(preview.group); setEmotion(preview.emotion); setAction(preview.action); setSearch(''); setMessage('Запись открыта в форме выше.'); })}{button('Удалить', () => setDeleteId(preview.id))}</View>
       {deleteId === preview.id ? <View style={s.row}><Text style={s.hint}>Удалить эту запись?</Text>{button('Да, удалить', () => { const now = new Date().toISOString(); onSave({ ...preview, deletedAt: now, updatedAt: now }); closePreview(); if (editingId === preview.id) clear(); })}{button('Отмена', () => setDeleteId(null))}</View> : null}
 
           </ScrollView>
