@@ -1,7 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { Leaf } from 'lucide-react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { LaunchMoment } from './src/features/koda/components/LaunchMoment';
 import { AuthScreen } from './src/features/auth/AuthScreen';
 import { KodaApp } from './src/features/koda/KodaApp';
 import { isSupabaseConfigured } from './src/config/env';
@@ -10,7 +10,7 @@ import { supabase, authStorageKey } from './src/lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signOutDevice } from './src/lib/signOutDevice';
 import { resetTestAccountCache } from './src/lib/resetTestAccountCache';
-import { accent, bg, muted, text } from './src/features/koda/theme';
+import { bg, muted } from './src/features/koda/theme';
 
 export default function App() {
   const uiAuditMode = process.env.EXPO_PUBLIC_KODA_UI_AUDIT === '1';
@@ -72,16 +72,7 @@ export default function App() {
     return () => style.remove();
   }, []);
 
-  if (isLoading) {
-    return (
-      <View style={styles.loadingScreen}>
-        <Leaf size={42} strokeWidth={1.6} color={accent} />
-        <Text style={styles.loadingBrand}>KODA <Text style={styles.loadingBrandLight}>LIFE</Text></Text>
-        <Text style={styles.loadingCaption}>Готовим твоё пространство</Text>
-        <ActivityIndicator accessibilityLabel="Загрузка приложения" color={accent} style={styles.loadingIndicator} />
-      </View>
-    );
-  }
+  if (isLoading) return <LaunchMoment />;
 
   if (uiAuditMode || !isSupabaseConfigured()) {
     return <KodaApp />;
@@ -101,7 +92,7 @@ function AccountApp({ owner }: { owner: string }) {
     void prepare.then(() => { if (active) setReady(true); }).catch(() => { if (active) setError(true); });
     return () => { active = false; };
   }, [owner]);
-  if (!ready) return <View style={styles.loadingScreen}>{error ? <Text style={styles.loadingCaption}>Не удалось подготовить локальные данные. Обнови страницу.</Text> : <ActivityIndicator accessibilityLabel="Подготовка аккаунта" color={accent} />}</View>;
+  if (!ready) return error ? <View style={styles.loadingScreen}><Text style={styles.loadingCaption}>Не удалось подготовить локальные данные. Обнови страницу.</Text></View> : <LaunchMoment />;
   return <KodaApp userId={owner} onSignOut={() => { void signOutDevice(supabase, AsyncStorage, authStorageKey); }} />;
 }
 
@@ -113,8 +104,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
   },
-  loadingBrand: { color: text, fontSize: 25, fontWeight: '600', letterSpacing: 2.2 },
-  loadingBrandLight: { fontWeight: '300' },
   loadingCaption: { color: muted, fontSize: 14 },
-  loadingIndicator: { marginTop: 8 },
 });

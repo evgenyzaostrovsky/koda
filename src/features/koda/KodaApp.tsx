@@ -1,3 +1,4 @@
+import { LaunchMoment } from './components/LaunchMoment';
 import { PlannerVoiceInput } from './components/PlannerVoiceInput';
 import {findAccountCompletionCandidates} from './goalCompletion';
 import { recordGoalEdits, recordProjectEdits, recordProfileEdits, recordPomodoroEdits } from './entitySync';
@@ -28,7 +29,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import { ListChecks, Plus, X } from 'lucide-react-native';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Modal, Pressable, SafeAreaView, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { AppState, Modal, Pressable, SafeAreaView, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { isSupabaseConfigured } from '../../config/env';
 import { supabase } from '../../lib/supabase';
 import { defaultHabitMonth, defaultHabitYear, defaultJournalEntry, initialGoals, initialHabits } from './constants';
@@ -92,8 +93,6 @@ export function KodaApp(props: KodaAppProps) {
 
 function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   const [petRoomOpen, setPetRoomOpen] = useState(false);
-  const [launchFinishedOwner, setLaunchFinishedOwner] = useState<string | null | undefined>(undefined);
-  const launchPending = launchFinishedOwner !== (userId ?? null);
   const [petClock, setPetClock] = useState(() => Date.now());
   const [petCelebrating, setPetCelebrating] = useState(false);
   useEffect(() => {
@@ -1300,7 +1299,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   }
   const quickAddPreview = parseQuickTaskInput(quickAddText, todayDateKey(), '');
   if (initialStateReadyKey !== scopedStorageKey(kodaStateStorageKey, userId)) {
-    return <SafeAreaView style={[styles.safe, { justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color={accent} /></SafeAreaView>;
+    return <LaunchMoment />;
   }
   const recoveryStore = plannerRecords.recovery ? {label:'Планнер',store:plannerRecords} : journalRecords.recovery ? {label:'Дневник',store:journalRecords} : noteRecords.recovery ? {label:'Заметки',store:noteRecords} : null;
   return (
@@ -1324,10 +1323,10 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
           </View>
         </View>
       </Modal>
-      <WidgetShell focused={['planner','routines','goals','projects','progress'].includes(activeTab)} key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} onPet={()=>setPetRoomOpen(true)} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults} onLaunchFinished={()=>setLaunchFinishedOwner(userId ?? null)}>
+      <WidgetShell focused={['planner','routines','goals','projects','progress'].includes(activeTab)} key={userId ?? 'guest'} home={activeTab==='habits'} title={desktopTabLabels[activeTab]} name={accountDisplayName(accountInfo)} syncText={syncText} onHome={()=>setActiveTab('habits')} onNavigate={setActiveTab} onAdd={()=>setQuickAddOpen(true)} onProfile={()=>setActiveTab('profile')} onPet={()=>setPetRoomOpen(true)} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutError={desktopLayout.error} layoutReady={desktopLayout.ready} searchResults={searchResults}>
         {activeTab==='habits'||activeTab==='planner'||activeTab==='routines'?screen:<View style={{flex:1,minHeight:0,paddingHorizontal:isDesktopLayout?24:16,paddingBottom:12}}><RightPanelProvider key={activeTab} compact>{screen}</RightPanelProvider></View>}
       </WidgetShell>
-      {width>=680 && !launchPending && !petRoomOpen && !quickAddOpen && <PetWanderer name={petDisplayName} state={petLife} pose={petPose} onPress={()=>setPetRoomOpen(true)} />}
+      {width>=680 && !petRoomOpen && !quickAddOpen && <PetWanderer name={petDisplayName} state={petLife} pose={petPose} onPress={()=>setPetRoomOpen(true)} />}
       <Modal visible={petRoomOpen} animationType="fade" onRequestClose={()=>setPetRoomOpen(false)}>
         <SafeAreaView style={styles.safe}>
           <PetRoom pet={{name:petDisplayName,state:petLife,hunger:100-petView.hunger,pose:petPose}} food={petView.food} canFeed={petView.canFeed} lifeDeadline={petView.diesAt ?? undefined} earnedActions={petView.lifetimeEarned} nextUnlockText={nextPetUnlock ? `Следующее: ${nextPetUnlock.name} · ${petView.lifetimeEarned} из ${nextPetUnlock.at} действий` : undefined} artifacts={petArtifacts} cosmetics={petLooks} roomUpgrades={petRoomItems} equippedCosmeticId={petView.species} equippedUpgradeIds={[petView.accessory]}

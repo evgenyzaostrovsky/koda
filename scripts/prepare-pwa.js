@@ -23,6 +23,11 @@ if (!fs.existsSync(indexPath)) {
 fs.copyFileSync(path.join(projectRoot, 'assets', 'koda-apple-touch-icon.png'), appleIcon);
 fs.copyFileSync(path.join(projectRoot, 'assets', 'koda-pwa-icon-192.png'), icon192);
 fs.copyFileSync(path.join(projectRoot, 'assets', 'koda-pwa-icon-512.png'), icon512);
+// The boot shell needs these sprites before the JavaScript bundle is ready.
+const bootHouse = 'koda-kodik-house-sheet-v1.png';
+const bootWave = 'koda-kodik-wave-sheet-v1.png';
+fs.copyFileSync(path.join(projectRoot, 'assets', 'pet', 'kodik-house-sheet-v1.png'), path.join(outputDir, bootHouse));
+fs.copyFileSync(path.join(projectRoot, 'assets', 'pet', 'kodik-wave-sheet-v1.png'), path.join(outputDir, bootWave));
 
 const manifest = {
   id: '/',
@@ -290,17 +295,17 @@ html = html.replace('<head>', `<head>\n<meta name="koda-build" content="${buildI
 // Render immediately while the application bundle is still downloading. React
 // replaces this content as soon as it mounts; it never simulates progress.
 const bootScreen = `<div id="koda-boot" role="status" aria-label="Загрузка приложения KODA">
-  <div class="koda-boot-mark" aria-hidden="true"><svg viewBox="0 0 80 80" fill="none"><path d="M40 68C39 52 42 35 48 21"/><path class="koda-boot-leaf koda-boot-leaf-a" d="M43 39C24 40 16 30 17 19C29 20 41 27 43 39Z"/><path class="koda-boot-leaf koda-boot-leaf-b" d="M46 29C47 15 55 8 66 7C67 18 58 27 46 29Z"/></svg></div>
-  <div class="koda-boot-brand">KODA <span>LIFE</span></div><div class="koda-boot-caption">Готовим твоё пространство</div>
-  <div class="koda-boot-dots" aria-hidden="true"><i></i><i></i><i></i></div></div>`;
+  <div class="koda-boot-art" aria-hidden="true"><div class="koda-boot-house"></div><div class="koda-boot-wave"></div></div>
+  <div class="koda-boot-brand">KODA <span>LIFE</span></div><div class="koda-boot-tagline">Маленькие шаги. Свой ритм.</div>
+  <div class="koda-boot-loading">Загрузка…</div></div>`;
 const bootStyles = `<style id="koda-boot-style">
-  #koda-boot{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:var(--koda-app-bg,#b7c3b5);color:var(--koda-text,#1b241b);font-family:system-ui,sans-serif}
-  .koda-boot-mark{width:76px;height:76px;color:var(--koda-accent,#3e501b)}.koda-boot-mark svg{width:100%;height:100%;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
-  .koda-boot-leaf{fill:var(--koda-accent-soft,#e8efc3);transform-box:fill-box;transform-origin:bottom center;animation:koda-grow 900ms cubic-bezier(.2,.8,.2,1) both}.koda-boot-leaf-b{animation-delay:140ms}
-  .koda-boot-brand{font-size:25px;font-weight:600;letter-spacing:2.2px}.koda-boot-brand span{font-weight:300}.koda-boot-caption{font-size:14px;color:var(--koda-text-muted,#575e50)}
-  .koda-boot-dots{display:flex;gap:6px;margin-top:8px}.koda-boot-dots i{width:5px;height:5px;border-radius:50%;background:var(--koda-accent,#3e501b);animation:koda-pulse 1.2s ease-in-out infinite}.koda-boot-dots i:nth-child(2){animation-delay:160ms}.koda-boot-dots i:nth-child(3){animation-delay:320ms}
-  @keyframes koda-grow{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:scale(1)}}@keyframes koda-pulse{0%,100%{opacity:.3}50%{opacity:1}}
-  @media(prefers-reduced-motion:reduce){.koda-boot-leaf,.koda-boot-dots i{animation:none}}
+  #koda-boot{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px;background:var(--koda-app-bg,#b7c3b5);color:var(--koda-text,#1b241b);font-family:system-ui,sans-serif}
+  .koda-boot-art{position:relative;width:300px;height:270px;margin-bottom:12px}.koda-boot-house{position:absolute;left:8px;top:0;width:266.1px;height:266.1px;background:url('/${bootHouse}') 0 0/532.2px 266.1px no-repeat}
+  .koda-boot-wave{position:absolute;left:168px;top:154px;width:104px;height:104px;overflow:hidden;background-image:url('/${bootWave}');background-size:312px 104px;background-position:0 0;background-repeat:no-repeat;animation:koda-wave 720ms steps(1,end) infinite}
+  .koda-boot-brand{font-size:28px;font-weight:600;letter-spacing:2.2px}.koda-boot-brand span{font-weight:300;letter-spacing:2.8px}.koda-boot-tagline{font-size:14px;line-height:21px;text-align:center;color:var(--koda-text-muted,#575e50)}
+  .koda-boot-loading{width:220px;max-width:100%;margin-top:24px;text-align:center;font-size:14px;color:var(--koda-text-muted,#575e50)}
+  @keyframes koda-wave{0%,100%{background-position:0 0}25%,75%{background-position:-104px 0}50%{background-position:-208px 0}}
+  @media(prefers-reduced-motion:reduce){.koda-boot-wave{animation:none}}
 </style>`;
 if (!html.includes('id="koda-boot"')) {
   html = html.replace(/<div\s+id=["']root["']\s*><\/div>/i, `<div id="root">${bootScreen}</div>`);

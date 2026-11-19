@@ -162,7 +162,11 @@ async function main() {
   }
   assert.equal(owned.goals.length, 1, 'Existing legacy-ID records are preserved');
   const data = new Map([[appKey('a'), JSON.stringify(owned)], [plannerKey('a'), JSON.stringify([planner])], ['koda:plannerItems:v1', JSON.stringify([{ ...planner, title: 'Private guest plan' }])]]);
-  const h = harness({ data, owner: 'a', offline: true }); await flush();
+  const h = harness({ data, owner: 'a', offline: true });
+  assert.ok(h.find('LaunchMoment'), 'Show the shared loader while local state is loading');
+  await flush();
+  assert.equal(h.find('LaunchMoment'), undefined, 'Ready local data dismisses loading without running timers');
+  assert.equal(h.find('WidgetShell').onLaunchFinished, undefined, 'Workspace does not start a second timed intro');
   assert.equal(h.find('WidgetDesktop').goals[0].title, owned.goals[0].title);
   const aBefore = data.get(appKey('a'));
   h.setOwner('b'); await flush();
