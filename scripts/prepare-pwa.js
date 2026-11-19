@@ -316,7 +316,7 @@ const pwaTags = [
   '<meta name="mobile-web-app-capable" content="yes">',
   '<meta name="apple-mobile-web-app-capable" content="yes">',
   '<meta name="apple-mobile-web-app-title" content="KODA">',
-  '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
+  '<meta name="apple-mobile-web-app-status-bar-style" content="default">',
   '<link rel="manifest" href="/manifest.webmanifest">',
   `<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=${iconVersion}">`,
   '<style id="koda-pwa-shell">html,body,#root{height:100%;min-height:100%;background:var(--koda-app-bg,#f5f6f2);touch-action:manipulation;}@supports (height:100dvh){html,body,#root{height:100dvh;min-height:100dvh;}}body{overflow:hidden;-webkit-text-size-adjust:100%;}@media(pointer:coarse){input,textarea,select{font-size:16px!important;}}*{scrollbar-width:thin;scrollbar-color:var(--koda-border-strong) var(--koda-app-bg);}*::-webkit-scrollbar{width:8px;height:8px;}*::-webkit-scrollbar-track{background:var(--koda-app-bg);border-left:1px solid var(--koda-border);}*::-webkit-scrollbar-thumb{background:var(--koda-border-strong);border:2px solid var(--koda-app-bg);border-radius:999px;}*::-webkit-scrollbar-thumb:hover{background:var(--koda-accent);}*::-webkit-scrollbar-button{display:none;width:0;height:0;}*::-webkit-scrollbar-corner{background:var(--koda-app-bg);}</style>',
@@ -327,5 +327,10 @@ html = html.replace(/<meta\s+name=["']viewport["'][^>]*>/i, '');
 if (!html.includes('apple-mobile-web-app-capable')) {
   html = html.replace('</head>', `${pwaTags}\n</head>`);
 }
+
+// Keep content below the iPhone status bar instead of under its translucent edge.
+// Normalize Expo-generated and previously prepared HTML as well.
+html = html.replace(/<meta\b(?=[^>]*\bname=["']apple-mobile-web-app-status-bar-style["'])[^>]*>/gi, '');
+html = html.replace('</head>', '<meta name="apple-mobile-web-app-status-bar-style" content="default">\n</head>');
 
 fs.writeFileSync(indexPath, html, 'utf8');

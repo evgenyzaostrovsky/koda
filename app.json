@@ -29,7 +29,7 @@
       "orientation": "portrait",
       "themeColor": "#050605",
       "backgroundColor": "#050605",
-      "barStyle": "black-translucent",
+      "barStyle": "default",
       "favicon": "./assets/koda-pwa-icon.png"
     }
   }

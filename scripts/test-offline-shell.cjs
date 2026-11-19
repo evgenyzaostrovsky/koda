@@ -29,6 +29,8 @@ execFileSync(process.execPath, ['scripts/prepare-pwa.js', output]);
 const html = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
 assert.match(html, /<div id="root"><div id="koda-boot" role="status"/);
 assert.match(html, /prefers-reduced-motion:reduce/);
+assert.match(html, /name="apple-mobile-web-app-status-bar-style" content="default"/);
+assert.equal((html.match(/name="apple-mobile-web-app-status-bar-style"/g) || []).length, 1);
 const source = fs.readFileSync(path.join(output, 'sw.js'), 'utf8');
 const currentName = source.match(/const CACHE_NAME = '([^']+)'/)[1];
 const buildId = source.match(/const BUILD_ID = '([^']+)'/)[1];
