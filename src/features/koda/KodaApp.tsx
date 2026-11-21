@@ -7,7 +7,7 @@ import { autoPlanLocalDate, useAutoPlan } from './useAutoPlan';
 import { visibleGoals, withoutDeletedGoalItems } from './goalDeletion';
 import { applyAutoPlanProgress, parseAutoPlanState, recordAutoPlanGoalChanges } from './autoPlan';
 import { AutoPlanControl } from './components/AutoPlanControl';
-import { habitIsDue, habitDoneOn } from './habitModel';
+import { habitIsDue, habitDoneOn, isHabitDateKey, toggleHabitDateValue } from './habitModel';
 import { adoptPet, customizePet, feedPet, getPetView, rebirthPet, recordPetSourceChanges, type PetAccessory, type PetSpecies, type PetState } from './petState';
 import { type PetPose } from './components/PetCompanion';
 import { PetWanderer } from './components/PetWanderer';
@@ -1071,25 +1071,15 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
   }
 
   function toggleHabitMonthDay(id: string, dayIndex: number, year: number, monthIndex: number) {
-    markSyncQueued('appState');
-    updateHabitSources((items) =>
-      items.map((habit) =>
-        {
-          if (habit.id !== id) return habit;
+    toggleHabitDate(id, `${monthKey(year, monthIndex)}-${String(dayIndex + 1).padStart(2, '0')}`);
+  }
 
-          const key = monthKey(year, monthIndex);
-          const nextDays = getHabitMonthDays(habit, year, monthIndex).map((done, index) => (index === dayIndex ? !done : done));
-          const isDefaultMonth = year === defaultHabitYear && monthIndex === defaultHabitMonth;
-
-          return {
-            ...habit,
-            monthDays: isDefaultMonth ? nextDays : habit.monthDays,
-            monthHistory: { ...habit.monthHistory, [key]: nextDays },
-            doneDays: isDefaultMonth && dayIndex < 7 ? habit.doneDays.map((done, index) => (index === dayIndex ? !done : done)) : habit.doneDays,
-          };
-        }
-      ),
-    );
+  function toggleHabitDate(id: string, date: string) {
+    const today = todayDateKey();
+    if (!isHabitDateKey(date) || date > today) return;
+    const current = (editSources.current?.habits ?? habits).find(habit => habit.id === id);
+    if (!current || !habitIsDue(current, date)) return;
+    updateHabitSources(items => items.map(habit => habit.id === id ? toggleHabitDateValue(habit, date, today) : habit));
   }
 
   function updateHabit(id: string, patch: Pick<Habit, 'title' | 'target'>) {
@@ -1192,7 +1182,7 @@ function AccountWorkspace({ onSignOut, userId }: KodaAppProps) {
 
   const screen = (() => {
     if (activeTab === 'habits') return <WidgetDesktop journalEntries={journalEntries} lastAssistantReply={[...savedChat.chat].reverse().find(message=>message.role==='koda')?.text} onAssistantPrompt={prompt=>{setAssistantDraft(prompt);setActiveTab('koda');}} onJournal={id=>{if(id)setActiveJournalId(id);setActiveTab('journal');}} timerSettings={pomodoro} goals={effectiveGoals} habits={habits} days={kodaDays} notes={notes} projects={projects} items={widgetItems} overviewItems={overviewItems} onPlannerItem={openPlannerItem} onQuickAdd={()=>setQuickAddOpen(true)} layout={desktopLayout.layout} onLayout={desktopLayout.change} layoutReady={desktopLayout.ready} onOpen={setActiveTab} onGoal={id=>{setFocusedGoalView('roadmap');setFocusedGoalId(id);setActiveTab('goals');}} onNote={id=>{setFocusedNoteId(id);setActiveTab('notes');}} onToggleHabit={toggleHabitToday} onProgress={progressFromWidget} />;
-    if (activeTab === 'routines') return <HabitsScreen onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} habits={habits} onHabitsChange={updateHabitSources} onToggleToday={toggleHabitToday} />;
+    if (activeTab === 'routines') return <HabitsScreen onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} habits={habits} onHabitsChange={updateHabitSources} onToggleToday={toggleHabitToday} onToggleDate={toggleHabitDate} />;
 
     if (activeTab === 'planner') {
       return <PlannerScreen voiceControl={onClose => <PlannerVoiceInput onClose={onClose} key={userId??'guest'} ownerId={userId} onCreate={addVoicePlannerItems} onUndo={undoVoicePlannerItems}/>} goals={effectiveGoals} ownerId={userId} autoPlanControl={<AutoPlanControl {...autoPlan.control} />} onOpenWorkspace={()=>setActiveTab('habits')} syncText={syncText} initialFocus={focusedPlannerItem} themeId={profile.themeId} onThemeChange={themeId => updateProfile({ themeId })} onOpenSection={setActiveTab} isDesktop={isDesktopLayout} items={plannerItems} onSetItemFailed={setPlannerItemFailed} onAddItem={addPlannerItem} onDeleteItem={deletePlannerItem} onDeleteItems={ids => { const selected = new Set(ids); setPlannerItems(current => current.filter(item => !selected.has(item.id))); }} onMoveProjectedItemDate={moveProjectedPlannerItemDate} onToggleItem={togglePlannerItem} onToggleProjectedItem={toggleProjectedPlannerItem} onToggleSubtask={togglePlannerSubtask} onUpdateItem={updatePlannerItem} projectItems={projectPlannerItems} />;

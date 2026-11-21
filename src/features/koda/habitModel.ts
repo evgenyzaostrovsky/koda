@@ -93,6 +93,19 @@ export function habitDoneOn(habit: Habit, dateKey: string): boolean {
   return getHabitMonthDays(habit, year, month - 1)[day - 1] === true;
 }
 
+/** Prepare a calendar edit; recordHabitEdits must stamp it before persistence. */
+export function toggleHabitDateValue(habit: Habit, dateKey: string, today = todayDateKey()): Habit {
+  if (!isHabitDateKey(today) || !isHabitDateKey(dateKey) || dateKey > today || !habitIsDue(habit, dateKey)) return habit;
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const nextDays = getHabitMonthDays(habit, year, month - 1)
+    .map((done, index) => index === day - 1 ? !habitDoneOn(habit, dateKey) : done);
+  return {
+    ...habit,
+    monthHistory: { ...habit.monthHistory, [dateKey.slice(0, 7)]: nextDays },
+    monthDays: year === defaultHabitYear && month - 1 === defaultHabitMonth ? nextDays : habit.monthDays,
+  };
+}
+
 /** Consecutive scheduled completions; an unfinished reference day has not broken the streak yet.
  * Scheduling uses current weekdays; historical schedule changes are not recorded. Recorded
  * pause days are skipped. Legacy inactive habits without a dated pause still return zero.

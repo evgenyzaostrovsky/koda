@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mergeHabits, recordHabitEdits, type HabitWithSync } from '../src/features/koda/habitSync';
 import { getHabitMonthDays } from '../src/features/koda/utils';
+import { habitDoneOn, habitStreak, toggleHabitDateValue } from '../src/features/koda/habitModel';
 
 const firstAt = '2026-10-20T08:00:00.000Z';
 const nextAt = '2026-10-20T09:00:00.000Z';
@@ -117,5 +118,57 @@ test('retrying an older operation after a newer undo cannot reactivate a day', (
   assert.deepEqual(replay[0].dayEdits, undo[0].dayEdits);
   assert.deepEqual(replay, undo);
   assert.equal(day(mergeHabits(replay, done)[0], '2026-10-20'), false);
+});
+test('backdated calendar toggle stamps only the selected date and preserves reload, retry and undo', () => {
+  const base = habit();
+  const raw = toggleHabitDateValue(base, '2026-09-30', '2026-10-20');
+  const done = recordHabitEdits([base], [raw], firstAt, 'backdate');
+  assert.equal(done.length, 1);
+  assert.equal(done[0].id, base.id);
+  assert.deepEqual(Object.keys(done[0].dayEdits!), ['2026-09-30']);
+  assert.equal(habitDoneOn(done[0], '2026-09-30'), true);
+  assert.equal(habitDoneOn(done[0], '2026-10-20'), false);
+  const loaded = JSON.parse(JSON.stringify(done));
+  assert.deepEqual(mergeHabits(loaded, done), done);
+  assert.deepEqual(recordHabitEdits(done, [raw], firstAt, 'backdate'), done);
+  const undo = recordHabitEdits(done, [toggleHabitDateValue(done[0], '2026-09-30', '2026-10-20')], nextAt, 'backdate-undo');
+  assert.equal(habitDoneOn(mergeHabits(done, undo)[0], '2026-09-30'), false);
+  assert.deepEqual(Object.keys(undo[0].dayEdits!), ['2026-09-30']);
+  assert.equal(habitDoneOn(base, '2026-09-30'), false);
+});
+test('yesterday backfill repairs streak and an undo breaks it without duplicating dates', () => {
+  const base = habit();
+  const today = '2026-10-20';
+  let saved = recordHabitEdits([base], [toggleHabitDateValue(base, today, today)], firstAt, 'today');
+  saved = recordHabitEdits(saved, [toggleHabitDateValue(saved[0], '2026-10-18', today)], nextAt, 'older');
+  assert.equal(habitStreak(saved[0], today), 1);
+  saved = recordHabitEdits(saved, [toggleHabitDateValue(saved[0], '2026-10-19', today)], laterAt, 'yesterday');
+  assert.equal(habitStreak(saved[0], today), 3);
+  assert.equal(Object.keys(saved[0].dayEdits!).length, 3);
+  const undone = recordHabitEdits(saved, [toggleHabitDateValue(saved[0], '2026-10-19', today)], '2026-10-20T11:00:00Z', 'undo-yesterday');
+  assert.equal(habitStreak(undone[0], today), 1);
+  assert.equal(Object.keys(undone[0].dayEdits!).length, 3);
+});
+test('calendar toggle rejects future, malformed, unavailable and pre-creation dates', () => {
+  const base = habit();
+  for (const date of ['2026-10-21', '2026-02-31', '2026-2-01', 'invalid']) {
+    assert.equal(toggleHabitDateValue(base, date, '2026-10-20'), base);
+  }
+  for (const value of [
+    { ...base, createdDate: '2026-10-20' }, { ...base, isActive: false },
+    { ...base, deletedAt: firstAt }, { ...base, archivedAt: firstAt },
+    { ...base, frequency: 'weekdays' as const, weekdays: [2] },
+    { ...base, pauseEdits: { '2026-10-18': { paused: true, at: firstAt, id: 'pause' } } },
+  ]) assert.equal(toggleHabitDateValue(value, '2026-10-19', '2026-10-20'), value);
+});
+test('backdated calendar toggle retains leap day, year and legacy month identities', () => {
+  for (const date of ['2024-02-29', '2025-12-31', '2026-07-01']) {
+    const base = habit();
+    const saved = recordHabitEdits([base], [toggleHabitDateValue(base, date, '2026-10-20')], firstAt, date)[0];
+    assert.deepEqual(Object.keys(saved.dayEdits!), [date]);
+    assert.equal(habitDoneOn(saved, date), true);
+    assert.equal(habitDoneOn(saved, '2026-10-20'), false);
+    if (date === '2026-07-01') assert.equal(saved.monthDays[0], true);
+  }
 });
 console.log(`Habit sync: ${checked} targeted suites passed.`);
